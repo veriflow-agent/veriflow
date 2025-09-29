@@ -5,6 +5,7 @@ from langsmith import traceable
 from pydantic import BaseModel, Field
 import time
 from typing import Dict, List
+from langchain_core.output_parsers import JsonOutputParser
 from prompts.checker_prompts import get_checker_prompts
 from utils.logger import fact_logger
 from utils.langsmith_config import langsmith_config
@@ -32,22 +33,19 @@ class FactChecker:
     def __init__(self, config):
         self.config = config
 
-        # Create base LLM
+        # Create LLM with ENFORCED JSON mode using .bind()
         self.llm = ChatOpenAI(
             model="gpt-4o",  # Stronger model for accuracy
-            temperature=0.1
-        )
+            temperature=0
+        ).bind(response_format={"type": "json_object"})
 
-        # Use with_structured_output for proper JSON handling
-        self.structured_llm = self.llm.with_structured_output(
-            CheckerOutput,
-            method="json_mode"
-        )
+        # Simple parser - no fixing needed with proper JSON mode
+        self.parser = JsonOutputParser(pydantic_object=CheckerOutput)
 
         # Load prompts
         self.prompts = get_checker_prompts()
 
-        fact_logger.log_component_start("FactChecker", model="gpt-4o")
+        fact_logger.log_component_start("FactChecker", model="gpt-4o", json_mode=True)
 
     @traceable(
         name="check_fact_accuracy",
@@ -139,18 +137,23 @@ class FactChecker:
         # Format excerpts into readable text for the prompt
         excerpts_text = self._format_excerpts(excerpts)
 
-        # Create prompt with explicit JSON instruction
-        system_prompt = self.prompts["system"] + "\n\nIMPORTANT: Return ONLY valid JSON with the exact structure shown. No markdown, no code blocks."
+        # Create prompt that EXPLICITLY mentions JSON (required for JSON mode)
+        system_prompt = self.prompts["system"] + "\n\nIMPORTANT: You MUST return valid JSON only. No markdown, no code blocks, just pure JSON."
 
         prompt = ChatPromptTemplate.from_messages([
             ("system", system_prompt),
-            ("user", self.prompts["user"])
+            ("user", self.prompts["user"] + "\n\n{format_instructions}\n\nReturn your response as valid JSON.")
         ])
+
+        # Add format instructions
+        prompt_with_format = prompt.partial(
+            format_instructions=self.parser.get_format_instructions()
+        )
 
         callbacks = langsmith_config.get_callbacks(f"fact_checker_{fact.id}")
 
-        # Create chain with structured output
-        chain = prompt | self.structured_llm
+        # Create chain: prompt -> llm (with JSON mode) -> parser
+        chain = prompt_with_format | self.llm | self.parser
 
         config = {}
         if callbacks and hasattr(callbacks, 'handlers'):
@@ -164,15 +167,15 @@ class FactChecker:
             config=config
         )
 
-        # response is now a CheckerOutput Pydantic object
+        # response is now a dict with parsed JSON
         return FactCheckResult(
             fact_id=fact.id,
             statement=fact.statement,
-            match_score=response.match_score,
-            assessment=response.assessment,
-            discrepancies=response.discrepancies,
-            confidence=response.confidence,
-            reasoning=response.reasoning
+            match_score=response['match_score'],
+            assessment=response['assessment'],
+            discrepancies=response['discrepancies'],
+            confidence=response['confidence'],
+            reasoning=response['reasoning']
         )
 
     def _format_excerpts(self, excerpts: list) -> str:

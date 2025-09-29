@@ -4,6 +4,8 @@ from langchain_openai import ChatOpenAI
 from langsmith import traceable
 import time
 from typing import Dict, List
+from langchain_core.output_parsers import JsonOutputParser
+from pydantic import BaseModel, Field
 
 # Fixed imports
 from utils.langsmith_config import langsmith_config
@@ -11,20 +13,29 @@ from utils.logger import fact_logger
 from agents.analyser import Fact
 from prompts.highlighter_prompts import get_highlighter_prompts
 
+class ExcerptList(BaseModel):
+    """List of extracted excerpts"""
+    excerpts: List[dict] = Field(description="List of relevant excerpts from the source")
+
 class Highlighter:
     """Extract relevant excerpts with LangSmith tracing"""
 
     def __init__(self, config):
         self.config = config
+
+        # Create LLM with ENFORCED JSON mode
         self.llm = ChatOpenAI(
             model="gpt-4o-mini",
-            temperature=0.1
-        )
+            temperature=0
+        ).bind(response_format={"type": "json_object"})
+
+        # Simple parser for JSON output
+        self.parser = JsonOutputParser(pydantic_object=ExcerptList)
 
         # Load prompts
         self.prompts = get_highlighter_prompts()
 
-        fact_logger.log_component_start("Highlighter", model="gpt-4o-mini")
+        fact_logger.log_component_start("Highlighter", model="gpt-4o-mini", json_mode=True)
 
     @traceable(
         name="highlight_excerpts",
@@ -95,13 +106,27 @@ class Highlighter:
     async def _extract_excerpts(self, fact: Fact, url: str, content: str) -> List[Dict]:
         """Extract excerpts from a single source"""
 
+        # Create prompt with explicit JSON instruction
+        system_prompt = self.prompts["system"] + "\n\nIMPORTANT: You MUST return valid JSON only. No markdown, no code blocks."
+
         prompt = ChatPromptTemplate.from_messages([
-            ("system", self.prompts["system"]),
-            ("user", self.prompts["user"])
+            ("system", system_prompt),
+            ("user", self.prompts["user"] + "\n\n{format_instructions}\n\nReturn your response as valid JSON.")
         ])
 
+        # Add format instructions
+        prompt_with_format = prompt.partial(
+            format_instructions=self.parser.get_format_instructions()
+        )
+
         callbacks = langsmith_config.get_callbacks(f"highlighter_{fact.id}")
-        chain = prompt | self.llm
+
+        # Create chain with JSON mode and parser
+        chain = prompt_with_format | self.llm | self.parser
+
+        config = {}
+        if callbacks and hasattr(callbacks, 'handlers'):
+            config = {"callbacks": callbacks.handlers}
 
         result = await chain.ainvoke(
             {
@@ -109,9 +134,8 @@ class Highlighter:
                 "url": url,
                 "content": content[:8000]
             },
-            config={"callbacks": callbacks.handlers}
+            config=config
         )
 
-        import json
-        data = json.loads(result.content)
-        return data.get('excerpts', [])
+        # result is already a parsed dict
+        return result.get('excerpts', [])

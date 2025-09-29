@@ -5,9 +5,7 @@ from langsmith import traceable
 from pydantic import BaseModel, Field
 from typing import List
 import time
-import json
 from langchain_core.output_parsers import JsonOutputParser
-from langchain.output_parsers import OutputFixingParser
 from prompts.analyzer_prompts import get_analyzer_prompts
 from utils.logger import fact_logger
 from utils.langsmith_config import langsmith_config
@@ -29,29 +27,19 @@ class FactAnalyzer:
     def __init__(self, config):
         self.config = config
 
-        # Create base LLM
+        # Create LLM with ENFORCED JSON mode using .bind()
         self.llm = ChatOpenAI(
             model="gpt-4o-mini",
             temperature=0
-        )
+        ).bind(response_format={"type": "json_object"})
 
-        # Create a fixing LLM (uses same model to fix errors)
-        self.fixing_llm = ChatOpenAI(
-            model="gpt-4o-mini",
-            temperature=0
-        )
-
-        # Use JsonOutputParser with OutputFixingParser wrapper
-        base_parser = JsonOutputParser(pydantic_object=FactList)
-        self.parser = OutputFixingParser.from_llm(
-            parser=base_parser,
-            llm=self.fixing_llm
-        )
+        # Simple parser - no fixing needed with proper JSON mode
+        self.parser = JsonOutputParser(pydantic_object=FactList)
 
         # Load prompts during initialization
         self.prompts = get_analyzer_prompts()
 
-        fact_logger.log_component_start("FactAnalyzer", model="gpt-4o-mini")
+        fact_logger.log_component_start("FactAnalyzer", model="gpt-4o-mini", json_mode=True)
 
     @traceable(
         name="analyze_facts",
@@ -74,13 +62,15 @@ class FactAnalyzer:
         )
 
         try:
-            # Create prompt with format instructions
+            # Create prompt that EXPLICITLY mentions JSON (required for JSON mode)
+            system_prompt = self.prompts["system"] + "\n\nIMPORTANT: You MUST return valid JSON only. No markdown, no code blocks, just pure JSON."
+
             prompt = ChatPromptTemplate.from_messages([
-                ("system", self.prompts["system"]),
-                ("user", self.prompts["user"] + "\n\n{format_instructions}")
+                ("system", system_prompt),
+                ("user", self.prompts["user"] + "\n\n{format_instructions}\n\nReturn your response as valid JSON.")
             ])
 
-            # Add format instructions to the input
+            # Add format instructions
             prompt_with_format = prompt.partial(
                 format_instructions=self.parser.get_format_instructions()
             )
@@ -88,10 +78,10 @@ class FactAnalyzer:
             # Get callbacks for LangSmith
             callbacks = langsmith_config.get_callbacks("fact_analyzer")
 
-            # Create chain: prompt -> llm -> parser (with fixing)
+            # Create chain: prompt -> llm (with JSON mode) -> parser
             chain = prompt_with_format | self.llm | self.parser
 
-            fact_logger.logger.debug("🔗 Invoking LangChain with OutputFixingParser")
+            fact_logger.logger.debug("🔗 Invoking LangChain with enforced JSON mode")
 
             # Safe callback usage
             config = {}
