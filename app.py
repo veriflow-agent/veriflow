@@ -5,7 +5,7 @@ import os
 from dotenv import load_dotenv
 
 # Import your components
-from orchestrator.fact_check_orchestrator import FactCheckOrchestrator
+from orchestrator.llm_output_orchestrator import FactCheckOrchestrator
 from utils.logger import fact_logger
 from utils.langsmith_config import langsmith_config
 
