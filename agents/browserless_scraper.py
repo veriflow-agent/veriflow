@@ -18,6 +18,7 @@ import os
 from typing import Dict, List, Optional
 from urllib.parse import urlparse
 from playwright.async_api import async_playwright, Browser, Page
+
 from utils.logger import fact_logger
 
 class FactCheckScraper:
