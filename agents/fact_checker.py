@@ -4,6 +4,9 @@ from langchain_openai import ChatOpenAI
 from langsmith import traceable
 from pydantic import BaseModel
 import time
+from prompts.checker_prompts import get_checker_prompts
+from utils.logger import fact_logger
+from utils.langsmith_config import langsmith_config
 
 class FactCheckResult(BaseModel):
     fact_id: str
@@ -12,7 +15,7 @@ class FactCheckResult(BaseModel):
     assessment: str
     discrepancies: str
     confidence: float
-    reasoning: str  # Added for transparency
+    reasoning: str
 
 class FactChecker:
     """Compare facts against source excerpts with LangSmith tracing"""
@@ -24,6 +27,9 @@ class FactChecker:
             temperature=0
         )
 
+        # Load prompts
+        self.prompts = get_checker_prompts()
+
         fact_logger.log_component_start("FactChecker", model="gpt-4o")
 
     @traceable(
@@ -31,13 +37,17 @@ class FactChecker:
         run_type="chain",
         tags=["fact-checking", "verification"]
     )
-    async def check_fact(self, fact: Fact, excerpts: dict) -> FactCheckResult:
+    async def check_fact(self, fact, excerpts: dict) -> FactCheckResult:
         """
         Compare fact against extracted excerpts with full tracing
+
+        Args:
+            fact: Fact object with id, statement, sources
+            excerpts: dict of {url: [excerpt_objects]}
         """
         start_time = time.time()
 
-        # Compile all excerpts
+        # Compile all excerpts from all URLs into a single list
         all_excerpts = []
         for url, url_excerpts in excerpts.items():
             for excerpt in url_excerpts:
@@ -101,49 +111,20 @@ class FactChecker:
             raise
 
     @traceable(name="evaluate_fact_match", run_type="llm")
-    async def _evaluate_fact(self, fact: Fact, excerpts: list) -> FactCheckResult:
-        """Evaluate fact accuracy against excerpts"""
+    async def _evaluate_fact(self, fact, excerpts: list) -> FactCheckResult:
+        """
+        Evaluate fact accuracy against excerpts
 
-        excerpts_text = "\n\n".join([
-            f"[Source: {ex['url']}]\nRelevance: {ex['relevance']}\nQuote: {ex['quote']}"
-            for ex in excerpts
-        ])
+        Args:
+            fact: Fact object
+            excerpts: list of excerpt dicts with url, quote, relevance
+        """
+        # Format excerpts into readable text for the prompt
+        excerpts_text = self._format_excerpts(excerpts)
 
         prompt = ChatPromptTemplate.from_messages([
-            ("system", """You are a fact-checking expert with high standards for accuracy.
-
-Compare the claimed fact with excerpts from sources.
-
-SCORING CRITERIA:
-1.0 - Perfect match: fact directly stated with same specifics
-0.9 - Excellent match: very close, minor wording differences only
-0.8 - Very good match: same core fact, slightly different details
-0.7 - Good match: same general fact, some interpretation needed
-0.6 - Acceptable match: mostly accurate but missing some context
-0.5 - Partial match: contains some truth but incomplete/ambiguous
-0.4 - Weak match: misleading or missing important qualifiers
-0.3 - Poor match: significant discrepancies
-0.2 - Very poor match: mostly inaccurate
-0.1 - Nearly false: contradicted by sources
-0.0 - False: completely contradicted or unsupported
-
-Be precise. Note ANY discrepancies, missing context, or nuances.
-
-Return JSON:
-{
-  "match_score": 0.95,
-  "assessment": "detailed assessment of accuracy",
-  "discrepancies": "any issues found, or 'none'",
-  "confidence": 0.90,
-  "reasoning": "step-by-step explanation of your scoring"
-}"""),
-            ("user", """CLAIMED FACT:
-{fact}
-
-SOURCE EXCERPTS:
-{excerpts}
-
-Evaluate the accuracy of this fact against the source excerpts.""")
+            ("system", self.prompts["system"]),
+            ("user", self.prompts["user"])
         ])
 
         callbacks = langsmith_config.get_callbacks(f"fact_checker_{fact.id}")
@@ -169,3 +150,26 @@ Evaluate the accuracy of this fact against the source excerpts.""")
             confidence=data['confidence'],
             reasoning=data['reasoning']
         )
+
+    def _format_excerpts(self, excerpts: list) -> str:
+        """
+        Format excerpts list into readable text for the prompt
+
+        Args:
+            excerpts: list of dicts with 'url', 'quote', 'relevance'
+
+        Returns:
+            Formatted string for the prompt
+        """
+        if not excerpts:
+            return "NO EXCERPTS FOUND - No relevant content located in source documents."
+
+        formatted = []
+        for ex in excerpts:
+            formatted.append(
+                f"[Source: {ex['url']}]\n"
+                f"Relevance: {ex['relevance']}\n"
+                f"Quote: {ex['quote']}\n"
+            )
+
+        return "\n\n".join(formatted)

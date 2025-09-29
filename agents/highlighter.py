@@ -4,6 +4,11 @@ from langchain_openai import ChatOpenAI
 from langsmith import traceable
 import time
 
+from utils import langsmith_config
+from utils.logger import fact_logger
+from agents.analyser import Fact
+from prompts import highlighter_prompts
+
 class Highlighter:
     """Extract relevant excerpts with LangSmith tracing"""
 

@@ -5,6 +5,9 @@ from langsmith import traceable
 from pydantic import BaseModel, Field
 from typing import List
 import time
+from prompts.analyzer_prompts import get_analyzer_prompts
+from utils.logger import fact_logger
+from utils.langsmith_config import langsmith_config
 
 class Fact(BaseModel):
     id: str
@@ -23,6 +26,9 @@ class FactAnalyzer:
             temperature=0,
             model_kwargs={"response_format": {"type": "json_object"}}
         )
+
+        # Load prompts during initialization
+        self.prompts = get_analyzer_prompts()
 
         fact_logger.log_component_start("FactAnalyzer", model="gpt-4o-mini")
 
@@ -108,37 +114,13 @@ class FactAnalyzer:
             raise
 
     def _get_system_prompt(self) -> str:
-        return """You are a fact extraction expert. 
-        Extract all factual claims from the provided text.
-
-        For each fact, identify:
-        1. The specific factual statement (be precise and concise)
-        2. Which source URLs support it (match to provided sources)
-        3. The original text where it appears
-        4. Your confidence in this being a verifiable fact (0.0-1.0)
-
-        Focus on concrete, verifiable facts, not opinions or subjective claims.
-
-        Return as JSON:
-        {
-          "facts": [
-            {
-              "statement": "The hotel opened in March 2017",
-              "sources": ["url1", "url2"],
-              "original_text": "...opened in March 2017...",
-              "confidence": 0.95
-            }
-          ]
-        }"""
+        """Get system prompt from loaded prompts"""
+        return self.prompts["system"]
 
     def _get_user_prompt(self) -> str:
-        return """Text to analyze:
-{text}
-
-Available source URLs:
-{sources}
-
-Extract all factual claims."""
+        """Get user prompt template from loaded prompts"""
+        return self.prompts["user"]
 
     def _format_sources(self, links: List[dict]) -> str:
+        """Format source links for the prompt"""
         return "\n".join([f"- {link['url']}" for link in links])
