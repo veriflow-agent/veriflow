@@ -1,141 +1,196 @@
-# agents/highlighter.py
+# agents/fact_checker.py
 from langchain.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
+from langchain.output_parsers import JsonOutputParser
 from langsmith import traceable
-import time
-from typing import Dict, List
-from langchain_core.output_parsers import JsonOutputParser
 from pydantic import BaseModel, Field
-
-# Fixed imports
-from utils.langsmith_config import langsmith_config
+import time
+from prompts.checker_prompts import get_checker_prompts
 from utils.logger import fact_logger
-from agents.analyser import Fact
-from prompts.highlighter_prompts import get_highlighter_prompts
+from utils.langsmith_config import langsmith_config
 
-class ExcerptList(BaseModel):
-    """List of extracted excerpts"""
-    excerpts: List[dict] = Field(description="List of relevant excerpts from the source")
+class FactCheckResult(BaseModel):
+    fact_id: str
+    statement: str
+    match_score: float
+    assessment: str
+    discrepancies: str
+    confidence: float
+    reasoning: str
 
-class Highlighter:
-    """Extract relevant excerpts with LangSmith tracing"""
+class CheckerOutput(BaseModel):
+    match_score: float = Field(description="Accuracy score from 0.0 to 1.0")
+    assessment: str = Field(description="Detailed assessment of the fact")
+    discrepancies: str = Field(description="Any discrepancies found")
+    confidence: float = Field(description="Confidence in this evaluation")
+    reasoning: str = Field(description="Step-by-step reasoning")
+
+class FactChecker:
+    """Compare facts against source excerpts with LangSmith tracing"""
 
     def __init__(self, config):
         self.config = config
 
-        # Create LLM with ENFORCED JSON mode
+        # ✅ PROPER JSON MODE - OpenAI guarantees valid JSON
         self.llm = ChatOpenAI(
-            model="gpt-4o-mini",
+            model="gpt-4o",
             temperature=0
         ).bind(response_format={"type": "json_object"})
 
-        # Simple parser for JSON output
-        self.parser = JsonOutputParser(pydantic_object=ExcerptList)
+        # ✅ SIMPLE PARSER - No fixing needed
+        self.parser = JsonOutputParser(pydantic_object=CheckerOutput)
 
         # Load prompts
-        self.prompts = get_highlighter_prompts()
+        self.prompts = get_checker_prompts()
 
-        fact_logger.log_component_start("Highlighter", model="gpt-4o-mini", json_mode=True)
+        fact_logger.log_component_start("FactChecker", model="gpt-4o")
 
     @traceable(
-        name="highlight_excerpts",
+        name="check_fact_accuracy",
         run_type="chain",
-        tags=["excerpt-extraction", "highlighter"]
+        tags=["fact-checking", "verification"]
     )
-    async def highlight(self, fact: Fact, scraped_content: Dict[str, str]) -> Dict[str, List[Dict]]:
+    async def check_fact(self, fact, excerpts: dict) -> FactCheckResult:
         """
-        Find excerpts that mention or support the fact
-        Returns: {url: [excerpts]}
+        Compare fact against extracted excerpts with full tracing
+
+        Args:
+            fact: Fact object with id, statement, sources
+            excerpts: dict of {url: [excerpt_objects]}
         """
         start_time = time.time()
-        results = {}
+
+        # Compile all excerpts from all URLs into a single list
+        all_excerpts = []
+        for url, url_excerpts in excerpts.items():
+            for excerpt in url_excerpts:
+                all_excerpts.append({
+                    "url": url,
+                    "quote": excerpt['quote'],
+                    "relevance": excerpt.get('relevance', 0.5)
+                })
 
         fact_logger.logger.info(
-            f"🔦 Highlighting excerpts for {fact.id}",
+            f"⚖️ Checking fact {fact.id}",
             extra={
                 "fact_id": fact.id,
                 "statement": fact.statement[:100],
-                "num_sources": len(fact.sources)
+                "num_excerpts": len(all_excerpts),
+                "num_sources": len(excerpts)
             }
         )
 
-        for url in fact.sources:
-            if url not in scraped_content:
-                fact_logger.logger.warning(
-                    f"⚠️ Source not found in scraped content: {url}",
-                    extra={"fact_id": fact.id, "url": url}
-                )
-                continue
+        if not all_excerpts:
+            fact_logger.logger.warning(
+                f"⚠️ No excerpts found for fact {fact.id}",
+                extra={"fact_id": fact.id}
+            )
+            return FactCheckResult(
+                fact_id=fact.id,
+                statement=fact.statement,
+                match_score=0.0,
+                assessment="No supporting excerpts found in sources",
+                discrepancies="Cannot verify - no relevant content found",
+                confidence=0.0,
+                reasoning="No excerpts available for comparison"
+            )
 
-            content = scraped_content[url]
+        try:
+            result = await self._evaluate_fact(fact, all_excerpts)
 
-            try:
-                excerpts = await self._extract_excerpts(fact, url, content)
-                results[url] = excerpts
+            duration = time.time() - start_time
+            fact_logger.log_component_complete(
+                "FactChecker",
+                duration,
+                fact_id=fact.id,
+                match_score=result.match_score,
+                confidence=result.confidence
+            )
 
-                fact_logger.logger.debug(
-                    f"✂️ Found {len(excerpts)} excerpts from {url}",
-                    extra={
-                        "fact_id": fact.id,
-                        "url": url,
-                        "num_excerpts": len(excerpts)
-                    }
-                )
+            fact_logger.logger.info(
+                f"📊 Fact check complete for {fact.id}: {result.match_score:.2f}",
+                extra={
+                    "fact_id": fact.id,
+                    "match_score": result.match_score,
+                    "confidence": result.confidence,
+                    "assessment_summary": result.assessment[:100]
+                }
+            )
 
-            except Exception as e:
-                fact_logger.logger.error(
-                    f"❌ Failed to extract excerpts from {url}: {e}",
-                    extra={"fact_id": fact.id, "url": url, "error": str(e)}
-                )
-                results[url] = []
+            return result
 
-        duration = time.time() - start_time
-        total_excerpts = sum(len(excerpts) for excerpts in results.values())
+        except Exception as e:
+            fact_logger.log_component_error("FactChecker", e, fact_id=fact.id)
+            raise
 
-        fact_logger.log_component_complete(
-            "Highlighter",
-            duration,
-            fact_id=fact.id,
-            total_excerpts=total_excerpts,
-            sources_processed=len(results)
-        )
+    @traceable(name="evaluate_fact_match", run_type="llm")
+    async def _evaluate_fact(self, fact, excerpts: list) -> FactCheckResult:
+        """
+        Evaluate fact accuracy against excerpts
 
-        return results
+        Args:
+            fact: Fact object
+            excerpts: list of excerpt dicts with url, quote, relevance
+        """
+        # Format excerpts into readable text for the prompt
+        excerpts_text = self._format_excerpts(excerpts)
 
-    @traceable(name="extract_single_excerpt", run_type="llm")
-    async def _extract_excerpts(self, fact: Fact, url: str, content: str) -> List[Dict]:
-        """Extract excerpts from a single source"""
-
-        # Create prompt with explicit JSON instruction
-        system_prompt = self.prompts["system"] + "\n\nIMPORTANT: You MUST return valid JSON only. No markdown, no code blocks."
+        # ✅ EXPLICIT JSON MENTION
+        system_prompt = self.prompts["system"] + "\n\nIMPORTANT: You MUST return valid JSON only. No other text."
 
         prompt = ChatPromptTemplate.from_messages([
             ("system", system_prompt),
             ("user", self.prompts["user"] + "\n\n{format_instructions}\n\nReturn your response as valid JSON.")
         ])
 
-        # Add format instructions
+        # ✅ FORMAT INSTRUCTIONS
         prompt_with_format = prompt.partial(
             format_instructions=self.parser.get_format_instructions()
         )
 
-        callbacks = langsmith_config.get_callbacks(f"highlighter_{fact.id}")
+        callbacks = langsmith_config.get_callbacks(f"fact_checker_{fact.id}")
 
-        # Create chain with JSON mode and parser
+        # ✅ CLEAN CHAIN - No manual JSON parsing needed
         chain = prompt_with_format | self.llm | self.parser
 
-        config = {}
-        if callbacks and hasattr(callbacks, 'handlers'):
-            config = {"callbacks": callbacks.handlers}
-
-        result = await chain.ainvoke(
+        response = await chain.ainvoke(
             {
                 "fact": fact.statement,
-                "url": url,
-                "content": content[:8000]
+                "excerpts": excerpts_text
             },
-            config=config
+            config={"callbacks": callbacks.handlers}
         )
 
-        # result is already a parsed dict
-        return result.get('excerpts', [])
+        # ✅ DIRECT DICT ACCESS - Parser returns clean dict
+        return FactCheckResult(
+            fact_id=fact.id,
+            statement=fact.statement,
+            match_score=response['match_score'],
+            assessment=response['assessment'],
+            discrepancies=response['discrepancies'],
+            confidence=response['confidence'],
+            reasoning=response['reasoning']
+        )
+
+    def _format_excerpts(self, excerpts: list) -> str:
+        """
+        Format excerpts list into readable text for the prompt
+
+        Args:
+            excerpts: list of dicts with 'url', 'quote', 'relevance'
+
+        Returns:
+            Formatted string for the prompt
+        """
+        if not excerpts:
+            return "NO EXCERPTS FOUND - No relevant content located in source documents."
+
+        formatted = []
+        for ex in excerpts:
+            formatted.append(
+                f"[Source: {ex['url']}]\n"
+                f"Relevance: {ex['relevance']}\n"
+                f"Quote: {ex['quote']}\n"
+            )
+
+        return "\n\n".join(formatted)

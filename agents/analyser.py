@@ -1,11 +1,11 @@
-# agents/analyser.py
+# agents/analyzer.py
 from langchain.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
+from langchain.output_parsers import JsonOutputParser
 from langsmith import traceable
 from pydantic import BaseModel, Field
 from typing import List
 import time
-from langchain_core.output_parsers import JsonOutputParser
 from prompts.analyzer_prompts import get_analyzer_prompts
 from utils.logger import fact_logger
 from utils.langsmith_config import langsmith_config
@@ -17,9 +17,8 @@ class Fact(BaseModel):
     original_text: str
     confidence: float
 
-class FactList(BaseModel):
-    """List of extracted facts"""
-    facts: List[dict] = Field(description="List of factual claims extracted from text")
+class AnalyzerOutput(BaseModel):
+    facts: List[dict] = Field(description="List of extracted facts")
 
 class FactAnalyzer:
     """Extract factual claims with LangSmith tracing"""
@@ -27,19 +26,19 @@ class FactAnalyzer:
     def __init__(self, config):
         self.config = config
 
-        # Create LLM with ENFORCED JSON mode using .bind()
+        # ✅ PROPER JSON MODE - OpenAI guarantees valid JSON
         self.llm = ChatOpenAI(
             model="gpt-4o-mini",
             temperature=0
         ).bind(response_format={"type": "json_object"})
 
-        # Simple parser - no fixing needed with proper JSON mode
-        self.parser = JsonOutputParser(pydantic_object=FactList)
+        # ✅ SIMPLE PARSER - No fixing needed
+        self.parser = JsonOutputParser(pydantic_object=AnalyzerOutput)
 
         # Load prompts during initialization
         self.prompts = get_analyzer_prompts()
 
-        fact_logger.log_component_start("FactAnalyzer", model="gpt-4o-mini", json_mode=True)
+        fact_logger.log_component_start("FactAnalyzer", model="gpt-4o-mini")
 
     @traceable(
         name="analyze_facts",
@@ -62,15 +61,15 @@ class FactAnalyzer:
         )
 
         try:
-            # Create prompt that EXPLICITLY mentions JSON (required for JSON mode)
-            system_prompt = self.prompts["system"] + "\n\nIMPORTANT: You MUST return valid JSON only. No markdown, no code blocks, just pure JSON."
+            # ✅ EXPLICIT JSON MENTION
+            system_prompt = self.prompts["system"] + "\n\nIMPORTANT: You MUST return valid JSON only. No other text."
 
             prompt = ChatPromptTemplate.from_messages([
                 ("system", system_prompt),
                 ("user", self.prompts["user"] + "\n\n{format_instructions}\n\nReturn your response as valid JSON.")
             ])
 
-            # Add format instructions
+            # ✅ FORMAT INSTRUCTIONS
             prompt_with_format = prompt.partial(
                 format_instructions=self.parser.get_format_instructions()
             )
@@ -78,34 +77,29 @@ class FactAnalyzer:
             # Get callbacks for LangSmith
             callbacks = langsmith_config.get_callbacks("fact_analyzer")
 
-            # Create chain: prompt -> llm (with JSON mode) -> parser
+            # ✅ CLEAN CHAIN - No manual JSON parsing needed
             chain = prompt_with_format | self.llm | self.parser
 
             fact_logger.logger.debug("🔗 Invoking LangChain with enforced JSON mode")
 
-            # Safe callback usage
-            config = {}
-            if callbacks and hasattr(callbacks, 'handlers'):
-                config = {"callbacks": callbacks.handlers}
-
-            result = await chain.ainvoke(
+            response = await chain.ainvoke(
                 {
                     "text": parsed_content['text'],
                     "sources": self._format_sources(parsed_content['links'])
                 },
-                config=config
+                config={"callbacks": callbacks.handlers}
             )
 
-            # result is now a dict with parsed JSON
-            facts_data = result.get('facts', [])
+            # ✅ DIRECT DICT ACCESS - Parser returns clean dict
+            facts_data = response
 
             # Convert to Fact objects
             facts = []
-            for i, fact_data in enumerate(facts_data):
+            for i, fact_data in enumerate(facts_data.get('facts', [])):
                 fact = Fact(
                     id=f"fact{i+1}",
-                    statement=fact_data.get('statement', ''),
-                    sources=fact_data.get('sources', []),
+                    statement=fact_data['statement'],
+                    sources=fact_data['sources'],
                     original_text=fact_data.get('original_text', ''),
                     confidence=fact_data.get('confidence', 1.0)
                 )
@@ -132,19 +126,8 @@ class FactAnalyzer:
 
         except Exception as e:
             fact_logger.log_component_error("FactAnalyzer", e)
-
-            # Log the full error for debugging
-            fact_logger.logger.error(
-                f"Full error details: {str(e)}",
-                extra={
-                    "error_type": type(e).__name__,
-                    "text_preview": parsed_content['text'][:200]
-                }
-            )
             raise
 
     def _format_sources(self, links: List[dict]) -> str:
         """Format source links for the prompt"""
-        if not links:
-            return "No sources provided"
         return "\n".join([f"- {link['url']}" for link in links])

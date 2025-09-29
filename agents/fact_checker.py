@@ -1,11 +1,10 @@
 # agents/fact_checker.py
 from langchain.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
+from langchain.output_parsers import JsonOutputParser
 from langsmith import traceable
 from pydantic import BaseModel, Field
 import time
-from typing import Dict, List
-from langchain_core.output_parsers import JsonOutputParser
 from prompts.checker_prompts import get_checker_prompts
 from utils.logger import fact_logger
 from utils.langsmith_config import langsmith_config
@@ -20,12 +19,11 @@ class FactCheckResult(BaseModel):
     reasoning: str
 
 class CheckerOutput(BaseModel):
-    """Structured output for fact checking"""
-    match_score: float = Field(description="Match score between 0.0 and 1.0")
-    assessment: str = Field(description="Assessment of the fact's accuracy")
-    discrepancies: str = Field(description="Any discrepancies found or 'none'")
-    confidence: float = Field(description="Confidence in this evaluation between 0.0 and 1.0")
-    reasoning: str = Field(description="Step-by-step reasoning for the evaluation")
+    match_score: float = Field(description="Accuracy score from 0.0 to 1.0")
+    assessment: str = Field(description="Detailed assessment of the fact")
+    discrepancies: str = Field(description="Any discrepancies found")
+    confidence: float = Field(description="Confidence in this evaluation")
+    reasoning: str = Field(description="Step-by-step reasoning")
 
 class FactChecker:
     """Compare facts against source excerpts with LangSmith tracing"""
@@ -33,19 +31,19 @@ class FactChecker:
     def __init__(self, config):
         self.config = config
 
-        # Create LLM with ENFORCED JSON mode using .bind()
+        # ✅ PROPER JSON MODE - OpenAI guarantees valid JSON
         self.llm = ChatOpenAI(
-            model="gpt-4o",  # Stronger model for accuracy
+            model="gpt-4o",
             temperature=0
         ).bind(response_format={"type": "json_object"})
 
-        # Simple parser - no fixing needed with proper JSON mode
+        # ✅ SIMPLE PARSER - No fixing needed
         self.parser = JsonOutputParser(pydantic_object=CheckerOutput)
 
         # Load prompts
         self.prompts = get_checker_prompts()
 
-        fact_logger.log_component_start("FactChecker", model="gpt-4o", json_mode=True)
+        fact_logger.log_component_start("FactChecker", model="gpt-4o")
 
     @traceable(
         name="check_fact_accuracy",
@@ -137,37 +135,33 @@ class FactChecker:
         # Format excerpts into readable text for the prompt
         excerpts_text = self._format_excerpts(excerpts)
 
-        # Create prompt that EXPLICITLY mentions JSON (required for JSON mode)
-        system_prompt = self.prompts["system"] + "\n\nIMPORTANT: You MUST return valid JSON only. No markdown, no code blocks, just pure JSON."
+        # ✅ EXPLICIT JSON MENTION
+        system_prompt = self.prompts["system"] + "\n\nIMPORTANT: You MUST return valid JSON only. No other text."
 
         prompt = ChatPromptTemplate.from_messages([
             ("system", system_prompt),
             ("user", self.prompts["user"] + "\n\n{format_instructions}\n\nReturn your response as valid JSON.")
         ])
 
-        # Add format instructions
+        # ✅ FORMAT INSTRUCTIONS
         prompt_with_format = prompt.partial(
             format_instructions=self.parser.get_format_instructions()
         )
 
         callbacks = langsmith_config.get_callbacks(f"fact_checker_{fact.id}")
 
-        # Create chain: prompt -> llm (with JSON mode) -> parser
+        # ✅ CLEAN CHAIN - No manual JSON parsing needed
         chain = prompt_with_format | self.llm | self.parser
-
-        config = {}
-        if callbacks and hasattr(callbacks, 'handlers'):
-            config = {"callbacks": callbacks.handlers}
 
         response = await chain.ainvoke(
             {
                 "fact": fact.statement,
                 "excerpts": excerpts_text
             },
-            config=config
+            config={"callbacks": callbacks.handlers}
         )
 
-        # response is now a dict with parsed JSON
+        # ✅ DIRECT DICT ACCESS - Parser returns clean dict
         return FactCheckResult(
             fact_id=fact.id,
             statement=fact.statement,
