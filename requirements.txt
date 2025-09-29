@@ -1,0 +1,10 @@
+langchain
+langchain-openai  # or langchain-anthropic
+langsmith  # LangSmith integration
+playwright
+beautifulsoup4
+lxml
+flask
+python-dotenv
+pydantic
+loguru  # Better logging than standard logging
