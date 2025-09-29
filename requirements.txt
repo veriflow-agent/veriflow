@@ -1,7 +1,12 @@
-# LangChain and AI
-langchain==0.1.0
-langchain-openai==0.0.5
-langsmith==0.0.77
+# LangChain Core and LangSmith - Version 0.3.x compatible
+langchain-core>=0.3.0,<0.4.0
+langsmith>=0.2.0,<0.3.0
+
+# LangChain Main Package - Version 0.3.x
+langchain>=0.3.0,<0.4.0
+
+# LangChain OpenAI Integration - Version 0.3.x  
+langchain-openai>=0.3.0,<0.4.0
 
 # Web scraping
 playwright==1.41.0
@@ -13,7 +18,7 @@ flask==3.0.0
 
 # Utilities
 python-dotenv==1.0.0
-pydantic==2.5.3
+pydantic>=2.5.0,<3.0.0
 loguru==0.7.2
 
 # For Railway deployment
