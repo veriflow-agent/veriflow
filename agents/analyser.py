@@ -1,10 +1,11 @@
-# agents/analyzer.py
+# agents/analyser.py
 from langchain.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 from langsmith import traceable
 from pydantic import BaseModel, Field
 from typing import List
 import time
+import json
 from prompts.analyzer_prompts import get_analyzer_prompts
 from utils.logger import fact_logger
 from utils.langsmith_config import langsmith_config
@@ -16,15 +17,26 @@ class Fact(BaseModel):
     original_text: str
     confidence: float
 
+class FactList(BaseModel):
+    """List of extracted facts"""
+    facts: List[dict] = Field(description="List of factual claims extracted from text")
+
 class FactAnalyzer:
     """Extract factual claims with LangSmith tracing"""
 
     def __init__(self, config):
         self.config = config
+
+        # Create base LLM WITHOUT model_kwargs for JSON
         self.llm = ChatOpenAI(
             model="gpt-4o-mini",
-            temperature=0,
-            model_kwargs={"response_format": {"type": "json_object"}}
+            temperature=0.1
+        )
+
+        # Use with_structured_output for proper JSON handling
+        self.structured_llm = self.llm.with_structured_output(
+            FactList,
+            method="json_mode"
         )
 
         # Load prompts during initialization
@@ -53,40 +65,59 @@ class FactAnalyzer:
         )
 
         try:
+            # Create prompt that explicitly asks for JSON
+            system_prompt = self.prompts["system"] + "\n\nIMPORTANT: Return ONLY valid JSON with the exact structure shown. No markdown, no code blocks."
+
             prompt = ChatPromptTemplate.from_messages([
-                ("system", self._get_system_prompt()),
-                ("user", self._get_user_prompt())
+                ("system", system_prompt),
+                ("user", self.prompts["user"])
             ])
 
-            # Get callbacks for LangSmith
+            # Get callbacks for LangSmith (safe to call)
             callbacks = langsmith_config.get_callbacks("fact_analyzer")
 
-            # Create chain with tracing
-            chain = prompt | self.llm
+            # Create chain with structured output
+            chain = prompt | self.structured_llm
 
-            fact_logger.logger.debug("🔗 Invoking LangChain with callbacks")
+            fact_logger.logger.debug("🔗 Invoking LangChain with structured output")
+
+            # Safe callback usage
+            config = {}
+            if callbacks and hasattr(callbacks, 'handlers'):
+                config = {"callbacks": callbacks.handlers}
 
             result = await chain.ainvoke(
                 {
                     "text": parsed_content['text'],
                     "sources": self._format_sources(parsed_content['links'])
                 },
-                config={"callbacks": callbacks.handlers}
+                config=config
             )
 
-            # Parse result
-            import json
-            facts_data = json.loads(result.content)
+            # result is now a FactList Pydantic object
+            facts_data = result.facts if hasattr(result, 'facts') else result.get('facts', [])
 
             # Convert to Fact objects
             facts = []
-            for i, fact_data in enumerate(facts_data.get('facts', [])):
+            for i, fact_data in enumerate(facts_data):
+                # Handle both dict and object formats
+                if isinstance(fact_data, dict):
+                    statement = fact_data.get('statement', '')
+                    sources = fact_data.get('sources', [])
+                    original_text = fact_data.get('original_text', '')
+                    confidence = fact_data.get('confidence', 1.0)
+                else:
+                    statement = fact_data.statement
+                    sources = fact_data.sources
+                    original_text = fact_data.original_text
+                    confidence = fact_data.confidence
+
                 fact = Fact(
                     id=f"fact{i+1}",
-                    statement=fact_data['statement'],
-                    sources=fact_data['sources'],
-                    original_text=fact_data.get('original_text', ''),
-                    confidence=fact_data.get('confidence', 1.0)
+                    statement=statement,
+                    sources=sources,
+                    original_text=original_text,
+                    confidence=confidence
                 )
                 facts.append(fact)
 
@@ -111,16 +142,19 @@ class FactAnalyzer:
 
         except Exception as e:
             fact_logger.log_component_error("FactAnalyzer", e)
+
+            # Log the full error for debugging
+            fact_logger.logger.error(
+                f"Full error details: {str(e)}",
+                extra={
+                    "error_type": type(e).__name__,
+                    "text_preview": parsed_content['text'][:200]
+                }
+            )
             raise
-
-    def _get_system_prompt(self) -> str:
-        """Get system prompt from loaded prompts"""
-        return self.prompts["system"]
-
-    def _get_user_prompt(self) -> str:
-        """Get user prompt template from loaded prompts"""
-        return self.prompts["user"]
 
     def _format_sources(self, links: List[dict]) -> str:
         """Format source links for the prompt"""
+        if not links:
+            return "No sources provided"
         return "\n".join([f"- {link['url']}" for link in links])

@@ -18,7 +18,7 @@ class Highlighter:
         self.config = config
         self.llm = ChatOpenAI(
             model="gpt-4o-mini",
-            temperature=0
+            temperature=0.1
         )
 
         # Load prompts

@@ -2,8 +2,9 @@
 from langchain.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 from langsmith import traceable
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import time
+from typing import Dict, List
 from prompts.checker_prompts import get_checker_prompts
 from utils.logger import fact_logger
 from utils.langsmith_config import langsmith_config
@@ -17,14 +18,30 @@ class FactCheckResult(BaseModel):
     confidence: float
     reasoning: str
 
+class CheckerOutput(BaseModel):
+    """Structured output for fact checking"""
+    match_score: float = Field(description="Match score between 0.0 and 1.0")
+    assessment: str = Field(description="Assessment of the fact's accuracy")
+    discrepancies: str = Field(description="Any discrepancies found or 'none'")
+    confidence: float = Field(description="Confidence in this evaluation between 0.0 and 1.0")
+    reasoning: str = Field(description="Step-by-step reasoning for the evaluation")
+
 class FactChecker:
     """Compare facts against source excerpts with LangSmith tracing"""
 
     def __init__(self, config):
         self.config = config
+
+        # Create base LLM
         self.llm = ChatOpenAI(
             model="gpt-4o",  # Stronger model for accuracy
-            temperature=0
+            temperature=0.1
+        )
+
+        # Use with_structured_output for proper JSON handling
+        self.structured_llm = self.llm.with_structured_output(
+            CheckerOutput,
+            method="json_mode"
         )
 
         # Load prompts
@@ -122,33 +139,40 @@ class FactChecker:
         # Format excerpts into readable text for the prompt
         excerpts_text = self._format_excerpts(excerpts)
 
+        # Create prompt with explicit JSON instruction
+        system_prompt = self.prompts["system"] + "\n\nIMPORTANT: Return ONLY valid JSON with the exact structure shown. No markdown, no code blocks."
+
         prompt = ChatPromptTemplate.from_messages([
-            ("system", self.prompts["system"]),
+            ("system", system_prompt),
             ("user", self.prompts["user"])
         ])
 
         callbacks = langsmith_config.get_callbacks(f"fact_checker_{fact.id}")
-        chain = prompt | self.llm
+
+        # Create chain with structured output
+        chain = prompt | self.structured_llm
+
+        config = {}
+        if callbacks and hasattr(callbacks, 'handlers'):
+            config = {"callbacks": callbacks.handlers}
 
         response = await chain.ainvoke(
             {
                 "fact": fact.statement,
                 "excerpts": excerpts_text
             },
-            config={"callbacks": callbacks.handlers}
+            config=config
         )
 
-        import json
-        data = json.loads(response.content)
-
+        # response is now a CheckerOutput Pydantic object
         return FactCheckResult(
             fact_id=fact.id,
             statement=fact.statement,
-            match_score=data['match_score'],
-            assessment=data['assessment'],
-            discrepancies=data['discrepancies'],
-            confidence=data['confidence'],
-            reasoning=data['reasoning']
+            match_score=response.match_score,
+            assessment=response.assessment,
+            discrepancies=response.discrepancies,
+            confidence=response.confidence,
+            reasoning=response.reasoning
         )
 
     def _format_excerpts(self, excerpts: list) -> str:
