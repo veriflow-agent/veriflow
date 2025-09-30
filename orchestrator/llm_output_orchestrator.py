@@ -1,6 +1,6 @@
-# orchestrator/llm_output_orchestrator.py
+# llm_output_orchestrator.py
 """
-Improved Orchestrator - Global Source Checking Approach
+Orchestrator - Global Source Checking Approach
 
 Key Changes:
 1. Extract facts without source mapping
@@ -19,11 +19,13 @@ from utils.file_manager import FileManager
 from utils.logger import fact_logger
 from utils.langsmith_config import langsmith_config
 
+# Import your existing components
 from agents.browserless_scraper import FactCheckScraper
 from agents.fact_checker import FactChecker
+
 from agents.analyser import FactAnalyzer
 
-class ImprovedFactCheckOrchestrator:
+class FactCheckOrchestrator:
     """Orchestrator using global source checking approach"""
 
     def __init__(self, config):
@@ -37,7 +39,7 @@ class ImprovedFactCheckOrchestrator:
         fact_logger.log_component_start("FactCheckOrchestrator")
 
     @traceable(
-        name="improved_fact_check_pipeline",
+        name="fact_check_pipeline",
         run_type="chain",
         tags=["orchestrator", "global-checking"]
     )
@@ -59,7 +61,7 @@ class ImprovedFactCheckOrchestrator:
             parsed = await self._traced_parse(html_content)
 
             # Step 2: Extract facts AND get all source URLs
-            fact_logger.logger.info("🔍 Step 2: Extracting facts (improved method)")
+            fact_logger.logger.info("🔍 Step 2: Extracting facts")
             facts, all_source_urls = await self.analyzer.analyze(parsed)
 
             fact_logger.logger.info(
@@ -106,7 +108,7 @@ class ImprovedFactCheckOrchestrator:
             duration = time.time() - start_time
 
             fact_logger.logger.info(
-                f"🎉 IMPROVED SESSION COMPLETE: {session_id}",
+                f"🎉 SESSION COMPLETE: {session_id}",
                 extra={
                     "session_id": session_id,
                     "duration": duration,
@@ -128,7 +130,7 @@ class ImprovedFactCheckOrchestrator:
             }
 
         except Exception as e:
-            fact_logger.log_component_error("ImprovedFactCheckOrchestrator", e, session_id=session_id)
+            fact_logger.log_component_error("FactCheckOrchestrator", e, session_id=session_id)
             raise
 
     def _combine_all_content(self, scraped_content: dict) -> str:

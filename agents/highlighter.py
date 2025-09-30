@@ -52,15 +52,15 @@ class Highlighter:
             f"🔦 Highlighting excerpts for {fact.id}",
             extra={
                 "fact_id": fact.id,
-                "statement": fact.statement[:100],
-                "num_sources": len(fact.sources)
+                "statement": fact.statement[:100]
             }
         )
 
-        for url in fact.sources:
-            if url not in scraped_content:
+        # Global approach: check fact against ALL scraped sources
+        for url in scraped_content.keys():
+            if url not in scraped_content or not scraped_content[url]:
                 fact_logger.logger.warning(
-                    f"⚠️ Source not found in scraped content: {url}",
+                    f"⚠️ Source not found or empty: {url}",
                     extra={"fact_id": fact.id, "url": url}
                 )
                 continue
