@@ -6,7 +6,6 @@ from langsmith import traceable
 from pydantic import BaseModel, Field
 from typing import List
 import time
-import math
 
 from prompts.analyzer_prompts import get_analyzer_prompts
 from utils.logger import fact_logger
