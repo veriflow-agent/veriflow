@@ -1,4 +1,4 @@
-# llm_output_orchestrator.py
+# orchestrator/llm_output_orchestrator.py
 """
 Orchestrator - Global Source Checking Approach
 
@@ -111,6 +111,9 @@ class FactCheckOrchestrator:
                     f"✅ Fact {fact.id} checked: score={check_result.match_score:.2f}"
                 )
 
+            # 🔄 NEW: Sort facts by score (lowest first)
+            results.sort(key=lambda x: x.match_score)
+
             # Generate summary
             summary = self._generate_summary(results)
             duration = time.time() - start_time
@@ -128,7 +131,7 @@ class FactCheckOrchestrator:
 
             return {
                 "session_id": session_id,
-                "facts": [r.dict() for r in results],
+                "facts": [r.dict() for r in results],  # Now sorted by lowest score first
                 "summary": summary,
                 "duration": duration,
                 "total_sources_scraped": len(unique_urls),

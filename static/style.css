@@ -1,3 +1,5 @@
+/* static/style.css - Improved version with priority styling for low-scoring facts */
+
 /* Reset and Base Styles */
 * {
     margin: 0;
@@ -12,6 +14,7 @@
     --success-color: #10b981;
     --warning-color: #f59e0b;
     --danger-color: #ef4444;
+    --critical-color: #dc2626; /* New: For very low scores */
     --bg-color: #f8fafc;
     --card-bg: #ffffff;
     --text-primary: #1e293b;
@@ -295,7 +298,12 @@ section {
     font-size: 1.5rem;
 }
 
-/* Fact Card */
+/* ✅ NEW: Sorting Header Styles */
+.sorting-header {
+    margin-bottom: 1.5rem;
+}
+
+/* Fact Card - Enhanced with Priority Styling */
 .fact-card {
     background: var(--bg-color);
     border-left: 4px solid var(--border-color);
@@ -303,6 +311,7 @@ section {
     margin-bottom: 1.5rem;
     border-radius: 8px;
     transition: all 0.2s;
+    position: relative;
 }
 
 .fact-card:hover {
@@ -310,6 +319,7 @@ section {
     transform: translateX(4px);
 }
 
+/* ✅ ENHANCED: Priority-based styling */
 .fact-card.accurate {
     border-left-color: var(--success-color);
 }
@@ -322,6 +332,35 @@ section {
     border-left-color: var(--danger-color);
 }
 
+/* ✅ NEW: Critical facts get special treatment */
+.fact-card.questionable[data-score*="0.0"],
+.fact-card.questionable[data-score*="0.1"],
+.fact-card.questionable[data-score*="0.2"],
+.fact-card.questionable[data-score*="0.3"],
+.fact-card.questionable[data-score*="0.4"] {
+    border-left-color: var(--critical-color);
+    border-left-width: 6px;
+    background: linear-gradient(90deg, rgba(220, 38, 38, 0.05) 0%, var(--bg-color) 10%);
+}
+
+/* ✅ NEW: Pulse animation for very low scores */
+.fact-card.questionable[data-score*="0.0"],
+.fact-card.questionable[data-score*="0.1"],
+.fact-card.questionable[data-score*="0.2"] {
+    animation: criticalPulse 3s ease-in-out infinite;
+}
+
+@keyframes criticalPulse {
+    0%, 100% { 
+        border-left-color: var(--critical-color);
+        box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.7);
+    }
+    50% { 
+        border-left-color: #b91c1c;
+        box-shadow: 0 0 0 8px rgba(220, 38, 38, 0);
+    }
+}
+
 .fact-header {
     display: flex;
     justify-content: space-between;
@@ -332,6 +371,7 @@ section {
 .fact-id {
     font-weight: 700;
     color: var(--primary-color);
+    font-size: 1.1rem; /* Slightly larger for better visibility */
 }
 
 .fact-score {
@@ -363,10 +403,24 @@ section {
     color: white;
 }
 
+/* ✅ NEW: Critical score badge */
+.score-badge.critical {
+    background: var(--critical-color);
+    color: white;
+    font-weight: 700;
+    animation: badgePulse 2s ease-in-out infinite;
+}
+
+@keyframes badgePulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+}
+
 .fact-statement {
     font-size: 1.05rem;
     margin-bottom: 1rem;
     line-height: 1.6;
+    font-weight: 500; /* Slightly bolder for better readability */
 }
 
 .fact-assessment {
@@ -399,6 +453,19 @@ section {
     color: #92400e;
     text-transform: uppercase;
     margin-bottom: 0.5rem;
+}
+
+/* ✅ NEW: Priority Order Indicator */
+.priority-order {
+    position: absolute;
+    top: -8px;
+    right: 15px;
+    background: var(--primary-color);
+    color: white;
+    padding: 0.25rem 0.5rem;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 600;
 }
 
 /* LangSmith Link */

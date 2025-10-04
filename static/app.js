@@ -1,4 +1,4 @@
-// Fact Checker App - JavaScript
+// static/app.js - Improved version with lowest-score-first sorting
 
 // DOM Elements
 const htmlInput = document.getElementById('htmlInput');
@@ -99,7 +99,7 @@ function displayResults(results) {
         document.getElementById('langsmithUrl').href = results.langsmith_url;
     }
 
-    // Display facts
+    // Display facts (already sorted by backend - lowest score first)
     displayFacts(results.facts);
 
     // Scroll to results
@@ -108,6 +108,7 @@ function displayResults(results) {
 
 /**
  * Display individual facts
+ * ✅ IMPROVED: Facts now come pre-sorted from backend (lowest score first)
  */
 function displayFacts(facts) {
     factsList.innerHTML = '';
@@ -117,25 +118,42 @@ function displayFacts(facts) {
         return;
     }
 
-    facts.forEach(fact => {
-        const factCard = createFactCard(fact);
+    // Add a header to explain the sorting
+    const sortingHeader = document.createElement('div');
+    sortingHeader.className = 'sorting-header';
+    sortingHeader.innerHTML = `
+        <div style="background: #f8f9fa; padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem; border-left: 4px solid #6c757d;">
+            <div style="font-weight: 600; margin-bottom: 0.5rem; color: #495057;">
+                📊 Facts ordered by accuracy score (most questionable first)
+            </div>
+            <div style="font-size: 0.9rem; color: #6c757d;">
+                Review the lowest-scoring facts first to identify potential issues
+            </div>
+        </div>
+    `;
+    factsList.appendChild(sortingHeader);
+
+    // Display facts in the order they come from backend (lowest score first)
+    facts.forEach((fact, index) => {
+        const factCard = createFactCard(fact, index);
         factsList.appendChild(factCard);
     });
 }
 
 /**
  * Create a fact card element
+ * ✅ IMPROVED: Added priority indicator for low-scoring facts
  */
-function createFactCard(fact) {
+function createFactCard(fact, index) {
     const card = document.createElement('div');
     card.className = `fact-card ${getScoreClass(fact.match_score)}`;
 
     const scoreEmoji = getScoreEmoji(fact.match_score);
-    const scoreColor = getScoreColor(fact.match_score);
+    const priorityIndicator = getPriorityIndicator(fact.match_score, index);
 
     card.innerHTML = `
         <div class="fact-header">
-            <span class="fact-id">${fact.fact_id}</span>
+            <span class="fact-id">${priorityIndicator}${fact.fact_id}</span>
             <div class="fact-score">
                 <span class="score-badge ${getScoreClass(fact.match_score)}">
                     ${scoreEmoji} ${fact.match_score.toFixed(2)}
@@ -172,6 +190,20 @@ function createFactCard(fact) {
     `;
 
     return card;
+}
+
+/**
+ * ✅ NEW: Get priority indicator for facts
+ */
+function getPriorityIndicator(score, index) {
+    if (score < 0.5) {
+        return '🚨 '; // Critical - very low score
+    } else if (score < 0.7) {
+        return '⚠️ '; // Warning - questionable
+    } else if (index < 3) {
+        return '📍 '; // Focus - among first few facts to review
+    }
+    return ''; // No special indicator
 }
 
 /**
