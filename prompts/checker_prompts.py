@@ -19,10 +19,10 @@ SCORING CRITERIA (0.0 - 1.0):
 - 0.75 = Acceptable: mostly accurate but missing minor context
 - 0.7 = Fair: same basic fact but some nuance differences
 
-**QUESTIONABLE (0.5-0.69):**
+**QUESTIONABLE - MINOR CORRECTIONS NEEDED (0.5-0.69):**
 - 0.65 = Partial: contains truth but incomplete or ambiguous
-- 0.6 = Limited: partially true but missing important context
-- 0.55 = Weak: mostly accurate but misleading presentation
+- 0.6 = Minor data corrections needed: correct fact but wrong currency, units, or spelling variations
+- 0.55 = Spelling/formatting variations: same fact with different spellings, accents, or number formats
 - 0.5 = Half-truth: mixes accurate and questionable elements
 
 **POOR MATCHES (0.3-0.49):**
@@ -43,30 +43,40 @@ WHAT TO CHECK:
 4. **Nuance**: Does the fact capture or miss important nuances?
 5. **Context**: Would the fact mislead without additional context?
 
+SPECIAL CONSIDERATIONS FOR MINOR VARIATIONS (Score 0.5-0.6):
+- **Spelling variations**: "Palacio Viçosa" vs "Palacio Vicosa" (accents, diacritical marks)
+- **Currency differences**: "$22 million" vs "£22 million" (same amount, different currency symbol)
+- **Unit variations**: "meters" vs "metres", "22 million" vs "22 mln"
+- **Name formatting**: "New York City" vs "NYC", "US" vs "United States"
+- **Number formatting**: "1,000" vs "1000", "22.5%" vs "22.5 percent"
+- **Date formatting**: "March 2017" vs "03/2017" vs "2017-03"
+
+These should be scored 0.5-0.6 as they represent the SAME FACT with minor data corrections needed, not wrong information.
+
 RED FLAGS THAT LOWER SCORES:
-- Numbers or dates that don't match exactly
+- Numbers or dates that don't match exactly (unless minor formatting differences)
 - Missing important qualifiers ("approximately", "up to", "as of [date]")
 - Omitted context that changes the meaning
 - Overgeneralization or oversimplification
 - Cherry-picking that ignores contradicting information
 - Absolute statements when sources are more cautious
 
-BE STRICT BUT FAIR:
-- Even small discrepancies in numbers/dates should reduce the score
-- Missing context matters even if the core fact is technically true
-- Consider whether an average reader would be misled
-- Note ANY issues, no matter how minor
-- If you're uncertain, explain why in your reasoning
+BE SMART ABOUT VARIATIONS:
+- Recognize when variations represent the same underlying fact
+- Distinguish between meaningful discrepancies and formatting differences
+- Consider cultural/regional variations in spelling and formatting
+- Don't penalize heavily for accent marks, currency symbols, or unit abbreviations
+- Focus on whether the core factual content is accurate
 
 IMPORTANT: You MUST return valid JSON only. No other text or explanations.
 
 Return ONLY valid JSON in this exact format:
 {{
-  "match_score": 0.95,
-  "assessment": "The fact accurately represents the source. The hotel opening date of March 2017 is stated exactly as written in the source documents. The claim is direct, unambiguous, and fully supported.",
-  "discrepancies": "none",
-  "confidence": 0.90,
-  "reasoning": "The source explicitly states 'officially opened its doors in March 2017', which directly supports the claimed fact. No ambiguity, no missing context, no contradictions found. High confidence in this assessment."
+  "match_score": 0.60,
+  "assessment": "The fact is essentially correct but contains minor data variations. The hotel name 'Palacio Viçosa' in the claim matches 'Palacio Vicosa' in the source (accent mark difference), and the amount matches but with different currency symbols. Core facts are accurate.",
+  "discrepancies": "Minor spelling variation (accent mark) and currency symbol difference ($22 mln vs £22 million), but same underlying facts",
+  "confidence": 0.85,
+  "reasoning": "The source mentions the same hotel with slight spelling variation and same financial amount with different currency notation. These are formatting differences, not factual errors. The core information is correct but needs minor data corrections."
 }}"""
 
 USER_PROMPT = """Evaluate the accuracy of this claimed fact against the source excerpts.
@@ -81,13 +91,17 @@ INSTRUCTIONS:
 1. Compare the fact against ALL provided excerpts
 2. Check for accuracy of specifics (dates, numbers, names)
 3. Identify any discrepancies, missing context, or oversimplifications
-4. Assign a precise match score (0.0-1.0) based on the criteria
-5. Provide clear assessment explaining your score
-6. List any discrepancies found (or "none" if perfect match)
-7. Rate your confidence in this evaluation (0.0-1.0)
-8. Show your step-by-step reasoning
+4. **IMPORTANT**: Distinguish between meaningful errors and minor variations (spelling, currency symbols, formatting)
+5. Assign a precise match score (0.0-1.0) based on the criteria
+6. For minor variations (0.5-0.6 range), explain they represent the same fact with corrections needed
+7. Provide clear assessment explaining your score
+8. List any discrepancies found (or "none" if perfect match)
+9. Rate your confidence in this evaluation (0.0-1.0)
+10. Show your step-by-step reasoning
 
-Be thorough, precise, and strict. Return valid JSON only.
+**Remember**: Minor spelling differences, accent marks, currency symbols, and formatting variations should score 0.5-0.6, NOT lower scores. They represent the same fact needing minor corrections.
+
+Be thorough, precise, but smart about variations. Return valid JSON only.
 
 {format_instructions}
 
