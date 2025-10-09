@@ -1,4 +1,4 @@
-// static/app.js - Improved version with lowest-score-first sorting
+// static/app.js - Updated with pipeline detection
 
 // DOM Elements
 const htmlInput = document.getElementById('htmlInput');
@@ -37,7 +37,7 @@ async function handleCheckFacts() {
 
     // Validation
     if (!htmlContent) {
-        showError('Please paste some HTML content to check.');
+        showError('Please paste some content to check.');
         return;
     }
 
@@ -45,7 +45,10 @@ async function handleCheckFacts() {
     setLoadingState(true);
     hideAllSections();
     showSection(statusSection);
-    updateStatus('Processing...', 'Analyzing your content and checking sources');
+
+    // ✅ NEW: Detect and show pipeline
+    const detectedFormat = detectInputFormat(htmlContent);
+    updateStatusWithPipeline(detectedFormat);
 
     try {
         // Call API
@@ -67,6 +70,11 @@ async function handleCheckFacts() {
         const results = await response.json();
         currentResults = results;
 
+        // ✅ NEW: Log which pipeline was used
+        if (results.input_format) {
+            console.log(`Pipeline used: ${results.methodology} (Format: ${results.input_format})`);
+        }
+
         // Show results
         displayResults(results);
 
@@ -75,6 +83,38 @@ async function handleCheckFacts() {
         showError(error.message || 'An unexpected error occurred. Please try again.');
     } finally {
         setLoadingState(false);
+    }
+}
+
+/**
+ * ✅ NEW: Detect input format (client-side preview)
+ */
+function detectInputFormat(content) {
+    const htmlPattern = /<\s*[a-z][^>]*>/i;
+    const linkPattern = /<\s*a\s+[^>]*href\s*=/i;
+
+    if (htmlPattern.test(content) || linkPattern.test(content)) {
+        return 'html';
+    }
+    return 'text';
+}
+
+/**
+ * ✅ NEW: Update status message with pipeline info
+ */
+function updateStatusWithPipeline(format) {
+    const statusMessage = document.getElementById('statusMessage');
+
+    if (format === 'html') {
+        updateStatus(
+            'Processing with LLM Output Pipeline...', 
+            '🔗 Detected HTML with links - Verifying against provided sources'
+        );
+    } else {
+        updateStatus(
+            'Processing with Web Search Pipeline...', 
+            '🔍 Detected plain text - Searching and verifying from web sources'
+        );
     }
 }
 
@@ -94,6 +134,30 @@ function displayResults(results) {
     document.getElementById('sessionId').textContent = results.session_id;
     document.getElementById('duration').textContent = `${results.duration.toFixed(1)}s`;
 
+    // ✅ NEW: Show pipeline info in summary
+    const pipelineInfo = document.createElement('div');
+    pipelineInfo.className = 'pipeline-info';
+    pipelineInfo.style.cssText = 'margin-top: 1rem; padding: 0.75rem; background: rgba(255,255,255,0.15); border-radius: 6px; font-size: 0.9rem;';
+
+    const pipelineName = results.methodology === 'web_search_verification' 
+        ? '🔍 Web Search Pipeline' 
+        : '🔗 LLM Output Pipeline';
+
+    pipelineInfo.innerHTML = `
+        <strong>Pipeline Used:</strong> ${pipelineName}
+        ${results.statistics ? `
+            <div style="margin-top: 0.5rem; font-size: 0.85rem; opacity: 0.9;">
+                Searches: ${results.statistics.total_searches || 0} • 
+                Sources Found: ${results.statistics.total_sources_found || 0} • 
+                Credible: ${results.statistics.credible_sources_identified || 0} • 
+                Scraped: ${results.statistics.sources_scraped || 0}
+            </div>
+        ` : ''}
+    `;
+
+    const summaryCard = document.querySelector('.summary-card');
+    summaryCard.appendChild(pipelineInfo);
+
     // Update LangSmith link
     if (results.langsmith_url) {
         document.getElementById('langsmithUrl').href = results.langsmith_url;
@@ -108,7 +172,6 @@ function displayResults(results) {
 
 /**
  * Display individual facts
- * ✅ IMPROVED: Facts now come pre-sorted from backend (lowest score first)
  */
 function displayFacts(facts) {
     factsList.innerHTML = '';
@@ -118,7 +181,7 @@ function displayFacts(facts) {
         return;
     }
 
-    // Add a header to explain the sorting
+    // Add sorting header
     const sortingHeader = document.createElement('div');
     sortingHeader.className = 'sorting-header';
     sortingHeader.innerHTML = `
@@ -133,7 +196,7 @@ function displayFacts(facts) {
     `;
     factsList.appendChild(sortingHeader);
 
-    // Display facts in the order they come from backend (lowest score first)
+    // Display facts in order from backend
     facts.forEach((fact, index) => {
         const factCard = createFactCard(fact, index);
         factsList.appendChild(factCard);
@@ -142,7 +205,6 @@ function displayFacts(facts) {
 
 /**
  * Create a fact card element
- * ✅ IMPROVED: Added priority indicator for low-scoring facts
  */
 function createFactCard(fact, index) {
     const card = document.createElement('div');
@@ -193,17 +255,17 @@ function createFactCard(fact, index) {
 }
 
 /**
- * ✅ NEW: Get priority indicator for facts
+ * Get priority indicator for facts
  */
 function getPriorityIndicator(score, index) {
     if (score < 0.5) {
-        return '🚨 '; // Critical - very low score
+        return '🚨 ';
     } else if (score < 0.7) {
-        return '⚠️ '; // Warning - questionable
+        return '⚠️ ';
     } else if (index < 3) {
-        return '📍 '; // Focus - among first few facts to review
+        return '📍 ';
     }
-    return ''; // No special indicator
+    return '';
 }
 
 /**
@@ -222,15 +284,6 @@ function getScoreEmoji(score) {
     if (score >= 0.9) return '✅';
     if (score >= 0.7) return '⚠️';
     return '❌';
-}
-
-/**
- * Get color for score
- */
-function getScoreColor(score) {
-    if (score >= 0.9) return 'var(--success-color)';
-    if (score >= 0.7) return 'var(--warning-color)';
-    return 'var(--danger-color)';
 }
 
 /**
@@ -342,7 +395,7 @@ function escapeHtml(text) {
  * Initialize app
  */
 function init() {
-    console.log('Fact Checker initialized');
+    console.log('Fact Checker initialized - Dual pipeline support enabled');
     htmlInput.focus();
 
     // Check health endpoint
@@ -357,6 +410,18 @@ async function checkHealth() {
         const response = await fetch('/api/health');
         const data = await response.json();
         console.log('Health check:', data);
+
+        // ✅ NEW: Show pipeline availability in console
+        if (data.pipelines) {
+            console.log('Available pipelines:', {
+                'LLM Output (with links)': data.pipelines.llm_output,
+                'Web Search (plain text)': data.pipelines.web_search
+            });
+        }
+
+        if (!data.pipelines?.web_search) {
+            console.warn('⚠️ Web Search pipeline not available (TAVILY_API_KEY not configured)');
+        }
     } catch (error) {
         console.warn('Health check failed:', error);
     }
