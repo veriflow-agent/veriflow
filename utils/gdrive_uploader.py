@@ -326,6 +326,54 @@ def example_list_uploaded_files():
     print(f"\n📂 Found {len(files)} files in Google Drive")
 
 
+def upload_session_to_drive(session_id: str, file_path: str) -> Optional[str]:
+    """
+    Convenience function to upload a fact-check session file to Google Drive
+
+    This is the function that file_manager.py imports and calls.
+
+    Args:
+        session_id: Unique session identifier
+        file_path: Path to the session report file
+
+    Returns:
+        File ID if successful, None otherwise
+    """
+    try:
+        # Initialize uploader
+        uploader = GoogleDriveUploader()
+
+        # Authenticate (will use existing token.json if available)
+        if not uploader.authenticate():
+            logger.error(f"❌ Authentication failed for session {session_id}")
+            return None
+
+        # Upload the file with a descriptive name
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        drive_filename = f"FactCheck_Session_{session_id}_{timestamp}.txt"
+
+        logger.info(f"📤 Uploading session {session_id} to Google Drive...")
+
+        file_id = uploader.upload_file(
+            file_path=file_path,
+            drive_filename=drive_filename,
+            mime_type="text/plain"
+        )
+
+        if file_id:
+            logger.info(f"✅ Session {session_id} uploaded successfully!")
+            logger.info(f"🔗 File ID: {file_id}")
+        else:
+            logger.error(f"❌ Upload failed for session {session_id}")
+
+        return file_id
+
+    except Exception as e:
+        logger.error(f"❌ Error uploading session {session_id}: {e}")
+        return None
+
+
 if __name__ == "__main__":
     # Run authentication test
     print("🧪 Testing Google Drive Authentication\n")
