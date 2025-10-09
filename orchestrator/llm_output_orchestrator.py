@@ -1,12 +1,11 @@
 # orchestrator/llm_output_orchestrator.py
 """
-Orchestrator - Global Source Checking Approach
+Orchestrator - Fixed Version with Semantic Excerpt Extraction
 
-Key Changes:
-1. Extract facts without source mapping
-2. Collect ALL source URLs
-3. Scrape ALL sources once
-4. Check each fact against ALL scraped content
+KEY FIXES:
+1. Uses Highlighter for semantic excerpt extraction (instead of keyword matching)
+2. Removed the broken _find_relevant_excerpts_in_text() method
+3. Increased context window for highlighter
 """
 
 from langsmith import traceable
@@ -22,11 +21,11 @@ from utils.langsmith_config import langsmith_config
 # Import your existing components
 from agents.browserless_scraper import FactCheckScraper
 from agents.fact_checker import FactChecker
-
 from agents.analyser import FactAnalyzer
+from agents.highlighter import Highlighter  # ✅ NEW: Import highlighter
 
 class FactCheckOrchestrator:
-    """Orchestrator using global source checking approach"""
+    """Orchestrator using global source checking approach with semantic excerpt extraction"""
 
     def __init__(self, config):
         self.config = config
@@ -34,6 +33,7 @@ class FactCheckOrchestrator:
         self.analyzer = FactAnalyzer(config) 
         self.scraper = FactCheckScraper(config)
         self.checker = FactChecker(config)
+        self.highlighter = Highlighter(config)  # ✅ NEW: Initialize highlighter
         self.file_manager = FileManager()
 
         fact_logger.log_component_start("FactCheckOrchestrator")
@@ -41,11 +41,11 @@ class FactCheckOrchestrator:
     @traceable(
         name="fact_check_pipeline",
         run_type="chain",
-        tags=["orchestrator", "global-checking"]
+        tags=["orchestrator", "global-checking", "semantic-extraction"]
     )
     async def process(self, html_content: str) -> dict:
         """
-        Improved pipeline: scrape all sources, check all facts against all content
+        Improved pipeline with semantic excerpt extraction
         """
         session_id = self.file_manager.create_session()
         start_time = time.time()
@@ -69,7 +69,7 @@ class FactCheckOrchestrator:
             )
 
             # Step 3: Scrape ALL sources once (no duplicates)
-            unique_urls = list(set(all_source_urls))  # Remove duplicates
+            unique_urls = list(set(all_source_urls))
             fact_logger.logger.info(f"🌐 Step 3: Scraping {len(unique_urls)} unique sources")
 
             all_scraped_content = await self.scraper.scrape_urls_for_facts(unique_urls)
@@ -79,39 +79,43 @@ class FactCheckOrchestrator:
                 f"✅ Successfully scraped {successful_scrapes}/{len(unique_urls)} sources"
             )
 
-            # Step 4: Combine all scraped content into one large text corpus
-            combined_content = self._combine_all_content(all_scraped_content)
-            fact_logger.logger.info(
-                f"📚 Combined content: {len(combined_content)} characters from all sources"
-            )
-
-            # Step 4.5: Saving session content
-            fact_logger.logger.info("💾 Step 4.5: Saving session content")
+            # Step 4: Save session content
+            fact_logger.logger.info("💾 Step 4: Saving session content")
             self.file_manager.save_session_content(
                 session_id, 
                 all_scraped_content,
                 facts
             )
 
-            # Step 5: Check each fact against the combined content
-            fact_logger.logger.info(f"⚖️ Step 5: Checking {len(facts)} facts against all sources")
+            # Step 5: Check each fact using SEMANTIC excerpt extraction
+            fact_logger.logger.info(
+                f"⚖️ Step 5: Checking {len(facts)} facts with semantic excerpt extraction"
+            )
             results = []
 
             for i, fact in enumerate(facts, 1):
                 fact_logger.logger.info(f"Processing fact {i}/{len(facts)}: {fact.id}")
 
-                # Create excerpts from the combined content for this fact
-                excerpts = await self._extract_relevant_excerpts(fact, combined_content, all_scraped_content)
+                # ✅ NEW: Use highlighter for semantic excerpt extraction
+                excerpts = await self._extract_relevant_excerpts_semantic(
+                    fact, 
+                    all_scraped_content
+                )
 
                 # Check accuracy using your existing fact checker
                 check_result = await self.checker.check_fact(fact, excerpts)
                 results.append(check_result)
 
                 fact_logger.logger.info(
-                    f"✅ Fact {fact.id} checked: score={check_result.match_score:.2f}"
+                    f"✅ Fact {fact.id} checked: score={check_result.match_score:.2f}",
+                    extra={
+                        "fact_id": fact.id,
+                        "score": check_result.match_score,
+                        "excerpts_found": sum(len(v) for v in excerpts.values())
+                    }
                 )
 
-            # 🔄 NEW: Sort facts by score (lowest first)
+            # Sort facts by score (lowest first)
             results.sort(key=lambda x: x.match_score)
 
             # Generate summary
@@ -131,12 +135,12 @@ class FactCheckOrchestrator:
 
             return {
                 "session_id": session_id,
-                "facts": [r.dict() for r in results],  # Now sorted by lowest score first
+                "facts": [r.dict() for r in results],
                 "summary": summary,
                 "duration": duration,
                 "total_sources_scraped": len(unique_urls),
                 "successful_scrapes": successful_scrapes,
-                "methodology": "global_source_checking",
+                "methodology": "global_source_checking_semantic",
                 "langsmith_url": f"https://smith.langchain.com/projects/p/{langsmith_config.project_name}"
             }
 
@@ -144,86 +148,43 @@ class FactCheckOrchestrator:
             fact_logger.log_component_error("FactCheckOrchestrator", e, session_id=session_id)
             raise
 
-    def _combine_all_content(self, scraped_content: dict) -> str:
-        """Combine all scraped content into one large text for global fact checking"""
-        combined = []
-
-        for url, content in scraped_content.items():
-            if content:  # Only include successfully scraped content
-                combined.append(f"=== SOURCE: {url} ===\n{content}\n")
-
-        return "\n".join(combined)
-
-    async def _extract_relevant_excerpts(self, fact, combined_content: str, scraped_content: dict) -> dict:
+    async def _extract_relevant_excerpts_semantic(
+        self, 
+        fact, 
+        scraped_content: dict
+    ) -> dict:
         """
-        Extract relevant excerpts for a fact from the combined content
-        This replaces the highlighter component for the global approach
+        ✅ NEW: Extract relevant excerpts using semantic understanding via Highlighter
+
+        This replaces the old keyword-based extraction with proper semantic matching.
+
+        Args:
+            fact: The Fact object to find excerpts for
+            scraped_content: Dict of {url: content}
+
+        Returns:
+            Dict of {url: [excerpts]} with semantically matched excerpts
         """
-        # Simple implementation: search for relevant passages in the combined content
-        # You could make this more sophisticated using semantic search, etc.
+        fact_logger.logger.info(
+            f"🔦 Using semantic extraction for {fact.id}",
+            extra={"fact_id": fact.id, "num_sources": len(scraped_content)}
+        )
 
-        excerpts_by_url = {}
+        # Use the highlighter's semantic extraction for each source
+        excerpts_by_url = await self.highlighter.highlight(fact, scraped_content)
 
-        # For each source, find excerpts that mention the fact
-        for url, content in scraped_content.items():
-            if not content:
-                continue
-
-            # Simple keyword-based extraction (you could improve this)
-            relevant_excerpts = self._find_relevant_excerpts_in_text(fact.statement, content)
-
-            if relevant_excerpts:
-                excerpts_by_url[url] = relevant_excerpts
+        # Log extraction results
+        total_excerpts = sum(len(excerpts) for excerpts in excerpts_by_url.values())
+        fact_logger.logger.info(
+            f"✂️ Semantic extraction complete: {total_excerpts} excerpts from {len(excerpts_by_url)} sources",
+            extra={
+                "fact_id": fact.id,
+                "total_excerpts": total_excerpts,
+                "sources_with_matches": len(excerpts_by_url)
+            }
+        )
 
         return excerpts_by_url
-
-    def _find_relevant_excerpts_in_text(self, fact_statement: str, content: str) -> list:
-        """
-        Simple keyword-based excerpt extraction
-        In a production system, you'd want more sophisticated semantic matching
-        """
-        import re
-
-        # Extract key terms from the fact
-        key_terms = self._extract_key_terms(fact_statement)
-
-        excerpts = []
-        paragraphs = content.split('\n\n')
-
-        for para in paragraphs:
-            if len(para.strip()) < 50:  # Skip very short paragraphs
-                continue
-
-            # Count how many key terms appear in this paragraph
-            matches = sum(1 for term in key_terms if term.lower() in para.lower())
-
-            if matches >= 1:  # At least one key term found
-                relevance = min(0.9, matches * 0.3)  # Simple relevance scoring
-                excerpts.append({
-                    'quote': para.strip(),
-                    'relevance': relevance
-                })
-
-        return excerpts[:3]  # Return top 3 most relevant excerpts
-
-    def _extract_key_terms(self, fact_statement: str) -> list:
-        """Extract key terms from a fact statement for matching"""
-        import re
-
-        # Remove common words and extract meaningful terms
-        common_words = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'is', 'was', 'are', 'were', 'has', 'have', 'had'}
-
-        # Extract words, numbers, and dates
-        words = re.findall(r'\b\w+\b', fact_statement.lower())
-
-        # Filter out common words and keep meaningful terms
-        key_terms = [word for word in words if word not in common_words and len(word) > 2]
-
-        # Also extract numbers and dates
-        numbers = re.findall(r'\b\d+\b', fact_statement)
-        dates = re.findall(r'\b(january|february|march|april|may|june|july|august|september|october|november|december|\d{4})\b', fact_statement.lower())
-
-        return key_terms + numbers + dates
 
     @traceable(name="parse_html", run_type="tool")
     async def _traced_parse(self, html_content: str) -> dict:

@@ -43,7 +43,7 @@ class FactAnalyzer:
         self.tokens_per_char = 0.25     # Rough estimate: 4 chars per token
         self.max_input_chars = int(self.max_input_tokens / self.tokens_per_char)
 
-        fact_logger.log_component_start("FactAnalyzer", model="gpt-4o-mini")
+        fact_logger.log_component_start("FactAnalyzer", model="gpt-4o")
 
     @traceable(
         name="analyze_facts",
