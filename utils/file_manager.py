@@ -16,8 +16,22 @@ class FileManager:
         session_path.mkdir(exist_ok=True)
         return session_id
 
-    def save_session_content(self, session_id: str, all_scraped_content: dict, facts: list = None):
-        """Save all scraped content with metadata in one comprehensive file"""
+    def save_session_content(
+        self, 
+        session_id: str, 
+        all_scraped_content: dict, 
+        facts: list = None,
+        upload_to_drive: bool = False
+    ):
+        """
+        Save all scraped content with metadata in one comprehensive file
+
+        Args:
+            session_id: Unique session identifier
+            all_scraped_content: Dict of scraped content
+            facts: List of facts being verified
+            upload_to_drive: If True, upload the report to Google Drive after saving
+        """
         session_path = self.temp_dir / session_id
         filepath = session_path / "session_report.txt"
 
@@ -75,6 +89,36 @@ class FileManager:
             f.write("END OF SESSION REPORT\n")
             f.write("=" * 100 + "\n")
 
+        # ✅ NEW: Upload to Google Drive if requested
+        if upload_to_drive:
+            try:
+                from utils.gdrive_uploader import upload_session_to_drive
+                from utils.logger import fact_logger
+
+                fact_logger.logger.info(f"📤 Uploading session {session_id} to Google Drive")
+                file_id = upload_session_to_drive(session_id, str(filepath))
+
+                if file_id:
+                    fact_logger.logger.info(
+                        f"✅ Session {session_id} uploaded to Google Drive",
+                        extra={"session_id": session_id, "file_id": file_id}
+                    )
+                else:
+                    fact_logger.logger.warning(
+                        f"⚠️ Failed to upload session {session_id} to Google Drive"
+                    )
+            except ImportError:
+                from utils.logger import fact_logger
+                fact_logger.logger.warning(
+                    "⚠️ Google Drive uploader not available. Install google-api-python-client"
+                )
+            except Exception as e:
+                from utils.logger import fact_logger
+                fact_logger.logger.error(
+                    f"❌ Error uploading to Google Drive: {e}",
+                    extra={"session_id": session_id, "error": str(e)}
+                )
+
     def _extract_publication_name(self, url: str) -> str:
         """Extract a readable publication name from URL"""
         from urllib.parse import urlparse
@@ -111,7 +155,7 @@ class FileManager:
         return url.replace('https://', '').replace('http://', '')\
                   .replace('/', '_').replace(':', '_')[:50]
 
-    
+
 
     def cleanup_old_sessions(self, days: int = 1):
         """Remove sessions older than specified days"""
