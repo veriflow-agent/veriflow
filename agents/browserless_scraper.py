@@ -1,14 +1,13 @@
 # agents/browserless_scraper.py
 """
-Fact-Checking Web Scraper with Railway Browserless Integration
-Structure-preserving content extraction for source verification
+✅ FIXED Railway Browserless Scraper with Persistent Sessions & Replica Support
 
 KEY FEATURES:
-- Railway Browserless optimization for cloud deployment
-- Structure-preserving extraction (headings and paragraphs)
-- Ad/tracker blocking for faster scraping
-- Domain-specific timeout handling
-- Comprehensive error handling and logging
+- ✅ Proper Railway Browserless connection using chromium.connect()
+- ✅ Persistent browser sessions (browsers stay open during run)
+- ✅ Support for Railway replicas with load distribution
+- ✅ Browser pooling for connection reuse
+- ✅ Fallback to local Playwright if Railway unavailable
 """
 
 import asyncio
@@ -23,28 +22,34 @@ from utils.logger import fact_logger
 
 class FactCheckScraper:
     """
-    Web scraper optimized for fact-checking source extraction
-    Uses Railway Browserless for cloud deployment
+    ✅ OPTIMIZED: Railway Browserless scraper with persistent sessions
     """
 
     def __init__(self, config):
         self.config = config
-        self.max_concurrent = 2  # Limit concurrent scrapes
 
-        # Railway Browserless endpoint detection
-        self.browserless_endpoint = os.getenv('BROWSER_PLAYWRIGHT_ENDPOINT_PRIVATE')
+        # ✅ Railway Browserless configuration
+        self.is_railway = os.getenv('RAILWAY_ENVIRONMENT') is not None
+        self.browserless_endpoint = os.getenv('BROWSER_PLAYWRIGHT_ENDPOINT_PRIVATE') or os.getenv('BROWSER_PLAYWRIGHT_ENDPOINT')
+        self.browserless_token = os.getenv('BROWSER_TOKEN')
 
-        if self.browserless_endpoint:
-            fact_logger.logger.info(f"🔗 Browserless endpoint: {self.browserless_endpoint[:50]}...")
-        else:
-            fact_logger.logger.warning("❌ No BROWSER_PLAYWRIGHT_ENDPOINT_PRIVATE found")
+        # ✅ NEW: Support for Railway replicas
+        self.replica_id = os.getenv('RAILWAY_REPLICA_ID', '0')
 
-        # Timeout configuration
+        # ✅ NEW: Browser pool for persistent sessions
+        self.max_concurrent = 3  # Number of concurrent browsers
+        self.playwright = None
+        self.browser_pool: List[Browser] = []
+        self.current_browser_index = 0
+        self.session_active = False
+        self._session_lock = asyncio.Lock()
+
+        # Timeouts
         self.default_timeout = 30000  # 30 seconds
-        self.slow_timeout = 60000     # 60 seconds for slow sites
+        self.slow_timeout = 60000     # 60 seconds
         self.browser_launch_timeout = 30000
 
-        # Domain-specific timeouts for known slow sites
+        # Domain-specific timeouts
         self.domain_timeouts = {
             'nytimes.com': 45000,
             'washingtonpost.com': 45000,
@@ -52,9 +57,9 @@ class FactCheckScraper:
             'forbes.com': 40000,
         }
 
-        # Human-like timing
-        self.load_wait_time = 2.0      # Wait after page load
-        self.interaction_delay = 0.5   # Delay between actions
+        # Timing
+        self.load_wait_time = 2.0
+        self.interaction_delay = 0.5
 
         # Stats tracking
         self.stats = {
@@ -63,106 +68,247 @@ class FactCheckScraper:
             "failed_scrapes": 0,
             "avg_scrape_time": 0.0,
             "total_processing_time": 0.0,
-            "structure_preserving_success": 0,
+            "browser_reuses": 0,
+            "railway_browserless": bool(self.browserless_endpoint),
+            "replica_id": self.replica_id,
         }
+
+        if self.browserless_endpoint:
+            fact_logger.logger.info(f"🚂 Railway Browserless endpoint configured: {self.browserless_endpoint[:50]}...")
+            fact_logger.logger.info(f"🔢 Running on replica: {self.replica_id}")
+        else:
+            fact_logger.logger.info("🔧 Local Playwright mode")
 
         fact_logger.log_component_start(
             "FactCheckScraper",
-            browserless=bool(self.browserless_endpoint)
+            browserless=bool(self.browserless_endpoint),
+            replica_id=self.replica_id,
+            browser_pool_size=self.max_concurrent
         )
 
     async def scrape_urls_for_facts(self, urls: List[str]) -> Dict[str, str]:
         """
-        Scrape multiple URLs and return clean content
-        Returns: {url: scraped_content}
+        ✅ OPTIMIZED: Scrape multiple URLs with persistent browser sessions
+
+        Args:
+            urls: List of URLs to scrape
+
+        Returns:
+            Dict mapping URL to scraped content
         """
         if not urls:
             fact_logger.logger.warning("No URLs provided for scraping")
             return {}
 
         fact_logger.logger.info(
-            f"Starting scrape of {len(urls)} URLs",
-            extra={"url_count": len(urls)}
+            f"🚀 Starting scrape of {len(urls)} URLs with persistent browsers",
+            extra={"url_count": len(urls), "replica_id": self.replica_id}
         )
 
-        # Process URLs with concurrency control
-        semaphore = asyncio.Semaphore(self.max_concurrent)
-        tasks = [
-            self._scrape_with_semaphore(semaphore, url)
-            for url in urls
-        ]
+        # ✅ Initialize browser pool ONCE for all URLs
+        await self._initialize_browser_pool()
 
-        results_list = await asyncio.gather(*tasks, return_exceptions=True)
+        try:
+            # Process URLs with concurrency control
+            semaphore = asyncio.Semaphore(self.max_concurrent)
+            tasks = [
+                self._scrape_with_semaphore(semaphore, url, i % self.max_concurrent)
+                for i, url in enumerate(urls)
+            ]
 
-        # Convert to dict and handle exceptions
-        results = {}
-        for url, result in zip(urls, results_list):
-            if isinstance(result, Exception):
-                fact_logger.logger.error(
-                    f"Scraping failed for {url}: {result}",
-                    extra={"url": url, "error": str(result)}
+            results_list = await asyncio.gather(*tasks, return_exceptions=True)
+
+            # Convert to dict and handle exceptions
+            results = {}
+            for url, result in zip(urls, results_list):
+                if isinstance(result, Exception):
+                    fact_logger.logger.error(
+                        f"❌ Scraping failed for {url}: {result}",
+                        extra={"url": url, "error": str(result)}
+                    )
+                    results[url] = ""
+                else:
+                    results[url] = result
+
+            successful = len([v for v in results.values() if v])
+            self.stats["browser_reuses"] += max(0, len(urls) - self.max_concurrent)
+
+            fact_logger.logger.info(
+                f"✅ Scraping complete: {successful}/{len(urls)} successful",
+                extra={
+                    "successful": successful, 
+                    "total": len(urls),
+                    "browser_reuses": self.stats["browser_reuses"]
+                }
+            )
+
+            return results
+
+        finally:
+            # ✅ IMPORTANT: Keep browsers alive for next batch
+            # Browsers will be closed only when close() is called explicitly
+            pass
+
+    async def _initialize_browser_pool(self):
+        """
+        ✅ NEW: Initialize persistent browser pool ONCE
+        """
+        if self.session_active:
+            return  # Already initialized
+
+        async with self._session_lock:
+            if self.session_active:
+                return
+
+            fact_logger.logger.info("🚀 Initializing browser pool...")
+
+            # Start Playwright once
+            self.playwright = await async_playwright().start()
+
+            # Create browser pool
+            for i in range(self.max_concurrent):
+                try:
+                    browser = await self._create_single_browser(i)
+                    if browser:
+                        self.browser_pool.append(browser)
+                        fact_logger.logger.info(f"✅ Browser {i+1}/{self.max_concurrent} ready")
+                except Exception as e:
+                    fact_logger.logger.error(f"❌ Failed to create browser {i+1}: {e}")
+
+            if len(self.browser_pool) > 0:
+                self.session_active = True
+                fact_logger.logger.info(
+                    f"🎯 Browser pool initialized: {len(self.browser_pool)}/{self.max_concurrent} browsers ready"
                 )
-                results[url] = ""
             else:
-                results[url] = result
+                raise Exception("Failed to initialize browser pool")
 
-        successful = len([v for v in results.values() if v])
-        fact_logger.logger.info(
-            f"Scraping complete: {successful}/{len(urls)} successful",
-            extra={"successful": successful, "total": len(urls)}
-        )
+    async def _create_single_browser(self, browser_index: int) -> Optional[Browser]:
+        """
+        ✅ FIXED: Create browser using proper Railway Browserless connection
+        """
+        try:
+            # ✅ CRITICAL: Use chromium.connect() for Railway Browserless
+            if self.browserless_endpoint:
+                try:
+                    # Build connection URL with token
+                    connect_url = self.browserless_endpoint
 
-        return results
+                    # Add token if not already in URL
+                    if self.browserless_token and 'token=' not in connect_url:
+                        separator = '&' if '?' in connect_url else '?'
+                        connect_url = f"{connect_url}{separator}token={self.browserless_token}"
 
-    async def _scrape_with_semaphore(self, semaphore: asyncio.Semaphore, url: str) -> str:
-        """Scrape single URL with concurrency control"""
+                    fact_logger.logger.info(
+                        f"🔗 Browser {browser_index}: Connecting to Railway Browserless",
+                        extra={"endpoint": connect_url[:50] + "...", "replica_id": self.replica_id}
+                    )
+
+                    # ✅ THIS IS THE CORRECT METHOD for Railway Browserless
+                    browser = await self.playwright.chromium.connect(
+                        connect_url,
+                        timeout=self.browser_launch_timeout
+                    )
+
+                    fact_logger.logger.info(f"✅ Browser {browser_index} connected to Railway Browserless")
+                    return browser
+
+                except Exception as browserless_error:
+                    fact_logger.logger.warning(
+                        f"⚠️ Railway Browserless connection failed for browser {browser_index}: {browserless_error}"
+                    )
+                    fact_logger.logger.info(f"🔄 Falling back to local Playwright...")
+
+            # ✅ Fallback to local Playwright
+            fact_logger.logger.info(f"🔧 Browser {browser_index}: Using local Playwright")
+            browser = await self.playwright.chromium.launch(
+                headless=True,
+                args=[
+                    "--no-sandbox",
+                    "--disable-setuid-sandbox",
+                    "--disable-dev-shm-usage",
+                    "--disable-web-security",
+                    "--disable-blink-features=AutomationControlled",
+                    "--disable-features=VizDisplayCompositor"
+                ]
+            )
+            return browser
+
+        except Exception as e:
+            fact_logger.logger.error(f"❌ Failed to create browser {browser_index}: {e}")
+            return None
+
+    async def _scrape_with_semaphore(self, semaphore: asyncio.Semaphore, url: str, browser_index: int) -> str:
+        """
+        ✅ OPTIMIZED: Scrape using persistent browser from pool
+        """
         async with semaphore:
-            return await self._scrape_single_url(url)
+            return await self._scrape_single_url(url, browser_index)
 
-    async def _scrape_single_url(self, url: str) -> str:
-        """Scrape a single URL with structure preservation"""
+    async def _scrape_single_url(self, url: str, browser_index: int) -> str:
+        """
+        ✅ OPTIMIZED: Scrape single URL using persistent browser
+        """
         start_time = time.time()
         self.stats["total_scraped"] += 1
 
+        # Select browser from pool
+        if browser_index >= len(self.browser_pool):
+            browser_index = 0
+
+        browser = self.browser_pool[browser_index]
+        page = None
+
         try:
-            content = await self._extract_content_with_structure(url)
+            # Get domain-specific timeout
+            domain = urlparse(url).netloc.lower()
+            timeout = self.domain_timeouts.get(domain, self.default_timeout)
+
+            fact_logger.logger.debug(
+                f"🎯 Browser {browser_index}: Scraping {url}",
+                extra={"url": url, "browser_index": browser_index, "timeout_ms": timeout}
+            )
+
+            # ✅ Create new page in existing browser (not a new browser!)
+            page = await browser.new_page()
+
+            # Configure page
+            await self._configure_page_optimizations(page)
+
+            # Navigate
+            await page.goto(url, wait_until="domcontentloaded", timeout=timeout)
+            await asyncio.sleep(self.load_wait_time)
+
+            # Extract content
+            content = await self._extract_structured_content(page)
 
             if content and len(content.strip()) > 100:
-                # Success
+                content = self._clean_content(content)
                 processing_time = time.time() - start_time
+
                 self.stats["successful_scrapes"] += 1
                 self.stats["total_processing_time"] += processing_time
                 self.stats["avg_scrape_time"] = (
                     self.stats["total_processing_time"] / self.stats["total_scraped"]
                 )
 
-                # Count structural elements
-                heading_count = len([
-                    line for line in content.split('\n') 
-                    if line.strip().startswith('#')
-                ])
-
-                if heading_count > 0:
-                    self.stats["structure_preserving_success"] += 1
-
                 fact_logger.logger.info(
-                    f"Successfully scraped: {url}",
+                    f"✅ Successfully scraped: {url}",
                     extra={
                         "url": url,
                         "duration": processing_time,
                         "content_length": len(content),
-                        "headings": heading_count
+                        "browser_index": browser_index
                     }
                 )
 
                 return content
             else:
-                # Content too short
                 processing_time = time.time() - start_time
                 self.stats["failed_scrapes"] += 1
 
                 fact_logger.logger.warning(
-                    f"Insufficient content from {url}",
+                    f"⚠️ Insufficient content from {url}",
                     extra={"url": url, "duration": processing_time}
                 )
 
@@ -173,126 +319,22 @@ class FactCheckScraper:
             self.stats["failed_scrapes"] += 1
 
             fact_logger.logger.error(
-                f"Scraping error for {url}: {e}",
+                f"❌ Scraping error for {url}: {e}",
                 extra={"url": url, "duration": processing_time, "error": str(e)}
             )
 
             return ""
 
-    async def _extract_content_with_structure(self, url: str) -> str:
-        """
-        Extract content while preserving structure (headings, paragraphs)
-        Uses Railway Browserless if available, local Playwright otherwise
-        """
-        playwright = None
-        browser = None
-        page = None
-
-        try:
-            # Get domain-specific timeout
-            domain = urlparse(url).netloc.lower()
-            timeout = self.domain_timeouts.get(domain, self.default_timeout)
-
-            fact_logger.logger.debug(
-                f"Extracting content from {url}",
-                extra={"url": url, "timeout_ms": timeout, "domain": domain}
-            )
-
-            # Initialize Playwright
-            playwright = await async_playwright().start()
-
-            # 🔧 FIXED: Correct Railway Browserless connection
-            if self.browserless_endpoint:
-                # ✅ PROPER CONNECTION METHOD for Railway Browserless
-                try:
-                    fact_logger.logger.info(f"Connecting to Railway Browserless: {self.browserless_endpoint}")
-
-                    # Use chromium.connect() with the Railway endpoint
-                    browser = await playwright.chromium.connect(
-                        self.browserless_endpoint,
-                        timeout=self.browser_launch_timeout
-                    )
-                    fact_logger.logger.debug("✅ Successfully connected to Railway Browserless")
-
-                except Exception as browserless_error:
-                    fact_logger.logger.warning(
-                        f"❌ Railway Browserless connection failed: {browserless_error}"
-                    )
-                    fact_logger.logger.info("🔄 Falling back to local browser")
-                    browser = None
-
-            # Fallback to local browser if Railway connection fails
-            if not browser:
-                fact_logger.logger.info("🚀 Launching local browser")
-                browser = await playwright.chromium.launch(
-                    headless=True,
-                    args=[
-                        "--no-sandbox",
-                        "--disable-setuid-sandbox",
-                        "--disable-dev-shm-usage",
-                        "--disable-web-security",
-                        "--disable-blink-features=AutomationControlled",
-                        "--disable-features=VizDisplayCompositor"
-                    ]
-                )
-                fact_logger.logger.debug("✅ Local browser launched successfully")
-
-            # Create page with optimizations
-            page = await browser.new_page()
-            await self._configure_page_optimizations(page)
-
-            # Navigate to page
-            fact_logger.logger.debug(f"Navigating to: {url}")
-            await page.goto(url, wait_until="domcontentloaded", timeout=timeout)
-
-            # Wait for content to stabilize
-            await asyncio.sleep(self.load_wait_time)
-
-            # Extract structured content
-            content = await self._extract_structured_content(page)
-
-            if content and len(content.strip()) > 100:
-                # Clean content
-                content = self._clean_content(content)
-                fact_logger.logger.debug(
-                    f"Extraction successful: {len(content)} chars"
-                )
-                return content
-            else:
-                fact_logger.logger.warning("Extraction yielded insufficient content")
-                return ""
-
-        except Exception as e:
-            fact_logger.logger.error(f"Content extraction failed: {e}")
-            return ""
-
         finally:
-            # Clean up resources
+            # ✅ IMPORTANT: Close page but keep browser alive!
             if page:
                 try:
-                    await asyncio.wait_for(page.close(), timeout=5.0)
+                    await page.close()
                 except Exception as e:
                     fact_logger.logger.debug(f"Page close error (non-critical): {e}")
 
-            if browser:
-                try:
-                    await asyncio.wait_for(browser.close(), timeout=5.0)
-                except Exception as e:
-                    fact_logger.logger.debug(f"Browser close error (non-critical): {e}")
-
-            if playwright:
-                try:
-                    await playwright.stop()
-                except Exception as e:
-                    fact_logger.logger.debug(f"Playwright stop error (non-critical): {e}")
-
     async def _configure_page_optimizations(self, page: Page):
-        """
-        Configure page with Railway Browserless optimizations
-        - Block ads and trackers
-        - Speed up animations
-        - Set realistic headers
-        """
+        """Configure page with optimizations"""
         try:
             # Set realistic headers
             await page.set_extra_http_headers({
@@ -309,7 +351,7 @@ class FactCheckScraper:
 
             # Inject optimization scripts
             await page.add_init_script("""
-                // Disable image loading for speed
+                // Disable image loading
                 Object.defineProperty(HTMLImageElement.prototype, 'src', {
                     set: function() { /* blocked */ },
                     get: function() { return ''; }
@@ -336,21 +378,17 @@ class FactCheckScraper:
             """)
 
         except Exception as e:
-            fact_logger.logger.warning(f"Page configuration partially failed: {e}")
+            fact_logger.logger.warning(f"⚠️ Page configuration partially failed: {e}")
 
     async def _block_resources(self, route):
-        """
-        Block unnecessary resources for faster loading
-        - Images, media, fonts, stylesheets
-        - Tracking and advertising domains
-        """
+        """Block unnecessary resources for faster loading"""
         resource_type = route.request.resource_type
         url = route.request.url
 
-        # Block resource types that slow down scraping
+        # Block resource types
         if resource_type in ['image', 'media', 'font', 'stylesheet']:
             await route.abort()
-        # Block known tracking and ad domains
+        # Block tracking domains
         elif any(domain in url for domain in [
             'google-analytics', 'googletagmanager', 'facebook.com',
             'doubleclick', 'adsystem', 'amazon-adsystem', 'googlesyndication',
@@ -361,37 +399,30 @@ class FactCheckScraper:
             await route.continue_()
 
     async def _extract_structured_content(self, page: Page) -> str:
-        """
-        Extract content while preserving structure (headings, paragraphs)
-        Returns markdown-style formatted text
-        """
+        """Extract content while preserving structure"""
         try:
             fact_logger.logger.debug("Extracting structured content")
 
             content_data = await page.evaluate("""
                 () => {
-                    // Convert HTML to structured text preserving headings and paragraphs
+                    // Extract text while preserving structure
                     function htmlToStructuredText(element, level = 0) {
                         if (!element) return '';
 
                         let result = '';
 
-                        // Handle text nodes
                         if (element.nodeType === Node.TEXT_NODE) {
                             const text = element.textContent.trim();
                             return text ? text + ' ' : '';
                         }
 
-                        // Handle element nodes
                         if (element.nodeType === Node.ELEMENT_NODE) {
                             const tagName = element.tagName.toLowerCase();
 
-                            // Skip non-content elements
                             if (['script', 'style', 'noscript', 'head', 'meta', 'link'].includes(tagName)) {
                                 return '';
                             }
 
-                            // Handle different content elements
                             switch (tagName) {
                                 case 'h1':
                                 case 'h2':
@@ -429,22 +460,6 @@ class FactCheckScraper:
                                     }
                                     break;
 
-                                case 'strong':
-                                case 'b':
-                                    const strongText = element.textContent.trim();
-                                    if (strongText) {
-                                        result += '**' + strongText + '**';
-                                    }
-                                    break;
-
-                                case 'em':
-                                case 'i':
-                                    const emText = element.textContent.trim();
-                                    if (emText) {
-                                        result += '*' + emText + '*';
-                                    }
-                                    break;
-
                                 default:
                                     for (let child of element.childNodes) {
                                         result += htmlToStructuredText(child, level + 1);
@@ -456,7 +471,7 @@ class FactCheckScraper:
                         return result;
                     }
 
-                    // Try to find main content container
+                    // Try main content selectors
                     const mainSelectors = [
                         'main',
                         'article',
@@ -507,77 +522,32 @@ class FactCheckScraper:
                         }
                     }
 
-                    // Fallback: extract headings and following paragraphs
-                    if (!bestContent || bestContent.length < 300) {
-                        const headings = document.querySelectorAll('h1, h2, h3, h4, h5, h6');
-                        let fallbackContent = '';
-
-                        for (const heading of headings) {
-                            const headingText = heading.textContent.trim();
-                            if (headingText && headingText.length > 5) {
-                                const headingLevel = parseInt(heading.tagName[1]);
-                                const prefix = '#'.repeat(headingLevel);
-                                fallbackContent += '\\n\\n' + prefix + ' ' + headingText + '\\n';
-
-                                let nextElement = heading.nextElementSibling;
-                                let count = 0;
-
-                                while (nextElement && count < 3) {
-                                    if (nextElement.tagName === 'P') {
-                                        const pText = nextElement.textContent.trim();
-                                        if (pText.length > 30) {
-                                            fallbackContent += pText + '\\n\\n';
-                                            count++;
-                                        }
-                                    }
-                                    nextElement = nextElement.nextElementSibling;
-                                }
-                            }
-                        }
-
-                        if (fallbackContent.length > bestContent.length) {
-                            bestContent = fallbackContent;
-                        }
-                    }
-
-                    return {
-                        content: bestContent,
-                        contentLength: bestContent.length,
-                        headingCount: (bestContent.match(/^#+\\s/gm) || []).length,
-                        wordCount: bestContent.split(/\\s+/).filter(w => w.length > 0).length
-                    };
+                    return bestContent;
                 }
             """)
 
-            content = content_data.get('content', '').strip()
+            content = content_data if content_data else ""
 
             fact_logger.logger.debug(
                 "Structure extraction complete",
-                extra={
-                    "content_length": content_data.get('contentLength', 0),
-                    "headings": content_data.get('headingCount', 0),
-                    "words": content_data.get('wordCount', 0)
-                }
+                extra={"content_length": len(content)}
             )
 
             return content
 
         except Exception as e:
-            fact_logger.logger.error(f"Structure extraction error: {e}")
+            fact_logger.logger.error(f"❌ Structure extraction error: {e}")
             return ""
 
     def _clean_content(self, content: str) -> str:
-        """
-        Clean extracted content while preserving structure
-        Remove common web noise patterns
-        """
+        """Clean extracted content"""
         if not content:
             return ""
 
-        # Remove excessive whitespace while preserving structure
+        # Remove excessive whitespace
         content = re.sub(r'\n\s*\n\s*\n+', '\n\n', content)
 
-        # Remove common website noise
+        # Remove common noise
         noise_patterns = [
             r'Cookie.*?(?=\n|$)',
             r'Privacy Policy.*?(?=\n|$)',
@@ -603,3 +573,37 @@ class FactCheckScraper:
     def get_stats(self) -> Dict:
         """Return scraping statistics"""
         return self.stats.copy()
+
+    async def close(self):
+        """
+        ✅ NEW: Properly close browser pool and cleanup
+        """
+        fact_logger.logger.info("🛑 Shutting down scraper...")
+
+        # Close all browsers in pool
+        for i, browser in enumerate(self.browser_pool):
+            try:
+                await browser.close()
+                fact_logger.logger.debug(f"✅ Closed browser {i}")
+            except Exception as e:
+                fact_logger.logger.debug(f"Browser close error (non-critical): {e}")
+
+        # Stop Playwright
+        if self.playwright:
+            try:
+                await self.playwright.stop()
+                fact_logger.logger.debug("✅ Playwright stopped")
+            except Exception as e:
+                fact_logger.logger.debug(f"Playwright stop error (non-critical): {e}")
+
+        self.session_active = False
+
+        # Print stats
+        if self.stats["total_scraped"] > 0:
+            success_rate = (self.stats["successful_scrapes"] / self.stats["total_scraped"]) * 100
+            fact_logger.logger.info(
+                f"📊 Scraping stats: {self.stats['successful_scrapes']}/{self.stats['total_scraped']} "
+                f"successful ({success_rate:.1f}%), {self.stats['browser_reuses']} browser reuses"
+            )
+
+        fact_logger.logger.info("✅ Scraper shutdown complete")
