@@ -39,6 +39,24 @@ SCORING CRITERIA (0.0 - 1.0):
 - 0.1 = False: directly contradicted  
 - 0.0 = Completely false or no supporting evidence
 
+🏷️ SOURCE ATTRIBUTION REQUIREMENTS:
+
+When writing your assessment, you MUST cite sources by name:
+- Use natural language: "According to [Source Name]..." or "[Source Name] states that..."
+- Reference source types: "The official website indicates..." vs "Travel publications report..."
+- Note credibility: "Highly credible sources such as [X] confirm..." 
+- Highlight conflicts: "[Official Source] states X, while [Secondary Source] claims Y"
+
+PRIORITY ORDER FOR CONFLICTING SOURCES:
+1. **Tier 1 (Highest Priority)**: Official Websites, Government Agencies, Academic Institutions
+2. **Tier 2 (Medium Priority)**: Established News Organizations, Industry Publications
+3. **Tier 3 (Lower Priority)**: Blogs, Forums, Secondary Sources
+
+When sources conflict:
+- Give more weight to higher-tier sources
+- Explicitly state: "Official sources take precedence over secondary sources"
+- Example: "While Travel Magazine mentions Chef Mario, the official restaurant website (higher credibility) shows Chef Julia as current head chef"
+
 🔍 RECOGNIZE SEMANTIC EQUIVALENCES:
 
 **Authority & Attribution:**

@@ -2,6 +2,7 @@
 """
 Credibility Filter Agent
 Evaluates and filters web search results based on source credibility
+✅ ENHANCED: Now extracts and returns source metadata for attribution
 """
 
 from langchain.prompts import ChatPromptTemplate
@@ -11,9 +12,11 @@ from langsmith import traceable
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any
 import time
+import asyncio
 
 from utils.logger import fact_logger
 from utils.langsmith_config import langsmith_config
+from utils.source_metadata import SourceMetadata, SourceNameExtractor, create_source_metadata
 
 class SourceEvaluation(BaseModel):
     """Evaluation of a single source's credibility"""
@@ -33,10 +36,17 @@ class CredibilityEvaluationOutput(BaseModel):
 
 class CredibilityResults:
     """Container for credibility evaluation results"""
-    def __init__(self, fact_id: str, evaluations: List[SourceEvaluation], summary: Dict):
+    def __init__(
+        self, 
+        fact_id: str, 
+        evaluations: List[SourceEvaluation], 
+        summary: Dict,
+        source_metadata: Dict[str, SourceMetadata]  # ✅ NEW
+    ):
         self.fact_id = fact_id
         self.evaluations = evaluations
         self.summary = summary
+        self.source_metadata = source_metadata  # ✅ NEW: URL → SourceMetadata mapping
 
     def get_recommended_urls(self, min_score: float = 0.70) -> List[str]:
         """Get URLs of sources with credibility score >= min_score"""
@@ -57,10 +67,16 @@ class CredibilityResults:
         """Get sources with score >= 0.85"""
         return [e for e in self.evaluations if e.credibility_score >= 0.85]
 
+    # ✅ NEW METHOD
+    def get_source_metadata_dict(self) -> Dict[str, SourceMetadata]:
+        """Get dictionary mapping URL to SourceMetadata"""
+        return self.source_metadata.copy()
+
 class CredibilityFilter:
     """
     Evaluates source credibility for fact-checking
-    
+    ✅ ENHANCED: Extracts source names using AI and returns metadata
+
     Uses AI to analyze search results and filter based on:
     - Domain authority
     - Content quality
@@ -87,6 +103,9 @@ class CredibilityFilter:
 
         self.parser = JsonOutputParser(pydantic_object=CredibilityEvaluationOutput)
 
+        # ✅ NEW: Initialize name extractor
+        self.name_extractor = SourceNameExtractor(config)
+
         # Load prompts
         from prompts.credibility_prompts import get_credibility_prompts
         self.prompts = get_credibility_prompts()
@@ -109,7 +128,7 @@ class CredibilityFilter:
     @traceable(
         name="evaluate_source_credibility",
         run_type="chain",
-        tags=["credibility", "filtering", "source-evaluation"]
+        tags=["credibility", "filtering", "source-evaluation", "metadata-extraction"]
     )
     async def evaluate_sources(
         self,
@@ -118,13 +137,14 @@ class CredibilityFilter:
     ) -> CredibilityResults:
         """
         Evaluate credibility of search results for a fact
+        ✅ ENHANCED: Also extracts source names and creates metadata
 
         Args:
             fact: Fact object being verified
             search_results: List of search result dictionaries with url, title, content
 
         Returns:
-            CredibilityResults with evaluations and recommendations
+            CredibilityResults with evaluations, metadata, and recommendations
         """
         start_time = time.time()
         self.stats["total_evaluations"] += 1
@@ -154,7 +174,8 @@ class CredibilityFilter:
                     "low_credibility": 0,
                     "not_credible": 0,
                     "recommended_count": 0
-                }
+                },
+                source_metadata={}  # ✅ NEW
             )
 
         try:
@@ -174,10 +195,15 @@ class CredibilityFilter:
                     recommended=source_data['recommended']
                 ))
 
+            # ✅ NEW: Extract source names using AI
+            fact_logger.logger.info(f"🏷️ Extracting source names for {len(evaluations)} sources")
+            source_metadata = await self._extract_source_metadata(evaluations)
+
             results = CredibilityResults(
                 fact_id=fact.id,
                 evaluations=evaluations,
-                summary=evaluation.summary
+                summary=evaluation.summary,
+                source_metadata=source_metadata  # ✅ NEW
             )
 
             # Update statistics
@@ -215,6 +241,63 @@ class CredibilityFilter:
         except Exception as e:
             fact_logger.log_component_error("CredibilityFilter", e, fact_id=fact.id)
             raise
+
+    # ✅ NEW METHOD
+    async def _extract_source_metadata(
+        self,
+        evaluations: List[SourceEvaluation]
+    ) -> Dict[str, SourceMetadata]:
+        """
+        Extract source names and create metadata for all sources
+
+        Args:
+            evaluations: List of source evaluations
+
+        Returns:
+            Dictionary mapping URL to SourceMetadata
+        """
+        source_metadata = {}
+
+        # Extract names concurrently for speed
+        tasks = [
+            self.name_extractor.extract_name(eval.url, eval.title)
+            for eval in evaluations
+        ]
+
+        name_results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        for eval, name_result in zip(evaluations, name_results):
+            if isinstance(name_result, Exception):
+                fact_logger.logger.warning(
+                    f"⚠️ Name extraction failed for {eval.url}: {name_result}"
+                )
+                name = self.name_extractor._fallback_name(eval.url)
+                source_type = "Website"
+            else:
+                name, source_type = name_result
+
+            # Create SourceMetadata
+            metadata = create_source_metadata(
+                url=eval.url,
+                name=name,
+                source_type=source_type,
+                credibility_score=eval.credibility_score,
+                credibility_tier=eval.credibility_tier
+            )
+
+            source_metadata[eval.url] = metadata
+
+            fact_logger.logger.debug(
+                f"📋 Created metadata: {name} ({source_type})",
+                extra={
+                    "url": eval.url,
+                    "name": name,
+                    "type": source_type,
+                    "score": eval.credibility_score
+                }
+            )
+
+        return source_metadata
 
     @traceable(name="evaluate_sources_llm", run_type="llm")
     async def _evaluate_sources_llm(
@@ -307,10 +390,10 @@ class CredibilityFilter:
             List of top credible URLs
         """
         results = await self.evaluate_sources(fact, search_results)
-        
+
         # Get recommended sources
         top_sources = results.get_top_sources(n=max_urls)
-        
+
         # Filter by minimum credibility score
         filtered_urls = [
             s.url for s in top_sources

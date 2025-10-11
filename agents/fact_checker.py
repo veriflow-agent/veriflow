@@ -4,11 +4,13 @@ from langchain_openai import ChatOpenAI
 from langchain_core.output_parsers import JsonOutputParser
 from langsmith import traceable
 from pydantic import BaseModel, Field
+from typing import List, Dict, Any, Optional
 import time
 
 from prompts.checker_prompts import get_checker_prompts
 from utils.logger import fact_logger
 from utils.langsmith_config import langsmith_config
+from utils.source_metadata import SourceMetadata
 
 class FactCheckResult(BaseModel):
     fact_id: str
@@ -18,6 +20,7 @@ class FactCheckResult(BaseModel):
     discrepancies: str
     confidence: float
     reasoning: str
+    sources_consulted: List[Dict[str, Any]] = []
 
 class CheckerOutput(BaseModel):
     match_score: float = Field(description="Accuracy score from 0.0 to 1.0")
@@ -51,7 +54,12 @@ class FactChecker:
         run_type="chain",
         tags=["fact-checking", "verification"]
     )
-    async def check_fact(self, fact, excerpts: dict) -> FactCheckResult:
+    async def check_fact(
+        self, 
+        fact, 
+        excerpts: dict,
+        source_metadata: Optional[Dict[str, SourceMetadata]] = None # ✅ NEW parameter
+    ) -> FactCheckResult:
         """
         Compare fact against extracted excerpts with full tracing
 
@@ -97,7 +105,7 @@ class FactChecker:
             )
 
         try:
-            result = await self._evaluate_fact(fact, all_excerpts)
+            result = await self._evaluate_fact(fact, all_excerpts, source_metadata)
 
             duration = time.time() - start_time
             fact_logger.log_component_complete(
@@ -124,8 +132,53 @@ class FactChecker:
             fact_logger.log_component_error("FactChecker", e, fact_id=fact.id)
             raise
 
+    def _format_excerpts_with_sources(
+        self, 
+        excerpts: list, 
+        source_metadata: Optional[Dict[str, SourceMetadata]]
+    ) -> str:
+        """
+        Format excerpts with source attribution for the prompt
+
+        Args:
+            excerpts: list of excerpt dicts with 'url', 'quote', 'relevance'
+            source_metadata: dict mapping URL to SourceMetadata
+
+        Returns:
+            Formatted string with source names included
+        """
+        if not excerpts:
+            return "NO EXCERPTS FOUND - No relevant content located in source documents."
+
+        formatted = []
+        for ex in excerpts:
+            url = ex['url']
+            metadata = source_metadata.get(url) if source_metadata else None
+
+            if metadata:
+                source_name = metadata.name
+                source_type = metadata.source_type
+                credibility_tier = metadata.credibility_tier
+
+                formatted.append(
+                    f"[Source: {source_name} ({source_type})]\n"
+                    f"Credibility: {credibility_tier}\n"
+                    f"Relevance: {ex['relevance']}\n"
+                    f"Quote: {ex['quote']}\n"
+                    f"URL: {url}\n"
+                )
+            else:
+                # Fallback if no metadata
+                formatted.append(
+                    f"[Source: {url}]\n"
+                    f"Relevance: {ex['relevance']}\n"
+                    f"Quote: {ex['quote']}\n"
+                )
+
+        return "\n\n".join(formatted)
+
     @traceable(name="evaluate_fact_match", run_type="llm")
-    async def _evaluate_fact(self, fact, excerpts: list) -> FactCheckResult:
+    async def _evaluate_fact(self, fact, excerpts: list, source_metadata: Optional[Dict[str, SourceMetadata]] = None) -> FactCheckResult:
         """
         Evaluate fact accuracy against excerpts
 
@@ -162,6 +215,33 @@ class FactChecker:
             config={"callbacks": callbacks.handlers}
         )
 
+        # ✅ NEW: Build sources_consulted from excerpts and metadata
+        sources_consulted = []
+        if source_metadata:
+            for ex in excerpts:
+                url = ex['url']
+                metadata = source_metadata.get(url)
+                if metadata:
+                    # Determine if this source supports the claim based on relevance
+                    supports = ex.get('relevance', 0.5) >= 0.7
+
+                    sources_consulted.append({
+                        "url": url,
+                        "name": metadata.name,
+                        "source_type": metadata.source_type,
+                        "credibility_score": metadata.credibility_score,
+                        "supports_claim": supports,
+                        "key_excerpt": ex['quote'][:200] + "..." if len(ex['quote']) > 200 else ex['quote']
+                    })
+
+        # Remove duplicates (same URL might have multiple excerpts)
+        seen_urls = set()
+        unique_sources = []
+        for source in sources_consulted:
+            if source['url'] not in seen_urls:
+                unique_sources.append(source)
+                seen_urls.add(source['url'])
+
         # ✅ DIRECT DICT ACCESS - Parser returns clean dict
         return FactCheckResult(
             fact_id=fact.id,
@@ -170,7 +250,8 @@ class FactChecker:
             assessment=response['assessment'],
             discrepancies=response['discrepancies'],
             confidence=response['confidence'],
-            reasoning=response['reasoning']
+            reasoning=response['reasoning'],
+            sources_consulted=unique_sources  # ✅ NEW
         )
 
     def _format_excerpts(self, excerpts: list) -> str:
