@@ -281,7 +281,9 @@ When evaluating facts:
 3. If Tier 1 and Tier 2 contradict, ALWAYS trust Tier 1
 4. If only Tier 2 sources available, note this limitation in reasoning
 
-Example: "While Tier 2 sources (Travel Blog) mention Chef Mario, Tier 1 sources (Official Restaurant Website, Michelin Guide) confirm Chef Julia is the current head chef. Tier 1 takes precedence."
+Examples: 
+"While Tier 2 sources (Travel Blog) mention Chef Mario, Tier 1 sources (Official Restaurant Website, Michelin Guide) confirm Chef Julia is the current head chef. Tier 1 takes precedence."
+"While Tier 2 source (political blog) mentions that the bill was passed, Tier 1 source (official government website) states it was rejected. Tier 1 is the final authority."
 """
 
         system_prompt = self.prompts["system"] + tier_precedence_note + "\n\nIMPORTANT: You MUST return valid JSON only. No other text."
@@ -300,7 +302,7 @@ Example: "While Tier 2 sources (Travel Blog) mention Chef Mario, Tier 1 sources 
         chain = prompt_with_format | self.llm | self.parser
 
         fact_logger.logger.debug(
-            f"🔗 Invoking LLM for fact checking",
+            "🔗 Invoking LLM for fact checking",
             extra={"fact_id": fact.id, "num_excerpts": len(excerpts)}
         )
 
