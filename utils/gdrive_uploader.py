@@ -1,8 +1,6 @@
 # utils/gdrive_uploader.py
 """
-✅ FIXED Google Drive Uploader for Replit Environments
-
-MAJOR FIX: Changed from run_console() to run_local_server() with proper fallback
+✅ FIXED Google Drive Uploader with Railway Environment Variable Support
 """
 
 from google.oauth2.credentials import Credentials
@@ -12,6 +10,7 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from googleapiclient.errors import HttpError
 import os
+import base64
 from pathlib import Path
 import json
 from typing import Optional
@@ -19,12 +18,11 @@ from loguru import logger
 
 class GoogleDriveUploader:
     """
-    ✅ FIXED: Upload files to Google Drive with proper Replit authentication
+    Upload files to Google Drive with Railway environment variable support
 
-    Changes from previous version:
-    - Uses run_local_server() with manual fallback instead of run_console()
-    - Better error handling for authentication
-    - Clearer user instructions
+    Credentials can be provided via:
+    1. credentials.json file (for local development)
+    2. GOOGLE_CREDENTIALS_BASE64 environment variable (for Railway)
     """
 
     # Google Drive API scopes
@@ -37,6 +35,10 @@ class GoogleDriveUploader:
         Args:
             credentials_path: Path to OAuth credentials JSON file
         """
+        # ✅ NEW: Support loading credentials from environment variable
+        self._setup_credentials_file(credentials_path)
+        self._setup_token_file()
+
         self.credentials_path = credentials_path
         self.token_path = 'token.json'
         self.service = None
@@ -46,13 +48,51 @@ class GoogleDriveUploader:
 
         if not self.folder_id:
             logger.warning("⚠️ GDRIVE_FOLDER_ID not set. Files will be uploaded to Drive root.")
-            logger.info("💡 Set GDRIVE_FOLDER_ID in .env to upload to a specific folder")
 
         logger.info("🔧 Initializing Google Drive uploader")
 
+    def _setup_credentials_file(self, credentials_path: str):
+        """
+        ✅ NEW: Create credentials.json from environment variable if needed
+
+        This allows Railway to work without committing credentials.json to git
+        """
+        # If file already exists, use it
+        if os.path.exists(credentials_path):
+            logger.info("✅ Using existing credentials.json file")
+            return
+
+        # Try to load from environment variable (for Railway)
+        creds_b64 = os.getenv('GOOGLE_CREDENTIALS_BASE64')
+        if creds_b64:
+            try:
+                creds_json = base64.b64decode(creds_b64).decode('utf-8')
+                with open(credentials_path, 'w') as f:
+                    f.write(creds_json)
+                logger.info("✅ Created credentials.json from GOOGLE_CREDENTIALS_BASE64 environment variable")
+            except Exception as e:
+                logger.error(f"❌ Failed to decode credentials from environment variable: {e}")
+        else:
+            logger.warning("⚠️ No credentials.json file and no GOOGLE_CREDENTIALS_BASE64 environment variable")
+
+    def _setup_token_file(self):
+        """Create token.json from environment variable if needed"""
+        if os.path.exists(self.token_path):
+            return
+
+        token_b64 = os.getenv('GOOGLE_TOKEN_BASE64')
+        if token_b64:
+            try:
+                token_json = base64.b64decode(token_b64).decode('utf-8')
+                with open(self.token_path, 'w') as f:
+                    f.write(token_json)
+                logger.info("✅ Created token.json from environment variable")
+            except Exception as e:
+                logger.error(f"❌ Failed to decode token from env: {e}")
+
     def authenticate(self) -> bool:
         """
-        ✅ FIXED: Authenticate with Google Drive using proper OAuth flow
+        Authenticate with Google Drive using proper OAuth flow
 
         Returns:
             True if authentication successful, False otherwise
@@ -96,21 +136,11 @@ class GoogleDriveUploader:
                     self.SCOPES
                 )
 
-                # ✅ FIX: Use run_local_server() with proper settings for Replit
+                # Try local server first (works in most cases)
                 logger.info("🔧 Attempting browser-based authentication")
-                logger.info("=" * 60)
-                logger.info("AUTHENTICATION STEPS:")
-                logger.info("1. A browser window will open automatically")
-                logger.info("2. If it doesn't open, copy the URL shown below")
-                logger.info("3. Sign in to your Google account")
-                logger.info("4. Grant the requested permissions")
-                logger.info("5. You'll be redirected back automatically")
-                logger.info("=" * 60)
-
                 try:
-                    # ✅ Try local server first (works in most cases)
                     creds = flow.run_local_server(
-                        port=0,  # Use random available port
+                        port=0,
                         authorization_prompt_message='',
                         success_message='Authentication successful! You can close this window.',
                         open_browser=True
@@ -118,21 +148,12 @@ class GoogleDriveUploader:
                     logger.info("✅ Browser authentication successful")
 
                 except Exception as server_error:
-                    # ✅ FALLBACK: Manual authorization for environments where browser doesn't work
+                    # Fallback: Manual authorization
                     logger.warning(f"⚠️ Browser authentication failed: {server_error}")
                     logger.info("🔄 Switching to manual authorization flow")
-                    logger.info("=" * 60)
-                    logger.info("MANUAL AUTHORIZATION REQUIRED:")
-                    logger.info("1. Visit this URL in your browser:")
 
-                    # Get authorization URL
                     auth_url, _ = flow.authorization_url(prompt='consent')
-                    print(f"\n{auth_url}\n")
-
-                    logger.info("2. Sign in and grant permissions")
-                    logger.info("3. After approval, you'll see an authorization code")
-                    logger.info("4. Copy that code and paste it below")
-                    logger.info("=" * 60)
+                    print(f"\n🔗 Visit this URL:\n{auth_url}\n")
 
                     code = input('Enter the authorization code: ').strip()
                     flow.fetch_token(code=code)
@@ -231,21 +252,12 @@ class GoogleDriveUploader:
             return None
 
     def list_files(self, max_results: int = 10) -> list:
-        """
-        List files in Google Drive
-
-        Args:
-            max_results: Maximum number of files to return
-
-        Returns:
-            List of file dictionaries
-        """
+        """List files in Google Drive"""
         if not self.service:
             logger.error("❌ Not authenticated. Call authenticate() first.")
             return []
 
         try:
-            # Build query
             query_parts = []
             if self.folder_id:
                 query_parts.append(f"'{self.folder_id}' in parents")
@@ -265,11 +277,7 @@ class GoogleDriveUploader:
                 logger.info('📂 No files found')
                 return []
 
-            logger.info(f'📂 Found {len(files)} files:')
-            for file in files:
-                size_mb = int(file.get('size', 0)) / (1024 * 1024) if file.get('size') else 0
-                logger.info(f"  • {file['name']} ({size_mb:.2f} MB) - {file['id']}")
-
+            logger.info(f'📂 Found {len(files)} files')
             return files
 
         except HttpError as error:
@@ -277,60 +285,9 @@ class GoogleDriveUploader:
             return []
 
 
-# ✅ USAGE EXAMPLES
-def example_authentication():
-    """Example: How to authenticate"""
-    uploader = GoogleDriveUploader()
-
-    if uploader.authenticate():
-        print("✅ Authentication successful!")
-        return uploader
-    else:
-        print("❌ Authentication failed")
-        return None
-
-
-def example_upload_session_file():
-    """Example: Upload a fact-check session file"""
-    uploader = GoogleDriveUploader()
-
-    # Authenticate first
-    if not uploader.authenticate():
-        print("❌ Authentication failed")
-        return
-
-    # Upload a session file
-    session_file = "temp/20250929_150000/session_report.txt"
-
-    file_id = uploader.upload_file(
-        file_path=session_file,
-        drive_filename="fact_check_session_20250929.txt",
-        mime_type="text/plain"
-    )
-
-    if file_id:
-        print(f"✅ File uploaded successfully! ID: {file_id}")
-    else:
-        print("❌ Upload failed")
-
-
-def example_list_uploaded_files():
-    """Example: List uploaded files"""
-    uploader = GoogleDriveUploader()
-
-    if not uploader.authenticate():
-        print("❌ Authentication failed")
-        return
-
-    files = uploader.list_files(max_results=20)
-    print(f"\n📂 Found {len(files)} files in Google Drive")
-
-
 def upload_session_to_drive(session_id: str, file_path: str) -> Optional[str]:
     """
     Convenience function to upload a fact-check session file to Google Drive
-
-    This is the function that file_manager.py imports and calls.
 
     Args:
         session_id: Unique session identifier
@@ -340,15 +297,12 @@ def upload_session_to_drive(session_id: str, file_path: str) -> Optional[str]:
         File ID if successful, None otherwise
     """
     try:
-        # Initialize uploader
         uploader = GoogleDriveUploader()
 
-        # Authenticate (will use existing token.json if available)
         if not uploader.authenticate():
             logger.error(f"❌ Authentication failed for session {session_id}")
             return None
 
-        # Upload the file with a descriptive name
         from datetime import datetime
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         drive_filename = f"FactCheck_Session_{session_id}_{timestamp}.txt"
@@ -363,7 +317,6 @@ def upload_session_to_drive(session_id: str, file_path: str) -> Optional[str]:
 
         if file_id:
             logger.info(f"✅ Session {session_id} uploaded successfully!")
-            logger.info(f"🔗 File ID: {file_id}")
         else:
             logger.error(f"❌ Upload failed for session {session_id}")
 
@@ -375,10 +328,11 @@ def upload_session_to_drive(session_id: str, file_path: str) -> Optional[str]:
 
 
 if __name__ == "__main__":
-    # Run authentication test
     print("🧪 Testing Google Drive Authentication\n")
-    uploader = example_authentication()
+    uploader = GoogleDriveUploader()
 
-    if uploader:
-        print("\n📂 Listing files in Drive...")
+    if uploader.authenticate():
+        print("✅ Authentication successful!")
         uploader.list_files()
+    else:
+        print("❌ Authentication failed")
