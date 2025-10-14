@@ -35,13 +35,14 @@ class GoogleDriveUploader:
         Args:
             credentials_path: Path to OAuth credentials JSON file
         """
-        # ✅ NEW: Support loading credentials from environment variable
-        self._setup_credentials_file(credentials_path)
-        self._setup_token_file()
-
+        # ✅ Set attributes FIRST
         self.credentials_path = credentials_path
         self.token_path = 'token.json'
         self.service = None
+
+        # ✅ Then setup files from environment variables
+        self._setup_credentials_file(credentials_path)
+        self._setup_token_file()
 
         # Get folder ID from environment or use None (root)
         self.folder_id = os.getenv('GDRIVE_FOLDER_ID')
@@ -76,19 +77,26 @@ class GoogleDriveUploader:
             logger.warning("⚠️ No credentials.json file and no GOOGLE_CREDENTIALS_BASE64 environment variable")
 
     def _setup_token_file(self):
-        """Create token.json from environment variable if needed"""
+        """
+        ✅ NEW: Create token.json from environment variable if needed
+        """
+        # If file already exists, use it
         if os.path.exists(self.token_path):
+            logger.info("✅ Using existing token.json file")
             return
 
+        # Try to load from environment variable (for Railway)
         token_b64 = os.getenv('GOOGLE_TOKEN_BASE64')
         if token_b64:
             try:
                 token_json = base64.b64decode(token_b64).decode('utf-8')
                 with open(self.token_path, 'w') as f:
                     f.write(token_json)
-                logger.info("✅ Created token.json from environment variable")
+                logger.info("✅ Created token.json from GOOGLE_TOKEN_BASE64 environment variable")
             except Exception as e:
-                logger.error(f"❌ Failed to decode token from env: {e}")
+                logger.error(f"❌ Failed to decode token from environment variable: {e}")
+        else:
+            logger.info("ℹ️ No token.json file and no GOOGLE_TOKEN_BASE64 environment variable (will authenticate when needed)")
 
     def authenticate(self) -> bool:
         """
