@@ -18,6 +18,7 @@ class JobManager:
         self.jobs: Dict[str, dict] = {}
         self.progress_queues: Dict[str, queue.Queue] = {}
         self._cleanup_lock = threading.Lock()
+        self.max_job_age_hours = 2
 
     def create_job(self, content: str) -> str:
         """
@@ -130,13 +131,16 @@ class JobManager:
         job = self.jobs.get(job_id)
         return job['status'] if job else None
 
-    def cleanup_old_jobs(self, max_age_hours: int = 24):
+    def cleanup_old_jobs(self, max_age_hours: int = None):
         """
         Remove old completed/failed jobs
 
         Args:
-            max_age_hours: Maximum age in hours before cleanup
+            max_age_hours: Maximum age in hours before cleanup (defaults to self.max_job_age_hours)
         """
+        if max_age_hours is None:
+            max_age_hours = self.max_job_age_hours
+
         with self._cleanup_lock:
             cutoff = datetime.now() - timedelta(hours=max_age_hours)
             jobs_to_remove = []
@@ -151,6 +155,10 @@ class JobManager:
                 del self.jobs[job_id]
                 if job_id in self.progress_queues:
                     del self.progress_queues[job_id]
+
+            if jobs_to_remove:
+                from utils.logger import fact_logger
+                fact_logger.logger.info(f"🗑️ Cleaned up {len(jobs_to_remove)} old jobs")
 
     def get_all_jobs(self) -> List[dict]:
         """

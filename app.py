@@ -209,7 +209,7 @@ def stream_job_progress(job_id: str):
         yield f"data: {json.dumps({'message': 'Starting fact-check...', 'status': 'processing'})}\n\n"
 
         # Stream progress updates
-        timeout = 600  # 10 minutes
+        timeout = 1200  # 20 minutes
         start_time = time.time()
 
         while True:
@@ -257,6 +257,15 @@ def not_found(error):
 def internal_error(error):
     fact_logger.logger.error(f"Internal server error: {error}")
     return jsonify({"error": "Internal server error"}), 500
+
+@app.route('/api/jobs/debug', methods=['GET'])
+def debug_jobs():
+    """Debug endpoint to see all jobs"""
+    all_jobs = job_manager.get_all_jobs()
+    return jsonify({
+        "total_jobs": len(all_jobs),
+        "jobs": all_jobs
+    })
 
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 5000))

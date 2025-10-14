@@ -132,18 +132,30 @@ function streamJobProgress(jobId) {
             console.error('EventSource error:', error);
             eventSource.close();
             activeEventSource = null;
-            reject(new Error('Connection lost. Please try again.'));
-        };
 
-        // Timeout after 10 minutes
-        setTimeout(() => {
-            if (activeEventSource === eventSource) {
-                eventSource.close();
-                activeEventSource = null;
-                reject(new Error('Request timeout after 10 minutes'));
-            }
-        }, 600000);
-    });
+            // Try to fetch the job one more time before giving up
+            fetch(`/api/job/${jobId}`)
+                .then(res => {
+                    if (res.ok) {
+                        return res.json();
+                    } else {
+                        throw new Error('Job not found');
+                    }
+                })
+                .then(jobData => {
+                    if (jobData.status === 'completed') {
+                        resolve(jobData.result);
+                    } else if (jobData.status === 'processing') {
+                        // Job is still running but stream disconnected
+                        reject(new Error('Connection lost. Job is still processing. Please wait and try refreshing.'));
+                    } else {
+                        reject(new Error(jobData.error || 'Job failed'));
+                    }
+                })
+                .catch(err => {
+                    reject(new Error('Connection lost and job not found. The server may have restarted.'));
+                });
+        };
 }
 
 /**
