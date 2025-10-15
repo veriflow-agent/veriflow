@@ -61,13 +61,13 @@ Always return valid JSON only with NO extra commentary, NO markdown, NO code blo
 
 Your response must be a plain JSON object with this structure:
 
-{
+{{{{   
   "match_score": 0.87,
   "assessment": "The fact is MOSTLY ACCURATE. Tier 1 sources (Official Website) confirm X, while Tier 2 sources mention Y, reflecting earlier data. Differences appear to be due to recent updates.",
   "discrepancies": "Older Tier 2 data conflicts with current Tier 1 information.",
   "confidence": 0.87,
   "reasoning": "Step-by-step: (1) Tier 1 prioritized. (2) Core meaning consistent. (3) Minor temporal discrepancies identified. (4) Conclude mostly accurate."
-}
+}}}}
 
 Do NOT wrap your JSON in code blocks or backticks. Return only the raw JSON object.
 
