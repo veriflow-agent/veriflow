@@ -71,7 +71,7 @@ CONTEXT (if available):
 
 INSTRUCTIONS:
 - Create 1 primary query including all key identifiers names, dates, etc. (most direct approach)
-- Create 2 alternative queries (less restrictive)
+- Create 2 alternative queries (less suggesting, broader, or rephrased)
 - Focus on finding authoritative, credible sources
 - Keep queries natural and searchable
 
