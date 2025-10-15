@@ -131,43 +131,36 @@ def check_facts():
 
 def run_async_task(job_id: str, content: str, input_format: str):
     """
-    ✅ PRODUCTION FIX: Handle asyncio in Gunicorn gevent workers
+    ✅ Create isolated event loop per thread
     """
-    import nest_asyncio
-
     try:
-        # Allow nested event loops (required for gevent)
-        nest_asyncio.apply()
+        # Create completely new event loop for this thread
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
 
-        # Get or create event loop
         try:
-            loop = asyncio.get_event_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
+            # Route to pipeline
+            if input_format == 'html':
+                fact_logger.logger.info(f"🔗 Job {job_id}: Using LLM Output pipeline")
+                result = loop.run_until_complete(
+                    llm_orchestrator.process_with_progress(content, job_id)
+                )
+            else:
+                fact_logger.logger.info(f"📝 Job {job_id}: Using Web Search pipeline")
+                result = loop.run_until_complete(
+                    web_search_orchestrator.process(content, job_id)
+                )
 
-        # Route to pipeline
-        if input_format == 'html':
-            fact_logger.logger.info(f"🔗 Job {job_id}: Using LLM Output pipeline")
-            result = loop.run_until_complete(
-                llm_orchestrator.process_with_progress(content, job_id)
-            )
-        else:
-            fact_logger.logger.info(f"🔍 Job {job_id}: Using Web Search pipeline")
-            result = loop.run_until_complete(
-                web_search_orchestrator.process_with_progress(content, job_id)
-            )
+            # Store result
+            job_manager.complete_job(job_id, result)
+            fact_logger.logger.info(f"✅ Job {job_id} completed successfully")
 
-        result['input_format'] = input_format
-        job_manager.complete_job(job_id, result)
-
-        fact_logger.logger.info(
-            f"✅ Job {job_id} complete",
-            extra={"job_id": job_id, "total_facts": result['summary']['total_facts']}
-        )
+        finally:
+            # Clean up the loop
+            loop.close()
 
     except Exception as e:
-        fact_logger.logger.error(f"❌ Job {job_id} failed: {e}")
+        fact_logger.log_component_error(f"Job {job_id}", e)
         job_manager.fail_job(job_id, str(e))
 
 @app.route('/api/job/<job_id>', methods=['GET'])
