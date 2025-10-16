@@ -1,9 +1,11 @@
-# app.py - WITH STREAMING
+# app.py - WITH STREAMING AND FULL TYPE SAFETY
 from flask import Flask, render_template, request, jsonify, Response
 import asyncio
 import os
 import re
 import threading
+import queue
+from typing import Optional
 from dotenv import load_dotenv
 
 # Import your components
@@ -40,7 +42,17 @@ config = Config()
 
 # Initialize orchestrators (singleton)
 llm_orchestrator = FactCheckOrchestrator(config)
-web_search_orchestrator = WebSearchOrchestrator(config) if config.tavily_api_key else None
+
+# ✅ IMPROVED: Better error handling for web search orchestrator
+web_search_orchestrator: Optional[WebSearchOrchestrator] = None
+if config.tavily_api_key:
+    try:
+        web_search_orchestrator = WebSearchOrchestrator(config)
+        fact_logger.logger.info("✅ Web Search Orchestrator initialized successfully")
+    except Exception as e:
+        fact_logger.logger.error(f"❌ Failed to initialize Web Search Orchestrator: {e}")
+        fact_logger.logger.warning("⚠️ Web search pipeline will not be available")
+        web_search_orchestrator = None
 
 # Helper function for input detection
 def detect_input_format(content: str) -> str:
@@ -81,7 +93,13 @@ def check_facts():
     """
     try:
         # Get content from request
-        content = request.json.get('html_content') or request.json.get('content')
+        request_json = request.get_json()
+        if not request_json:
+            return jsonify({
+                "error": "Invalid request format"
+            }), 400
+
+        content = request_json.get('html_content') or request_json.get('content')
 
         if not content:
             return jsonify({
@@ -96,11 +114,11 @@ def check_facts():
         # ✅ Detect input format
         input_format = detect_input_format(content)
 
-        # Check if web search orchestrator is available
-        if input_format == 'text' and not web_search_orchestrator:
+        # ✅ FIX: Type-safe check for web search orchestrator
+        if input_format == 'text' and web_search_orchestrator is None:
             return jsonify({
                 "error": "Web search pipeline not available",
-                "message": "TAVILY_API_KEY not configured. Please add it to use plain text verification."
+                "message": "TAVILY_API_KEY not configured or initialization failed. Please check your configuration."
             }), 503
 
         # ✅ Create job
@@ -130,41 +148,60 @@ def check_facts():
         }), 500
 
 def run_async_task(job_id: str, content: str, input_format: str):
-    """Create isolated event loop per thread"""
+    """
+    ✅ FIXED: Create isolated event loop per thread (gthread workers)
+    Type-safe with proper None checks
+    """
     try:
-        # Fresh loop for this thread
+        # Create completely isolated event loop for this thread
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
 
         try:
             if input_format == 'html':
+                fact_logger.logger.info(f"🔗 Job {job_id}: LLM Output pipeline")
                 result = loop.run_until_complete(
                     llm_orchestrator.process_with_progress(content, job_id)
                 )
             else:
+                # ✅ FIX: Type-safe call with assertion
+                # We already checked web_search_orchestrator is not None in check_facts()
+                # But we assert here for type safety
+                if web_search_orchestrator is None:
+                    raise ValueError("Web search orchestrator not initialized")
+
+                fact_logger.logger.info(f"📝 Job {job_id}: Web Search pipeline")
                 result = loop.run_until_complete(
-                    web_search_orchestrator.process(content, job_id)
+                    web_search_orchestrator.process_with_progress(content, job_id)
                 )
+
+            # Store successful result
             job_manager.complete_job(job_id, result)
+            fact_logger.logger.info(f"✅ Job {job_id} completed successfully")
+
         finally:
-            loop.close()  # Critical: cleanup
+            # Always clean up the loop
+            loop.close()
 
     except Exception as e:
+        fact_logger.log_component_error(f"Job {job_id}", e)
         job_manager.fail_job(job_id, str(e))
 
 @app.route('/api/job/<job_id>', methods=['GET'])
 def get_job_status(job_id: str):
     """
     ✅ NEW: Get current job status and result
+    Type-safe with proper None checks
     """
     job = job_manager.get_job(job_id)
 
     if not job:
         return jsonify({"error": "Job not found"}), 404
 
+    # ✅ FIX: Type-safe access to job dictionary
     return jsonify({
         "job_id": job_id,
-        "status": job['status'],
+        "status": job.get('status', 'unknown'),
         "result": job.get('result'),
         "error": job.get('error'),
         "progress_log": job.get('progress_log', [])
@@ -174,6 +211,7 @@ def get_job_status(job_id: str):
 def stream_job_progress(job_id: str):
     """
     ✅ NEW: Server-Sent Events stream for real-time progress
+    Type-safe with proper None checks
     """
     def generate():
         import time
@@ -206,13 +244,14 @@ def stream_job_progress(job_id: str):
 
             # Check if job is done
             current_job = job_manager.get_job(job_id)
-            if current_job['status'] in ['completed', 'failed']:
-                yield f"data: {json.dumps({'done': True, 'status': current_job['status']})}\n\n"
+
+            # ✅ FIX: Type-safe access with None check
+            if current_job and current_job.get('status') in ['completed', 'failed']:
+                yield f"data: {json.dumps({'done': True, 'status': current_job.get('status')})}\n\n"
                 break
 
             # Get next progress update (non-blocking with timeout)
             try:
-                import queue
                 progress_item = progress_queue.get(timeout=1)
                 yield f"data: {json.dumps(progress_item)}\n\n"
             except queue.Empty:
@@ -231,7 +270,7 @@ def health_check():
         "tavily_configured": bool(os.getenv('TAVILY_API_KEY')),
         "pipelines": {
             "llm_output": True,
-            "web_search": bool(web_search_orchestrator)
+            "web_search": web_search_orchestrator is not None
         }
     })
 
@@ -264,7 +303,7 @@ if __name__ == '__main__':
     if web_search_orchestrator:
         fact_logger.logger.info("✅ Both pipelines available: LLM Output & Web Search")
     else:
-        fact_logger.logger.warning("⚠️ Only LLM Output pipeline available (add TAVILY_API_KEY for Web Search)")
+        fact_logger.logger.warning("⚠️ Only LLM Output pipeline available (check TAVILY_API_KEY)")
 
     app.run(
         host='0.0.0.0',
