@@ -21,8 +21,8 @@ from utils.langsmith_config import langsmith_config
 # Import your existing components
 from agents.browserless_scraper import FactCheckScraper
 from agents.fact_checker import FactChecker
-from agents.analyser import FactAnalyzer
-from agents.highlighter import Highlighter  # ✅ NEW: Import highlighter
+from agents.fact_extractor import FactAnalyzer
+from agents.highlighter import Highlighter
 
 class FactCheckOrchestrator:
     """Orchestrator using global source checking approach with semantic excerpt extraction"""

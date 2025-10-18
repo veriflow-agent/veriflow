@@ -1,10 +1,10 @@
-# prompts/analyzer_prompts.py
+# prompts/fact_extractor_prompts.py
 """
-Prompts for the Fact Analyzer component
+Prompts for the Fact Extractor component
 Extracts factual claims from LLM output text
 """
 
-SYSTEM_PROMPT = """You are a fact extraction expert. Your job is to identify ALL factual claims that can be verified against sources.
+SYSTEM_PROMPT = """You are a fact extraction expert. Your job is to identify the key factual claims in a text that can be verified against sources.
 
 WHAT TO EXTRACT:
 - Specific dates, numbers, statistics, measurements

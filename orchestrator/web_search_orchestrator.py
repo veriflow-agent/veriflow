@@ -24,7 +24,7 @@ from utils.file_manager import FileManager
 from utils.job_manager import job_manager
 
 # Import existing agents
-from agents.analyser import FactAnalyzer
+from agents.fact_extractor import FactAnalyzer
 from agents.browserless_scraper import FactCheckScraper
 from agents.fact_checker import FactChecker
 

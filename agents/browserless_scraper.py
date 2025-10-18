@@ -199,7 +199,7 @@ class FactCheckScraper:
                         separator = '&' if '?' in connect_url else '?'
                         connect_url = f"{connect_url}{separator}token={self.browserless_token}"
                         # Add timeout parameter (4.5 minutes = 270000 milliseconds)
-                        browserless_session_timeout = 270000
+                        browserless_session_timeout = 1800000
                         connect_url = f"{connect_url}&timeout={browserless_session_timeout}"
 
                     fact_logger.logger.info(

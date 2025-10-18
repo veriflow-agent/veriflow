@@ -15,7 +15,7 @@ import time
 
 from utils.langsmith_config import langsmith_config
 from utils.logger import fact_logger
-from agents.analyser import Fact
+from agents.fact_extractor import Fact
 from prompts.highlighter_prompts import get_highlighter_prompts
 
 class HighlighterOutput(BaseModel):

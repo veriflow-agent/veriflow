@@ -1,4 +1,4 @@
-# agents/analyser.py
+# agents/fact_extractor.py
 from langchain.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 from langchain_core.output_parsers import JsonOutputParser
@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 from typing import List
 import time
 
-from prompts.analyzer_prompts import get_analyzer_prompts
+from prompts.fact_extractor_prompts import get_analyzer_prompts
 from utils.logger import fact_logger
 from utils.langsmith_config import langsmith_config
 
