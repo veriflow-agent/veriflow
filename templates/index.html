@@ -3,35 +3,67 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Fact Checker</title>
+    <title>AI Fact Checker & Bias Analyzer</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>🔍 AI Fact Checker</h1>
-            <p class="subtitle">Verify facts from ChatGPT and Perplexity outputs and other texts </p>
+            <h1>🔍 AI Fact Checker & Bias Analyzer</h1>
+            <p class="subtitle">Verify facts and analyze bias from ChatGPT, Perplexity outputs, and other texts</p>
         </header>
 
         <main>
             <!-- Input Section -->
             <section class="input-section">
                 <div class="section-header">
-                    <h2>📋 Paste Your LLM Output</h2>
-                    <p class="help-text">Copy and paste HTML from ChatGPT or Perplexity (including links) or plain text </p>
+                    <h2>📋 Paste Your Content</h2>
+                    <p class="help-text">Copy and paste HTML from ChatGPT or Perplexity (including links) or plain text</p>
                 </div>
 
                 <div class="input-wrapper">
                     <textarea 
                         id="htmlInput" 
-                        placeholder="Paste your HTML content here...&#10;&#10;Example:&#10;&lt;p&gt;The hotel opened in March 2017. &lt;a href='https://example.com'&gt;Source&lt;/a&gt;&lt;/p&gt;"
+                        placeholder="Paste your content here...&#10;&#10;Example:&#10;&lt;p&gt;The hotel opened in March 2017. &lt;a href='https://example.com'&gt;Source&lt;/a&gt;&lt;/p&gt;"
                         rows="12"
                     ></textarea>
+
+                    <!-- ✅ NEW: Module Selection -->
+                    <div class="module-selection">
+                        <h3>Select Analysis Modules:</h3>
+                        <div class="checkbox-group">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="factCheckEnabled" checked>
+                                <span class="checkbox-custom"></span>
+                                <span class="checkbox-text">
+                                    <strong>🔍 Fact Checking</strong>
+                                    <small>Verify factual claims against sources</small>
+                                </span>
+                            </label>
+                            
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="biasCheckEnabled">
+                                <span class="checkbox-custom"></span>
+                                <span class="checkbox-text">
+                                    <strong>📊 Bias Analysis</strong>
+                                    <small>Analyze political and ideological bias</small>
+                                </span>
+                            </label>
+                        </div>
+
+                        <!-- Optional: Publication name for bias analysis -->
+                        <div id="publicationField" class="publication-field" style="display: none;">
+                            <label for="publicationName">
+                                Publication Name (optional):
+                                <input type="text" id="publicationName" placeholder="e.g., New York Times, Fox News">
+                            </label>
+                        </div>
+                    </div>
 
                     <div class="input-actions">
                         <button id="clearBtn" class="btn-secondary">Clear</button>
                         <button id="checkBtn" class="btn-primary">
-                            <span class="btn-text">Check Facts</span>
+                            <span class="btn-text">Analyze Content</span>
                             <span class="btn-loading" style="display: none;">
                                 <span class="spinner"></span> Processing...
                             </span>
@@ -46,61 +78,160 @@
                     <div class="status-icon">⏳</div>
                     <div class="status-text">
                         <h3 id="statusTitle">Processing...</h3>
-                        <p id="statusMessage">Analyzing your content and checking sources</p>
+                        <p id="statusMessage">Analyzing your content</p>
                     </div>
+                    <!-- ✅ NEW: Progress log -->
+                    <div id="progressLog" class="progress-log"></div>
                 </div>
             </section>
 
-            <!-- Results Section -->
+            <!-- ✅ NEW: Results Section with Tabs -->
             <section id="resultsSection" class="results-section" style="display: none;">
-                <!-- Summary Card -->
-                <div class="summary-card">
-                    <h2>📊 Summary</h2>
-                    <div class="summary-grid">
-                        <div class="summary-item">
-                            <div class="summary-label">Total Facts</div>
-                            <div class="summary-value" id="totalFacts">0</div>
+                <div class="results-tabs">
+                    <button class="tab-btn active" data-tab="fact-check" id="factCheckTab" style="display: none;">
+                        🔍 Fact Checking
+                    </button>
+                    <button class="tab-btn" data-tab="bias-analysis" id="biasAnalysisTab" style="display: none;">
+                        📊 Bias Analysis
+                    </button>
+                </div>
+
+                <!-- Fact Check Results Tab -->
+                <div id="factCheckResults" class="tab-content active">
+                    <!-- Summary Card -->
+                    <div class="summary-card">
+                        <h2>📊 Summary</h2>
+                        <div class="summary-grid">
+                            <div class="summary-item">
+                                <div class="summary-label">Total Facts</div>
+                                <div class="summary-value" id="totalFacts">0</div>
+                            </div>
+                            <div class="summary-item accurate">
+                                <div class="summary-label">Accurate (≥0.9)</div>
+                                <div class="summary-value" id="accurateFacts">0</div>
+                            </div>
+                            <div class="summary-item good">
+                                <div class="summary-label">Good Match (0.7-0.9)</div>
+                                <div class="summary-value" id="goodFacts">0</div>
+                            </div>
+                            <div class="summary-item questionable">
+                                <div class="summary-label">Questionable (&lt;0.7)</div>
+                                <div class="summary-value" id="questionableFacts">0</div>
+                            </div>
                         </div>
-                        <div class="summary-item accurate">
-                            <div class="summary-label">Accurate (≥0.9)</div>
-                            <div class="summary-value" id="accurateFacts">0</div>
+                        <div class="avg-score">
+                            Average Score: <strong id="avgScore">0.00</strong>
                         </div>
-                        <div class="summary-item good">
-                            <div class="summary-label">Good Match (0.7-0.9)</div>
-                            <div class="summary-value" id="goodFacts">0</div>
-                        </div>
-                        <div class="summary-item questionable">
-                            <div class="summary-label">Questionable (&lt;0.7)</div>
-                            <div class="summary-value" id="questionableFacts">0</div>
+                        <div class="session-info">
+                            Session ID: <code id="sessionId">-</code>
+                            <span class="separator">•</span>
+                            Duration: <span id="duration">0s</span>
                         </div>
                     </div>
-                    <div class="avg-score">
-                        Average Score: <strong id="avgScore">0.00</strong>
+
+                    <!-- Facts List -->
+                    <div class="facts-container">
+                        <h2>📝 Fact Analysis</h2>
+                        <div id="factsList"></div>
                     </div>
+
+                    <!-- LangSmith Link -->
+                    <div class="langsmith-link">
+                        <a id="langsmithUrl" href="#" target="_blank" rel="noopener noreferrer">
+                            📊 View Full Trace in LangSmith →
+                        </a>
+                    </div>
+                </div>
+
+                <!-- ✅ NEW: Bias Analysis Results Tab -->
+                <div id="biasAnalysisResults" class="tab-content">
+                    <!-- Bias Summary Card -->
+                    <div class="bias-summary-card">
+                        <h2>📊 Bias Analysis Summary</h2>
+                        
+                        <div class="bias-consensus">
+                            <div class="bias-score-display">
+                                <div class="bias-score-label">Consensus Bias Score</div>
+                                <div class="bias-score-value" id="consensusBiasScore">0.0</div>
+                                <div class="bias-score-max">/ 10</div>
+                            </div>
+                            <div class="bias-direction" id="biasDirection">-</div>
+                        </div>
+
+                        <div class="bias-confidence">
+                            Confidence: <strong id="biasConfidence">0%</strong>
+                        </div>
+
+                        <div class="publication-context" id="publicationContext" style="display: none;">
+                            <h3>📰 Publication Context</h3>
+                            <div id="publicationInfo"></div>
+                        </div>
+                    </div>
+
+                    <!-- Model Comparisons -->
+                    <div class="model-comparisons">
+                        <h2>🤖 Model Analyses</h2>
+                        
+                        <div class="model-grid">
+                            <!-- GPT-4o Analysis -->
+                            <div class="model-card">
+                                <h3>GPT-4o Analysis</h3>
+                                <div class="model-score">
+                                    Score: <strong id="gptBiasScore">0.0</strong> / 10
+                                </div>
+                                <div class="model-direction" id="gptDirection">-</div>
+                                <div class="model-biases" id="gptBiases"></div>
+                            </div>
+
+                            <!-- Claude Analysis -->
+                            <div class="model-card">
+                                <h3>Claude Sonnet Analysis</h3>
+                                <div class="model-score">
+                                    Score: <strong id="claudeBiasScore">0.0</strong> / 10
+                                </div>
+                                <div class="model-direction" id="claudeDirection">-</div>
+                                <div class="model-biases" id="claudeBiases"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Combined Assessment -->
+                    <div class="bias-assessment">
+                        <h2>📋 Combined Assessment</h2>
+                        
+                        <div class="assessment-section">
+                            <h3>✅ Areas of Agreement</h3>
+                            <ul id="areasOfAgreement"></ul>
+                        </div>
+
+                        <div class="assessment-section">
+                            <h3>⚠️ Areas of Disagreement</h3>
+                            <ul id="areasOfDisagreement"></ul>
+                        </div>
+
+                        <div class="assessment-section">
+                            <h3>🎯 Final Assessment</h3>
+                            <div id="finalAssessment" class="final-assessment-text"></div>
+                        </div>
+
+                        <div class="assessment-section">
+                            <h3>💡 Recommendations</h3>
+                            <ul id="recommendations"></ul>
+                        </div>
+                    </div>
+
+                    <!-- Session Info -->
                     <div class="session-info">
-                        Session ID: <code id="sessionId">-</code>
+                        Session ID: <code id="biasSessionId">-</code>
                         <span class="separator">•</span>
-                        Duration: <span id="duration">0s</span>
+                        Processing Time: <span id="biasProcessingTime">0s</span>
                     </div>
                 </div>
 
-                <!-- Facts List -->
-                <div class="facts-container">
-                    <h2>📝 Fact Analysis</h2>
-                    <div id="factsList"></div>
-                </div>
-
-                <!-- LangSmith Link -->
-                <div class="langsmith-link">
-                    <a id="langsmithUrl" href="#" target="_blank" rel="noopener noreferrer">
-                        📊 View Full Trace in LangSmith →
-                    </a>
-                </div>
-
-                <!-- Actions -->
+                <!-- Actions (shown for both tabs) -->
                 <div class="results-actions">
                     <button id="exportBtn" class="btn-secondary">Export Report</button>
-                    <button id="newCheckBtn" class="btn-primary">Check Another</button>
+                    <button id="newCheckBtn" class="btn-primary">Analyze Another</button>
                 </div>
             </section>
 

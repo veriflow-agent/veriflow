@@ -1,308 +1,351 @@
-// static/app.js - Real-time progress streaming version
+// static/app.js - Enhanced with module selection and bias analysis
 
 // DOM Elements
 const htmlInput = document.getElementById('htmlInput');
 const checkBtn = document.getElementById('checkBtn');
 const clearBtn = document.getElementById('clearBtn');
+const factCheckEnabled = document.getElementById('factCheckEnabled');
+const biasCheckEnabled = document.getElementById('biasCheckEnabled');
+const publicationField = document.getElementById('publicationField');
+const publicationName = document.getElementById('publicationName');
+
 const statusSection = document.getElementById('statusSection');
 const resultsSection = document.getElementById('resultsSection');
 const errorSection = document.getElementById('errorSection');
+const progressLog = document.getElementById('progressLog');
+
+// Tab elements
+const factCheckTab = document.getElementById('factCheckTab');
+const biasAnalysisTab = document.getElementById('biasAnalysisTab');
+const factCheckResults = document.getElementById('factCheckResults');
+const biasAnalysisResults = document.getElementById('biasAnalysisResults');
+
 const factsList = document.getElementById('factsList');
 const exportBtn = document.getElementById('exportBtn');
 const newCheckBtn = document.getElementById('newCheckBtn');
 const retryBtn = document.getElementById('retryBtn');
 
 // State
-let currentResults = null;
-let activeEventSource = null;
+let currentFactCheckResults = null;
+let currentBiasResults = null;
+let activeEventSources = [];
 
 // Event Listeners
-checkBtn.addEventListener('click', handleCheckFacts);
+checkBtn.addEventListener('click', handleCheckContent);
 clearBtn.addEventListener('click', handleClear);
 exportBtn.addEventListener('click', handleExport);
 newCheckBtn.addEventListener('click', handleNewCheck);
 retryBtn.addEventListener('click', handleRetry);
 
+// Show/hide publication field when bias check is enabled
+biasCheckEnabled.addEventListener('change', () => {
+    publicationField.style.display = biasCheckEnabled.checked ? 'block' : 'none';
+});
+
+// Tab switching
+factCheckTab.addEventListener('click', () => switchTab('fact-check'));
+biasAnalysisTab.addEventListener('click', () => switchTab('bias-analysis'));
+
 // Allow Ctrl/Cmd + Enter to submit
 htmlInput.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-        handleCheckFacts();
+        handleCheckContent();
     }
 });
 
 /**
- * Main function to check facts
+ * Switch between result tabs
  */
-async function handleCheckFacts() {
-    const htmlContent = htmlInput.value.trim();
+function switchTab(tabName) {
+    // Update tab buttons
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.classList.remove('active');
+    });
+    
+    // Update content
+    document.querySelectorAll('.tab-content').forEach(content => {
+        content.classList.remove('active');
+    });
+    
+    if (tabName === 'fact-check') {
+        factCheckTab.classList.add('active');
+        factCheckResults.classList.add('active');
+    } else {
+        biasAnalysisTab.classList.add('active');
+        biasAnalysisResults.classList.add('active');
+    }
+}
 
-    if (!htmlContent) {
-        showError('Please paste some content to check.');
+/**
+ * Main function to check content
+ */
+async function handleCheckContent() {
+    const content = htmlInput.value.trim();
+
+    if (!content) {
+        showError('Please paste some content to analyze.');
         return;
     }
 
-    // Close any existing stream
-    if (activeEventSource) {
-        activeEventSource.close();
-        activeEventSource = null;
+    // Check if at least one module is selected
+    const factCheckOn = factCheckEnabled.checked;
+    const biasCheckOn = biasCheckEnabled.checked;
+
+    if (!factCheckOn && !biasCheckOn) {
+        showError('Please select at least one analysis module (Fact Checking or Bias Analysis).');
+        return;
     }
+
+    // Close any existing streams
+    closeAllStreams();
 
     setLoadingState(true);
     hideAllSections();
     showSection(statusSection);
-    updateStatus('Starting...', 'Initializing fact-check process...');
+    clearProgressLog();
+    
+    // Reset results
+    currentFactCheckResults = null;
+    currentBiasResults = null;
 
     try {
-        // Start the job
+        // Run selected modules
+        const promises = [];
+
+        if (factCheckOn) {
+            addProgress('🔍 Starting fact checking...');
+            promises.push(runFactCheck(content));
+        }
+
+        if (biasCheckOn) {
+            addProgress('📊 Starting bias analysis...');
+            promises.push(runBiasCheck(content));
+        }
+
+        // Wait for all selected modules to complete
+        await Promise.all(promises);
+
+        // Display results
+        displayCombinedResults();
+
+    } catch (error) {
+        console.error('Error during analysis:', error);
+        showError(error.message || 'An unexpected error occurred. Please try again.');
+    } finally {
+        setLoadingState(false);
+    }
+}
+
+/**
+ * Run fact checking pipeline
+ */
+async function runFactCheck(content) {
+    try {
         const startResponse = await fetch('/api/check', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ html_content: htmlContent })
+            body: JSON.stringify({ html_content: content })
         });
 
         if (!startResponse.ok) {
             const errorData = await startResponse.json();
-            throw new Error(errorData.message || `Server error: ${startResponse.status}`);
+            throw new Error(errorData.message || `Fact check error: ${startResponse.status}`);
         }
 
         const { job_id } = await startResponse.json();
-        console.log('Job started:', job_id);
+        console.log('Fact check job started:', job_id);
 
-        // Stream progress and wait for completion
-        const result = await streamJobProgress(job_id);
-
-        currentResults = result;
-        displayResults(result);
+        // Stream progress
+        const result = await streamJobProgress(job_id, '🔍');
+        currentFactCheckResults = result;
 
     } catch (error) {
-        console.error('Error checking facts:', error);
-        showError(error.message || 'An unexpected error occurred. Please try again.');
-    } finally {
-        setLoadingState(false);
-        if (activeEventSource) {
-            activeEventSource.close();
-            activeEventSource = null;
-        }
+        console.error('Fact check error:', error);
+        addProgress('❌ Fact checking failed: ' + error.message);
+        throw error;
     }
 }
 
 /**
- * Stream real-time progress using Server-Sent Events
+ * Run bias analysis pipeline
  */
-function streamJobProgress(jobId) {
+async function runBiasCheck(content) {
+    try {
+        const publication = publicationName.value.trim() || null;
+        
+        const startResponse = await fetch('/api/check-bias', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                text: content,
+                publication_name: publication
+            })
+        });
+
+        if (!startResponse.ok) {
+            const errorData = await startResponse.json();
+            throw new Error(errorData.message || `Bias check error: ${startResponse.status}`);
+        }
+
+        const { job_id } = await startResponse.json();
+        console.log('Bias check job started:', job_id);
+
+        // Stream progress
+        const result = await streamJobProgress(job_id, '📊');
+        currentBiasResults = result;
+
+    } catch (error) {
+        console.error('Bias check error:', error);
+        addProgress('❌ Bias analysis failed: ' + error.message);
+        throw error;
+    }
+}
+
+/**
+ * Stream job progress using Server-Sent Events
+ */
+function streamJobProgress(jobId, emoji = '⏳') {
     return new Promise((resolve, reject) => {
         const eventSource = new EventSource(`/api/job/${jobId}/stream`);
-        activeEventSource = eventSource;
-        let progressLog = [];
+        activeEventSources.push(eventSource);
 
         eventSource.onmessage = (event) => {
-            try {
-                const data = JSON.parse(event.data);
+            const data = JSON.parse(event.data);
 
-                // Check if done
-                if (data.done) {
-                    eventSource.close();
-                    activeEventSource = null;
-
-                    // Fetch final result
-                    fetch(`/api/job/${jobId}`)
-                        .then(res => res.json())
-                        .then(jobData => {
-                            if (jobData.status === 'completed') {
-                                resolve(jobData.result);
-                            } else {
-                                reject(new Error(jobData.error || 'Job failed'));
-                            }
-                        })
-                        .catch(err => reject(err));
-                    return;
-                }
-
-                // Display progress
+            if (data.status === 'processing') {
+                // Add progress message
                 if (data.message) {
-                    progressLog.push(data.message);
-                    updateProgressDisplay(data.message, progressLog);
+                    addProgress(emoji + ' ' + data.message);
                 }
-            } catch (err) {
-                console.error('Error parsing progress:', err);
+            } else if (data.status === 'completed') {
+                addProgress('✅ Analysis complete!');
+                eventSource.close();
+                resolve(data.result);
+            } else if (data.status === 'failed') {
+                eventSource.close();
+                reject(new Error(data.error || 'Job failed'));
             }
         };
 
-        eventSource.onerror = (error) => {
-            console.error('EventSource error:', error);
+        eventSource.onerror = () => {
             eventSource.close();
-            activeEventSource = null;
-
-            // Try to fetch the job one more time before giving up
-            fetch(`/api/job/${jobId}`)
-                .then(res => {
-                    if (res.ok) {
-                        return res.json();
-                    } else {
-                        throw new Error('Job not found');
-                    }
-                })
-                .then(jobData => {
-                    if (jobData.status === 'completed') {
-                        resolve(jobData.result);
-                    } else if (jobData.status === 'processing') {
-                        // Job is still running but stream disconnected
-                        reject(new Error('Connection lost. Job is still processing. Please wait and try refreshing.'));
-                    } else {
-                        reject(new Error(jobData.error || 'Job failed'));
-                    }
-                })
-                .catch(err => {
-                    reject(new Error('Connection lost and job not found. The server may have restarted.'));
-                });
+            reject(new Error('Connection lost during analysis'));
         };
     });
 }
 
 /**
- * Update progress display with scrolling log
+ * Display combined results
  */
-function updateProgressDisplay(latestMessage, fullLog) {
-    const statusTitle = document.getElementById('statusTitle');
-    const statusMessage = document.getElementById('statusMessage');
-
-    statusTitle.textContent = 'Processing...';
-
-    // Show latest message prominently
-    const recentMessages = fullLog.slice(-10).reverse();
-
-    statusMessage.innerHTML = `
-        <div style="font-weight: 600; font-size: 1.1em; margin-bottom: 1rem; color: var(--text-primary);">
-            ${escapeHtml(latestMessage)}
-        </div>
-        <div style="max-height: 250px; overflow-y: auto; font-size: 0.9em; opacity: 0.85; border-top: 1px solid var(--border-color); padding-top: 1rem;">
-            <div style="font-weight: 600; margin-bottom: 0.5rem; font-size: 0.85em; text-transform: uppercase; color: var(--text-secondary);">Recent Activity</div>
-            ${recentMessages.map(msg => `<div style="padding: 0.25rem 0;">• ${escapeHtml(msg)}</div>`).join('')}
-        </div>
-    `;
-}
-
-/**
- * Display results in the UI
- */
-function displayResults(results) {
+function displayCombinedResults() {
     hideAllSections();
     showSection(resultsSection);
 
-    // Update summary
-    document.getElementById('totalFacts').textContent = results.summary.total_facts;
-    document.getElementById('accurateFacts').textContent = results.summary.accurate;
-    document.getElementById('goodFacts').textContent = results.summary.good_match;
-    document.getElementById('questionableFacts').textContent = results.summary.questionable;
-    document.getElementById('avgScore').textContent = results.summary.avg_score.toFixed(2);
-    document.getElementById('sessionId').textContent = results.session_id;
-    document.getElementById('duration').textContent = `${results.duration.toFixed(1)}s`;
-
-    // Show pipeline info
-    const summaryCard = document.querySelector('.summary-card');
-    const existingPipelineInfo = summaryCard.querySelector('.pipeline-info');
-    if (existingPipelineInfo) {
-        existingPipelineInfo.remove();
+    // Show appropriate tabs
+    if (currentFactCheckResults) {
+        factCheckTab.style.display = 'block';
+        displayFactCheckResults(currentFactCheckResults);
+    } else {
+        factCheckTab.style.display = 'none';
     }
 
-    const pipelineInfo = document.createElement('div');
-    pipelineInfo.className = 'pipeline-info';
-    pipelineInfo.style.cssText = 'margin-top: 1rem; padding: 0.75rem; background: rgba(255,255,255,0.15); border-radius: 6px; font-size: 0.9rem;';
-
-    const pipelineName = results.methodology === 'web_search_verification' 
-        ? '🔍 Web Search Pipeline' 
-        : '🔗 LLM Output Pipeline';
-
-    pipelineInfo.innerHTML = `
-        <strong>Pipeline Used:</strong> ${pipelineName}
-        ${results.statistics ? `
-            <div style="margin-top: 0.5rem; font-size: 0.85rem; opacity: 0.9;">
-                ${results.statistics.total_searches ? `Searches: ${results.statistics.total_searches} • ` : ''}
-                ${results.statistics.total_sources_found ? `Sources Found: ${results.statistics.total_sources_found} • ` : ''}
-                ${results.statistics.credible_sources_identified ? `Credible: ${results.statistics.credible_sources_identified} • ` : ''}
-                Sources Scraped: ${results.statistics.sources_scraped || results.total_sources_scraped || 0}
-            </div>
-        ` : ''}
-    `;
-
-    summaryCard.appendChild(pipelineInfo);
-
-    // Update LangSmith link
-    if (results.langsmith_url) {
-        document.getElementById('langsmithUrl').href = results.langsmith_url;
+    if (currentBiasResults) {
+        biasAnalysisTab.style.display = 'block';
+        displayBiasResults(currentBiasResults);
+    } else {
+        biasAnalysisTab.style.display = 'none';
     }
 
-    // Display facts
-    displayFacts(results.facts);
-
-    // Scroll to results
-    resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    // Set initial active tab
+    if (currentFactCheckResults) {
+        switchTab('fact-check');
+    } else if (currentBiasResults) {
+        switchTab('bias-analysis');
+    }
 }
 
 /**
- * Display individual facts
+ * Display fact check results
  */
-function displayFacts(facts) {
-    factsList.innerHTML = '';
+function displayFactCheckResults(data) {
+    const facts = data.facts || [];
+    const sessionId = data.session_id || '-';
+    const duration = data.processing_time || 0;
 
-    if (!facts || facts.length === 0) {
-        factsList.innerHTML = '<p style="text-align: center; color: var(--text-secondary);">No facts found.</p>';
-        return;
-    }
+    // Update summary
+    const totalFacts = facts.length;
+    const accurateFacts = facts.filter(f => f.verification_score >= 0.9).length;
+    const goodFacts = facts.filter(f => f.verification_score >= 0.7 && f.verification_score < 0.9).length;
+    const questionableFacts = facts.filter(f => f.verification_score < 0.7).length;
+    const avgScore = totalFacts > 0 
+        ? (facts.reduce((sum, f) => sum + f.verification_score, 0) / totalFacts).toFixed(2)
+        : '0.00';
 
-    // Add sorting header
-    const sortingHeader = document.createElement('div');
-    sortingHeader.className = 'sorting-header';
-    sortingHeader.innerHTML = `
-        <div style="background: #f8f9fa; padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem; border-left: 4px solid #6c757d;">
-            <div style="font-weight: 600; margin-bottom: 0.5rem; color: #495057;">
-                📊 Facts ordered by accuracy score (most questionable first)
-            </div>
-            <div style="font-size: 0.9rem; color: #6c757d;">
-                Review the lowest-scoring facts first to identify potential issues
-            </div>
-        </div>
-    `;
-    factsList.appendChild(sortingHeader);
+    document.getElementById('totalFacts').textContent = totalFacts;
+    document.getElementById('accurateFacts').textContent = accurateFacts;
+    document.getElementById('goodFacts').textContent = goodFacts;
+    document.getElementById('questionableFacts').textContent = questionableFacts;
+    document.getElementById('avgScore').textContent = avgScore;
+    document.getElementById('sessionId').textContent = sessionId;
+    document.getElementById('duration').textContent = duration.toFixed(1) + 's';
 
     // Display facts
+    factsList.innerHTML = '';
     facts.forEach((fact, index) => {
-        const factCard = createFactCard(fact, index);
-        factsList.appendChild(factCard);
+        const card = createFactCard(fact, index);
+        factsList.appendChild(card);
     });
+
+    // LangSmith URL
+    if (data.langsmith_url) {
+        document.getElementById('langsmithUrl').href = data.langsmith_url;
+    }
 }
 
 /**
- * Create a fact card element
+ * Create fact card element
  */
 function createFactCard(fact, index) {
     const card = document.createElement('div');
-    card.className = `fact-card ${getScoreClass(fact.match_score)}`;
-    card.setAttribute('data-score', fact.match_score.toFixed(2));
+    card.className = `fact-card ${getScoreBadgeClass(fact.verification_score)}`;
 
-    const scoreEmoji = getScoreEmoji(fact.match_score);
-    const priorityIndicator = getPriorityIndicator(fact.match_score, index);
+    const scoreEmoji = getScoreEmoji(fact.verification_score);
+    const priorityIndicator = getPriorityIndicator(fact.verification_score, index);
 
     card.innerHTML = `
         <div class="fact-header">
-            <span class="fact-id">${priorityIndicator}${fact.fact_id}</span>
-            <div class="fact-score">
-                <span class="score-badge ${getScoreBadgeClass(fact.match_score)}">
-                    ${scoreEmoji} ${fact.match_score.toFixed(2)}
-                </span>
-            </div>
+            <span class="fact-id">${priorityIndicator}Fact #${fact.id}</span>
+            <span class="score-badge ${getScoreBadgeClass(fact.verification_score)}">
+                ${scoreEmoji} Score: ${fact.verification_score.toFixed(2)}
+            </span>
         </div>
 
         <div class="fact-statement">
             ${escapeHtml(fact.statement)}
         </div>
 
-        <div class="fact-assessment">
-            <div class="fact-assessment-label">Assessment</div>
-            ${escapeHtml(fact.assessment)}
-        </div>
+        ${fact.assessment ? `
+            <div class="fact-assessment">
+                <strong>Assessment:</strong> ${escapeHtml(fact.assessment)}
+            </div>
+        ` : ''}
 
-        ${fact.discrepancies && fact.discrepancies !== 'none' && fact.discrepancies.toLowerCase() !== 'none' ? `
+        ${fact.sources && fact.sources.length > 0 ? `
+            <div class="fact-sources">
+                <h4>📚 Sources:</h4>
+                <ul class="source-list">
+                    ${fact.sources.map(source => `
+                        <li class="source-item">
+                            <a href="${escapeHtml(source.url)}" target="_blank" rel="noopener noreferrer">
+                                ${escapeHtml(source.title || source.url)}
+                            </a>
+                        </li>
+                    `).join('')}
+                </ul>
+            </div>
+        ` : ''}
+
+        ${fact.discrepancies ? `
             <div class="fact-discrepancies">
                 <div class="fact-discrepancies-label">⚠️ Discrepancies</div>
                 ${escapeHtml(fact.discrepancies)}
@@ -325,145 +368,118 @@ function createFactCard(fact, index) {
 }
 
 /**
- * Get priority indicator for facts
+ * Display bias analysis results
  */
-function getPriorityIndicator(score, index) {
-    if (score < 0.5) {
-        return '🚨 ';
-    } else if (score < 0.7) {
-        return '⚠️ ';
-    } else if (index < 3) {
-        return '📍 ';
+function displayBiasResults(data) {
+    const combined = data.combined_report || {};
+    const gpt = data.gpt_analysis || {};
+    const claude = data.claude_analysis || {};
+    const publication = data.publication_profile || null;
+
+    // Summary
+    document.getElementById('consensusBiasScore').textContent = (combined.consensus_bias_score || 0).toFixed(1);
+    document.getElementById('biasDirection').textContent = combined.consensus_direction || 'Unknown';
+    document.getElementById('biasConfidence').textContent = 
+        ((combined.confidence || 0) * 100).toFixed(0) + '%';
+
+    // Publication context
+    if (publication) {
+        const pubContext = document.getElementById('publicationContext');
+        pubContext.style.display = 'block';
+        document.getElementById('publicationInfo').innerHTML = `
+            <p><strong>Name:</strong> ${escapeHtml(publication.name)}</p>
+            <p><strong>Political Leaning:</strong> ${escapeHtml(publication.political_leaning)}</p>
+            <p><strong>Known Bias Rating:</strong> ${publication.bias_rating}/10</p>
+            ${publication.ownership ? `<p><strong>Ownership:</strong> ${escapeHtml(publication.ownership)}</p>` : ''}
+            ${publication.credibility_notes ? `<p><strong>Notes:</strong> ${escapeHtml(publication.credibility_notes)}</p>` : ''}
+        `;
     }
-    return '';
+
+    // Model analyses
+    document.getElementById('gptBiasScore').textContent = (gpt.overall_bias_score || 0).toFixed(1);
+    document.getElementById('gptDirection').textContent = gpt.primary_bias_direction || 'Unknown';
+    
+    document.getElementById('claudeBiasScore').textContent = (claude.overall_bias_score || 0).toFixed(1);
+    document.getElementById('claudeDirection').textContent = claude.primary_bias_direction || 'Unknown';
+
+    // Display biases detected by each model
+    displayModelBiases('gptBiases', gpt.biases_detected || []);
+    displayModelBiases('claudeBiases', claude.biases_detected || []);
+
+    // Combined assessment
+    displayList('areasOfAgreement', combined.areas_of_agreement || []);
+    displayList('areasOfDisagreement', combined.areas_of_disagreement || []);
+    
+    document.getElementById('finalAssessment').textContent = combined.final_assessment || 'No assessment available.';
+    
+    displayList('recommendations', combined.recommendations || []);
+
+    // Session info
+    document.getElementById('biasSessionId').textContent = data.session_id || '-';
+    document.getElementById('biasProcessingTime').textContent = 
+        (data.processing_time || 0).toFixed(1) + 's';
 }
 
 /**
- * Get score class for styling
+ * Display model-specific biases
  */
-function getScoreClass(score) {
-    if (score >= 0.9) return 'accurate';
-    if (score >= 0.7) return 'good';
-    return 'questionable';
-}
-
-/**
- * Get score badge class (includes critical)
- */
-function getScoreBadgeClass(score) {
-    if (score >= 0.9) return 'accurate';
-    if (score >= 0.7) return 'good';
-    if (score >= 0.5) return 'questionable';
-    return 'critical';
-}
-
-/**
- * Get emoji for score
- */
-function getScoreEmoji(score) {
-    if (score >= 0.9) return '✅';
-    if (score >= 0.7) return '⚠️';
-    return '❌';
-}
-
-/**
- * Handle clear button
- */
-function handleClear() {
-    htmlInput.value = '';
-    htmlInput.focus();
-}
-
-/**
- * Handle new check button
- */
-function handleNewCheck() {
-    hideAllSections();
-    htmlInput.value = '';
-    htmlInput.focus();
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-}
-
-/**
- * Handle retry button
- */
-function handleRetry() {
-    hideAllSections();
-    htmlInput.focus();
-}
-
-/**
- * Handle export button
- */
-function handleExport() {
-    if (!currentResults) return;
-
-    const dataStr = JSON.stringify(currentResults, null, 2);
-    const dataBlob = new Blob([dataStr], { type: 'application/json' });
-    const url = URL.createObjectURL(dataBlob);
-
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `fact-check-report-${currentResults.session_id}.json`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-}
-
-/**
- * Show error message
- */
-function showError(message) {
-    hideAllSections();
-    showSection(errorSection);
-    document.getElementById('errorMessage').textContent = message;
-}
-
-/**
- * Update status message
- */
-function updateStatus(title, message) {
-    document.getElementById('statusTitle').textContent = title;
-    document.getElementById('statusMessage').textContent = message;
-}
-
-/**
- * Set loading state for button
- */
-function setLoadingState(isLoading) {
-    checkBtn.disabled = isLoading;
-
-    const btnText = checkBtn.querySelector('.btn-text');
-    const btnLoading = checkBtn.querySelector('.btn-loading');
-
-    if (isLoading) {
-        btnText.style.display = 'none';
-        btnLoading.style.display = 'flex';
-    } else {
-        btnText.style.display = 'inline';
-        btnLoading.style.display = 'none';
+function displayModelBiases(elementId, biases) {
+    const container = document.getElementById(elementId);
+    if (!biases || biases.length === 0) {
+        container.innerHTML = '<p style="color: var(--text-secondary); font-size: 0.9rem;">No significant biases detected</p>';
+        return;
     }
+
+    container.innerHTML = biases.map(bias => `
+        <div class="bias-instance">
+            <div class="bias-instance-type">
+                ${escapeHtml(bias.type)} - ${escapeHtml(bias.direction)}
+            </div>
+            <div class="bias-instance-severity">
+                Severity: ${bias.severity}/10
+            </div>
+            <div style="margin-top: 0.5rem; font-size: 0.9rem;">
+                ${escapeHtml(bias.evidence)}
+            </div>
+        </div>
+    `).join('');
 }
 
 /**
- * Hide all sections
+ * Display a list in the bias assessment
  */
-function hideAllSections() {
-    statusSection.style.display = 'none';
-    resultsSection.style.display = 'none';
-    errorSection.style.display = 'none';
+function displayList(elementId, items) {
+    const ul = document.getElementById(elementId);
+    
+    if (!items || items.length === 0) {
+        ul.innerHTML = '<li style="background: transparent; border: none; color: var(--text-secondary);">None noted</li>';
+        return;
+    }
+
+    ul.innerHTML = items.map(item => `
+        <li>${escapeHtml(item)}</li>
+    `).join('');
 }
 
 /**
- * Show a section
+ * Progress log helpers
  */
-function showSection(section) {
-    section.style.display = 'block';
+function clearProgressLog() {
+    progressLog.innerHTML = '';
+}
+
+function addProgress(message) {
+    const item = document.createElement('div');
+    item.className = 'progress-item';
+    item.textContent = message;
+    progressLog.appendChild(item);
+    
+    // Auto-scroll to latest
+    progressLog.scrollTop = progressLog.scrollHeight;
 }
 
 /**
- * Escape HTML to prevent XSS
+ * Helper functions
  */
 function escapeHtml(text) {
     const div = document.createElement('div');
@@ -471,42 +487,102 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
-/**
- * Initialize app
- */
-function init() {
-    console.log('Fact Checker initialized - Real-time progress streaming enabled');
-    htmlInput.focus();
-    checkHealth();
+function getPriorityIndicator(score, index) {
+    if (score < 0.5) return '🚨 ';
+    if (score < 0.7) return '⚠️ ';
+    if (index < 3) return '📍 ';
+    return '';
 }
 
-/**
- * Check API health
- */
-async function checkHealth() {
-    try {
-        const response = await fetch('/api/health');
-        const data = await response.json();
-        console.log('Health check:', data);
+function getScoreClass(score) {
+    if (score >= 0.9) return 'accurate';
+    if (score >= 0.7) return 'good';
+    return 'questionable';
+}
 
-        if (data.pipelines) {
-            console.log('Available pipelines:', {
-                'LLM Output (with links)': data.pipelines.llm_output,
-                'Web Search (plain text)': data.pipelines.web_search
-            });
-        }
+function getScoreBadgeClass(score) {
+    if (score >= 0.9) return 'accurate';
+    if (score >= 0.7) return 'good';
+    if (score >= 0.5) return 'questionable';
+    return 'critical';
+}
 
-        if (!data.pipelines?.web_search) {
-            console.warn('⚠️ Web Search pipeline not available (TAVILY_API_KEY not configured)');
-        }
-    } catch (error) {
-        console.warn('Health check failed:', error);
+function getScoreEmoji(score) {
+    if (score >= 0.9) return '✅';
+    if (score >= 0.7) return '⚠️';
+    return '❌';
+}
+
+function closeAllStreams() {
+    activeEventSources.forEach(source => source.close());
+    activeEventSources = [];
+}
+
+function hideAllSections() {
+    statusSection.style.display = 'none';
+    resultsSection.style.display = 'none';
+    errorSection.style.display = 'none';
+}
+
+function showSection(section) {
+    section.style.display = 'block';
+}
+
+function showError(message) {
+    hideAllSections();
+    showSection(errorSection);
+    document.getElementById('errorMessage').textContent = message;
+}
+
+function setLoadingState(isLoading) {
+    checkBtn.disabled = isLoading;
+    const btnText = checkBtn.querySelector('.btn-text');
+    const btnLoading = checkBtn.querySelector('.btn-loading');
+
+    if (isLoading) {
+        btnText.style.display = 'none';
+        btnLoading.style.display = 'flex';
+    } else {
+        btnText.style.display = 'block';
+        btnLoading.style.display = 'none';
     }
 }
 
-// Initialize when DOM is ready
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
-} else {
-    init();
+function handleClear() {
+    htmlInput.value = '';
+    publicationName.value = '';
+    htmlInput.focus();
+}
+
+function handleNewCheck() {
+    hideAllSections();
+    htmlInput.value = '';
+    publicationName.value = '';
+    htmlInput.focus();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function handleRetry() {
+    hideAllSections();
+    htmlInput.focus();
+}
+
+function handleExport() {
+    const exportData = {
+        timestamp: new Date().toISOString(),
+        fact_check: currentFactCheckResults,
+        bias_analysis: currentBiasResults
+    };
+
+    const dataStr = JSON.stringify(exportData, null, 2);
+    const dataBlob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(dataBlob);
+
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `analysis-report-${Date.now()}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
 }
