@@ -4,6 +4,7 @@
 const htmlInput = document.getElementById('htmlInput');
 const checkBtn = document.getElementById('checkBtn');
 const clearBtn = document.getElementById('clearBtn');
+const stopBtn = document.getElementById('stopBtn');
 const factCheckEnabled = document.getElementById('factCheckEnabled');
 const biasCheckEnabled = document.getElementById('biasCheckEnabled');
 const publicationField = document.getElementById('publicationField');
@@ -29,10 +30,15 @@ const retryBtn = document.getElementById('retryBtn');
 let currentFactCheckResults = null;
 let currentBiasResults = null;
 let activeEventSources = [];
+let currentJobIds = {
+    factCheck: null,
+    biasCheck: null
+};
 
 // Event Listeners
 checkBtn.addEventListener('click', handleCheckContent);
 clearBtn.addEventListener('click', handleClear);
+stopBtn.addEventListener('click', handleStopAnalysis);
 exportBtn.addEventListener('click', handleExport);
 newCheckBtn.addEventListener('click', handleNewCheck);
 retryBtn.addEventListener('click', handleRetry);
@@ -100,13 +106,16 @@ async function handleCheckContent() {
     closeAllStreams();
 
     setLoadingState(true);
+    stopBtn.disabled = false;
     hideAllSections();
     showSection(statusSection);
     clearProgressLog();
     
-    // Reset results
+    // Reset results and job IDs
     currentFactCheckResults = null;
     currentBiasResults = null;
+    currentJobIds.factCheck = null;
+    currentJobIds.biasCheck = null;
 
     try {
         // Run selected modules
@@ -130,9 +139,14 @@ async function handleCheckContent() {
 
     } catch (error) {
         console.error('Error during analysis:', error);
-        showError(error.message || 'An unexpected error occurred. Please try again.');
+        
+        // Only show error if it wasn't a cancellation
+        if (!error.message.includes('cancelled') && !error.message.includes('stopped')) {
+            showError(error.message || 'An unexpected error occurred. Please try again.');
+        }
     } finally {
         setLoadingState(false);
+        stopBtn.disabled = true;
     }
 }
 
@@ -153,13 +167,16 @@ async function runFactCheck(content) {
         }
 
         const { job_id } = await startResponse.json();
+        currentJobIds.factCheck = job_id;
         console.log('Fact check job started:', job_id);
 
         // Stream progress
         const result = await streamJobProgress(job_id, '🔍');
         currentFactCheckResults = result;
+        currentJobIds.factCheck = null;
 
     } catch (error) {
+        currentJobIds.factCheck = null;
         console.error('Fact check error:', error);
         addProgress('❌ Fact checking failed: ' + error.message);
         throw error;
@@ -188,13 +205,16 @@ async function runBiasCheck(content) {
         }
 
         const { job_id } = await startResponse.json();
+        currentJobIds.biasCheck = job_id;
         console.log('Bias check job started:', job_id);
 
         // Stream progress
         const result = await streamJobProgress(job_id, '📊');
         currentBiasResults = result;
+        currentJobIds.biasCheck = null;
 
     } catch (error) {
+        currentJobIds.biasCheck = null;
         console.error('Bias check error:', error);
         addProgress('❌ Bias analysis failed: ' + error.message);
         throw error;
@@ -222,6 +242,14 @@ function streamJobProgress(jobId, emoji = '⏳') {
             if (data.error) {
                 eventSource.close();
                 reject(new Error(data.error));
+                return;
+            }
+
+            // Handle cancelled status
+            if (data.status === 'cancelled') {
+                addProgress(`${emoji} Job cancelled`);
+                eventSource.close();
+                reject(new Error('Job cancelled by user'));
                 return;
             }
 
@@ -605,4 +633,85 @@ function handleExport() {
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
+}
+
+/**
+ * Handle stop button click - cancels all running jobs
+ */
+async function handleStopAnalysis() {
+    console.log('Stop button clicked');
+    
+    // Disable button immediately to prevent double-clicks
+    stopBtn.disabled = true;
+    
+    try {
+        const cancelPromises = [];
+        
+        // Cancel fact check job if running
+        if (currentJobIds.factCheck) {
+            addProgress('🛑 Stopping fact check...');
+            cancelPromises.push(
+                cancelJob(currentJobIds.factCheck, 'fact check')
+            );
+        }
+        
+        // Cancel bias check job if running
+        if (currentJobIds.biasCheck) {
+            addProgress('🛑 Stopping bias analysis...');
+            cancelPromises.push(
+                cancelJob(currentJobIds.biasCheck, 'bias analysis')
+            );
+        }
+        
+        // Wait for all cancellations
+        if (cancelPromises.length > 0) {
+            await Promise.allSettled(cancelPromises);
+            addProgress('✅ All analyses stopped');
+            
+            // Close event sources
+            closeAllStreams();
+            
+            // Show a message to user
+            setTimeout(() => {
+                showError('Analysis stopped by user. You can start a new analysis.');
+            }, 500);
+        } else {
+            addProgress('⚠️ No active jobs to stop');
+        }
+        
+    } catch (error) {
+        console.error('Error stopping analysis:', error);
+        addProgress('❌ Error stopping analysis: ' + error.message);
+    } finally {
+        // Re-enable button after a short delay
+        setTimeout(() => {
+            stopBtn.disabled = false;
+        }, 1000);
+    }
+}
+
+/**
+ * Cancel a specific job via API
+ */
+async function cancelJob(jobId, jobType) {
+    try {
+        const response = await fetch(`/api/job/${jobId}/cancel`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.message || `Failed to cancel ${jobType}`);
+        }
+        
+        const data = await response.json();
+        console.log(`${jobType} cancelled:`, data);
+        
+        return data;
+        
+    } catch (error) {
+        console.error(`Error cancelling ${jobType}:`, error);
+        throw error;
+    }
 }

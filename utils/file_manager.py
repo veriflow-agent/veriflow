@@ -30,6 +30,81 @@ class FileManager:
         session_path.mkdir(exist_ok=True)
         return session_id
 
+    def save_session_file(
+        self, 
+        session_id: str, 
+        filename: str, 
+        content,  # Can be string, dict, or list
+        auto_serialize: bool = True
+    ) -> str:
+        """
+        Save a file to a specific session directory with automatic JSON serialization
+
+        Args:
+            session_id: Session identifier
+            filename: Name of file to save (e.g., "report.json")
+            content: Content to write (string, dict, or list)
+            auto_serialize: If True, automatically serialize dicts/lists to JSON
+
+        Returns:
+            str: Full path to saved file
+
+        Example:
+            >>> # Save JSON dict
+            >>> file_manager.save_session_file(
+            ...     "20231116_143022",
+            ...     "bias_report.json",
+            ...     {"score": 0.7, "assessment": "moderate"}
+            ... )
+
+            >>> # Save plain text
+            >>> file_manager.save_session_file(
+            ...     "20231116_143022",
+            ...     "summary.txt",
+            ...     "This is a summary",
+            ...     auto_serialize=False
+            ... )
+        """
+        import json
+
+        session_path = self.temp_dir / session_id
+
+        # Ensure session directory exists
+        session_path.mkdir(exist_ok=True)
+
+        # Create full file path
+        filepath = session_path / filename
+
+        # Determine content to write
+        if auto_serialize and isinstance(content, (dict, list)):
+            # Automatically serialize to JSON
+            file_content = json.dumps(content, indent=2, ensure_ascii=False)
+        elif isinstance(content, str):
+            file_content = content
+        else:
+            # Fallback: convert to string
+            file_content = str(content)
+
+        # Write content to file
+        with open(filepath, 'w', encoding='utf-8') as f:
+            f.write(file_content)
+
+        # Log the save operation
+        from utils.logger import fact_logger
+        fact_logger.logger.info(
+            f"💾 Saved file: {filename}",
+            extra={
+                "session_id": session_id,
+                "filename": filename,
+                "size": len(file_content),
+                "type": type(content).__name__
+            }
+        )
+
+        # Return full path as string
+        return str(filepath)
+
+
     def set_page_title(self, url: str, title: str):
         """
         Store page title for a URL (optional, improves AI extraction quality)
@@ -106,18 +181,18 @@ class FileManager:
                                 f.write(f"     - {alt_query}\n")
                         f.write("\n")
 
-                    if hasattr(queries, 'search_focus') and queries.search_focus:
-                        f.write(f"SEARCH FOCUS: {queries.search_focus}\n\n")
+                        if hasattr(queries, 'search_focus') and queries.search_focus:
+                            f.write(f"SEARCH FOCUS: {queries.search_focus}\n\n")
 
-                    if hasattr(queries, 'key_terms') and queries.key_terms:
-                        f.write(f"KEY TERMS: {', '.join(queries.key_terms)}\n\n")
+                        if hasattr(queries, 'key_terms') and queries.key_terms:
+                            f.write(f"KEY TERMS: {', '.join(queries.key_terms)}\n\n")
 
-                    if hasattr(queries, 'expected_sources') and queries.expected_sources:
-                        f.write(f"EXPECTED SOURCE TYPES: {', '.join(queries.expected_sources)}\n\n")
+                        if hasattr(queries, 'expected_sources') and queries.expected_sources:
+                            f.write(f"EXPECTED SOURCE TYPES: {', '.join(queries.expected_sources)}\n\n")
 
-                    f.write("=" * 80 + "\n\n")
+                        f.write("=" * 80 + "\n\n")
 
-                f.write("\n" + "=" * 100 + "\n\n")
+                    f.write("\n" + "=" * 100 + "\n\n")
 
             # Full scraped content for each source
             for i, (url, content) in enumerate(all_scraped_content.items(), 1):

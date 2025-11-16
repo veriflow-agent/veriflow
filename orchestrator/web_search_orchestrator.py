@@ -72,6 +72,7 @@ class WebSearchOrchestrator:
         try:
             # Step 1: Extract Facts
             job_manager.add_progress(job_id, "📄 Extracting facts from text...")
+            self._check_cancellation(job_id)
 
             parsed_input = {
                 'text': text_content,
@@ -89,6 +90,7 @@ class WebSearchOrchestrator:
 
             # Step 2: Generate Search Queries
             job_manager.add_progress(job_id, "🔍 Generating search queries...")
+            self._check_cancellation(job_id)
 
             all_queries_by_fact = {}
             for fact in facts:
@@ -100,6 +102,7 @@ class WebSearchOrchestrator:
 
             # Step 3: Execute Web Searches
             job_manager.add_progress(job_id, "🌐 Searching the web...")
+            self._check_cancellation(job_id)
 
             search_results_by_fact = {}
             for i, fact in enumerate(facts, 1):
@@ -120,6 +123,7 @@ class WebSearchOrchestrator:
 
             # Step 4: Filter by Credibility
             job_manager.add_progress(job_id, "⭐ Filtering sources by credibility...")
+            self._check_cancellation(job_id)
 
             credible_urls_by_fact = {}
             credibility_results_by_fact = {}
@@ -147,6 +151,7 @@ class WebSearchOrchestrator:
 
             # Step 5: Scrape Sources
             job_manager.add_progress(job_id, f"🌐 Scraping {total_credible} sources...")
+            self._check_cancellation(job_id)
 
             scraped_content_by_fact = {}
             for fact in facts:
@@ -165,6 +170,7 @@ class WebSearchOrchestrator:
                     f"⚖️ Verifying fact {i}/{len(facts)}: \"{fact.statement[:60]}...\"",
                     {'fact_id': fact.id, 'progress': f"{i}/{len(facts)}"}
                 )
+                self._check_cancellation(job_id)
 
                 scraped_content = scraped_content_by_fact.get(fact.id, {})
 
@@ -195,11 +201,13 @@ class WebSearchOrchestrator:
                     job_id,
                     f"{emoji} {fact.id}: Score {check_result.match_score:.2f}"
                 )
+                self._check_cancellation(job_id)
 
             results.sort(key=lambda x: x.match_score)
 
             # Save and upload to R2
             job_manager.add_progress(job_id, "💾 Saving results...")
+            self._check_cancellation(job_id)
             all_scraped_content = {}
             for fact_scraped in scraped_content_by_fact.values():
                 all_scraped_content.update(fact_scraped)
@@ -249,8 +257,21 @@ class WebSearchOrchestrator:
             }
 
         except Exception as e:
-            job_manager.add_progress(job_id, f"❌ Error: {str(e)}")
+        # ✅ THIS IS WHAT NEEDS TO BE UPDATED:
+        # Handle cancellation specially
+            if "cancelled" in str(e).lower():
+                job_manager.add_progress(job_id, "🛑 Job cancelled successfully")
+                job_manager.fail_job(job_id, "Cancelled by user")
+            else:
+                fact_logger.log_component_error(f"Job {job_id}", e)
+                job_manager.fail_job(job_id, str(e))
             raise
+
+    def _check_cancellation(self, job_id: str):
+        """Check if job has been cancelled and raise exception if so"""
+        from utils.job_manager import job_manager
+        if job_manager.is_cancelled(job_id):
+            raise Exception("Job cancelled by user")
 
     def _generate_summary(self, results: list) -> dict:
         """Generate summary statistics"""

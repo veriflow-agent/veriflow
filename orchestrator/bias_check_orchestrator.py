@@ -258,6 +258,12 @@ class BiasCheckOrchestrator:
             fact_logger.log_component_error("BiasCheckOrchestrator", e)
             raise
     
+    def _check_cancellation(self, job_id: str):
+        """Check if job has been cancelled and raise exception if so"""
+        from utils.job_manager import job_manager
+        if job_manager.is_cancelled(job_id):
+            raise Exception("Job cancelled by user")
+    
     async def process_with_progress(
         self,
         text: str,
@@ -279,13 +285,16 @@ class BiasCheckOrchestrator:
             from utils.job_manager import job_manager
             
             job_manager.add_progress(job_id, "📊 Starting bias analysis...")
+            self._check_cancellation(job_id)
             job_manager.add_progress(job_id, "🤖 Analyzing with GPT-4o...")
+            self._check_cancellation(job_id)
             job_manager.add_progress(job_id, "🤖 Analyzing with Claude Sonnet...")
+            self._check_cancellation(job_id)
         
         result = await self.process(
             text=text,
             publication_name=publication_name,
-            save_to_r2=True  # ✅ CHANGED: save_to_gdrive → save_to_r2
+            save_to_r2=True  
         )
         
         if job_id:

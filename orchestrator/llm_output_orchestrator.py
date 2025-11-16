@@ -89,18 +89,12 @@ class FactCheckOrchestrator:
                 upload_to_r2=True  # ✅ CHANGED: upload_to_drive → upload_to_r2
             )
 
-            # ✅ NEW: Add progress message about upload status
+            # Log upload status (no job_id in this method, so use logger)
             if upload_result and upload_result.get('success'):
-                job_manager.add_progress(
-                    job_id, 
-                    f"☁️ Report uploaded to R2"
-                )
+                fact_logger.logger.info("☁️ Report uploaded to R2")
             else:
                 error_msg = upload_result.get('error', 'Unknown error') if upload_result else 'Upload returned no result'
-                job_manager.add_progress(
-                    job_id, 
-                    f"⚠️ R2 upload failed: {error_msg}"
-                )
+                fact_logger.logger.warning(f"⚠️ R2 upload failed: {error_msg}")
 
             # Step 5: Check each fact using SEMANTIC excerpt extraction
             fact_logger.logger.info(
@@ -163,6 +157,12 @@ class FactCheckOrchestrator:
             fact_logger.log_component_error("FactCheckOrchestrator", e, session_id=session_id)
             raise
 
+    def _check_cancellation(self, job_id: str):
+        """Check if job has been cancelled and raise exception if so"""
+        from utils.job_manager import job_manager
+        if job_manager.is_cancelled(job_id):
+            raise Exception("Job cancelled by user")
+
     async def process_with_progress(self, html_content: str, job_id: str) -> dict:
         """Process with real-time progress updates"""
         from utils.job_manager import job_manager
@@ -173,10 +173,12 @@ class FactCheckOrchestrator:
         try:
             # Step 1: Parse
             job_manager.add_progress(job_id, "📄 Parsing HTML input...")
+            self._check_cancellation(job_id) 
             parsed = await self._traced_parse(html_content)
 
             # Step 2: Extract facts
             job_manager.add_progress(job_id, "🔍 Extracting verifiable facts...")
+            self._check_cancellation(job_id) 
             facts, all_source_urls = await self.analyzer.analyze(parsed)
             job_manager.add_progress(
                 job_id, 
@@ -189,6 +191,7 @@ class FactCheckOrchestrator:
                 job_id, 
                 f"🌐 Scraping {len(unique_urls)} sources..."
             )
+            self._check_cancellation(job_id) 
 
             all_scraped_content = await self.scraper.scrape_urls_for_facts(unique_urls)
             successful_scrapes = len([v for v in all_scraped_content.values() if v])
@@ -205,6 +208,7 @@ class FactCheckOrchestrator:
                     f"⚖️ Verifying fact {i}/{len(facts)}: \"{fact.statement[:60]}...\"",
                     {'fact_id': fact.id, 'progress': f"{i}/{len(facts)}"}
                 )
+                self._check_cancellation(job_id) 
 
                 excerpts = await self._extract_relevant_excerpts_semantic(fact, all_scraped_content)
                 check_result = await self.checker.check_fact(fact, excerpts)
@@ -216,11 +220,13 @@ class FactCheckOrchestrator:
                     job_id,
                     f"{emoji} {fact.id}: Score {check_result.match_score:.2f}"
                 )
+                self._check_cancellation(job_id) 
 
             results.sort(key=lambda x: x.match_score)
 
             # Save and finish
             job_manager.add_progress(job_id, "💾 Saving results...")
+            self._check_cancellation(job_id) 
 
             # ✅ CHANGED: Capture upload result (this is a second save, consider removing if duplicate)
             upload_result = self.file_manager.save_session_content(
@@ -229,6 +235,13 @@ class FactCheckOrchestrator:
                 facts, 
                 upload_to_r2=True  # ✅ CHANGED: upload_to_drive → upload_to_r2
             )
+
+            # ✅ ADD THIS: Show upload status to user
+            if upload_result and upload_result.get('success'):
+                job_manager.add_progress(job_id, "☁️ Report uploaded to R2")
+            else:
+                error_msg = upload_result.get('error', 'Unknown error') if upload_result else 'Upload returned no result'
+                job_manager.add_progress(job_id, f"⚠️ R2 upload failed: {error_msg}")
 
             summary = self._generate_summary(results)
             duration = time.time() - start_time
@@ -252,7 +265,13 @@ class FactCheckOrchestrator:
             }
 
         except Exception as e:
-            job_manager.add_progress(job_id, f"❌ Error: {str(e)}")
+        # Handle cancellation specially
+            if "cancelled" in str(e).lower():
+                job_manager.add_progress(job_id, "🛑 Job cancelled successfully")
+                job_manager.fail_job(job_id, "Cancelled by user")
+            else:
+                fact_logger.log_component_error(f"Job {job_id}", e)
+                job_manager.fail_job(job_id, str(e))
             raise
 
     async def _extract_relevant_excerpts_semantic(

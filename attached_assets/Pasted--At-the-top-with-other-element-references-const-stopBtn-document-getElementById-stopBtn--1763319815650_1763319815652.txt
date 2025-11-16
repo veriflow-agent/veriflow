@@ -1,0 +1,295 @@
+// At the top with other element references:
+const stopBtn = document.getElementById('stopBtn');
+
+// Add to your global variables section:
+let currentJobIds = {
+    factCheck: null,
+    biasCheck: null
+};
+
+// Add event listener in your initialization code:
+stopBtn.addEventListener('click', handleStopAnalysis);
+
+/**
+ * Handle stop button click - cancels all running jobs
+ */
+async function handleStopAnalysis() {
+    console.log('Stop button clicked');
+    
+    // Disable button immediately to prevent double-clicks
+    stopBtn.disabled = true;
+    
+    try {
+        const cancelPromises = [];
+        
+        // Cancel fact check job if running
+        if (currentJobIds.factCheck) {
+            addProgress('🛑 Stopping fact check...');
+            cancelPromises.push(
+                cancelJob(currentJobIds.factCheck, 'fact check')
+            );
+        }
+        
+        // Cancel bias check job if running
+        if (currentJobIds.biasCheck) {
+            addProgress('🛑 Stopping bias analysis...');
+            cancelPromises.push(
+                cancelJob(currentJobIds.biasCheck, 'bias analysis')
+            );
+        }
+        
+        // Wait for all cancellations
+        if (cancelPromises.length > 0) {
+            await Promise.allSettled(cancelPromises);
+            addProgress('✅ All analyses stopped');
+            
+            // Close event sources
+            closeAllStreams();
+            
+            // Show a message to user
+            setTimeout(() => {
+                showError('Analysis stopped by user. You can start a new analysis.');
+            }, 500);
+        } else {
+            addProgress('⚠️ No active jobs to stop');
+        }
+        
+    } catch (error) {
+        console.error('Error stopping analysis:', error);
+        addProgress('❌ Error stopping analysis: ' + error.message);
+    } finally {
+        // Re-enable button after a short delay
+        setTimeout(() => {
+            stopBtn.disabled = false;
+        }, 1000);
+    }
+}
+
+/**
+ * Cancel a specific job via API
+ */
+async function cancelJob(jobId, jobType) {
+    try {
+        const response = await fetch(`/api/job/${jobId}/cancel`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.message || `Failed to cancel ${jobType}`);
+        }
+        
+        const data = await response.json();
+        console.log(`${jobType} cancelled:`, data);
+        
+        return data;
+        
+    } catch (error) {
+        console.error(`Error cancelling ${jobType}:`, error);
+        throw error;
+    }
+}
+
+/**
+ * UPDATE runFactCheck to store job ID
+ */
+async function runFactCheck(content) {
+    try {
+        const startResponse = await fetch('/api/check', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ html_content: content })
+        });
+
+        if (!startResponse.ok) {
+            const errorData = await startResponse.json();
+            throw new Error(errorData.message || `Fact check error: ${startResponse.status}`);
+        }
+
+        const { job_id } = await startResponse.json();
+        currentJobIds.factCheck = job_id;  // ✅ STORE JOB ID
+        console.log('Fact check job started:', job_id);
+
+        // Stream progress
+        const result = await streamJobProgress(job_id, '🔍');
+        currentFactCheckResults = result;
+        currentJobIds.factCheck = null;  // ✅ CLEAR WHEN DONE
+
+    } catch (error) {
+        currentJobIds.factCheck = null;  // ✅ CLEAR ON ERROR
+        console.error('Fact check error:', error);
+        addProgress('❌ Fact checking failed: ' + error.message);
+        throw error;
+    }
+}
+
+/**
+ * UPDATE runBiasCheck to store job ID
+ */
+async function runBiasCheck(content) {
+    try {
+        const publication = publicationName.value.trim() || null;
+        
+        const startResponse = await fetch('/api/check-bias', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                text: content,
+                publication_name: publication
+            })
+        });
+
+        if (!startResponse.ok) {
+            const errorData = await startResponse.json();
+            throw new Error(errorData.message || `Bias check error: ${startResponse.status}`);
+        }
+
+        const { job_id } = await startResponse.json();
+        currentJobIds.biasCheck = job_id;  // ✅ STORE JOB ID
+        console.log('Bias check job started:', job_id);
+
+        // Stream progress
+        const result = await streamJobProgress(job_id, '📊');
+        currentBiasResults = result;
+        currentJobIds.biasCheck = null;  // ✅ CLEAR WHEN DONE
+
+    } catch (error) {
+        currentJobIds.biasCheck = null;  // ✅ CLEAR ON ERROR
+        console.error('Bias check error:', error);
+        addProgress('❌ Bias analysis failed: ' + error.message);
+        throw error;
+    }
+}
+
+/**
+ * UPDATE handleCheckContent to enable/disable stop button
+ */
+async function handleCheckContent() {
+    const content = htmlInput.value.trim();
+
+    if (!content) {
+        showError('Please paste some content to analyze.');
+        return;
+    }
+
+    // Check if at least one module is selected
+    const factCheckOn = factCheckEnabled.checked;
+    const biasCheckOn = biasCheckEnabled.checked;
+
+    if (!factCheckOn && !biasCheckOn) {
+        showError('Please select at least one analysis module (Fact Checking or Bias Analysis).');
+        return;
+    }
+
+    // Close any existing streams
+    closeAllStreams();
+
+    setLoadingState(true);
+    stopBtn.disabled = false;  // ✅ ENABLE STOP BUTTON
+    hideAllSections();
+    showSection(statusSection);
+    clearProgressLog();
+    
+    // Reset results and job IDs
+    currentFactCheckResults = null;
+    currentBiasResults = null;
+    currentJobIds.factCheck = null;
+    currentJobIds.biasCheck = null;
+
+    try {
+        // Run selected modules
+        const promises = [];
+
+        if (factCheckOn) {
+            addProgress('🔍 Starting fact checking...');
+            promises.push(runFactCheck(content));
+        }
+
+        if (biasCheckOn) {
+            addProgress('📊 Starting bias analysis...');
+            promises.push(runBiasCheck(content));
+        }
+
+        // Wait for all selected modules to complete
+        await Promise.all(promises);
+
+        // Display results
+        displayCombinedResults();
+
+    } catch (error) {
+        console.error('Error during analysis:', error);
+        
+        // Only show error if it wasn't a cancellation
+        if (!error.message.includes('cancelled') && !error.message.includes('stopped')) {
+            showError(error.message || 'An unexpected error occurred. Please try again.');
+        }
+    } finally {
+        setLoadingState(false);
+        stopBtn.disabled = true;  // ✅ DISABLE STOP BUTTON WHEN DONE
+    }
+}
+
+/**
+ * UPDATE streamJobProgress to handle cancellation status
+ */
+function streamJobProgress(jobId, emoji = '⏳') {
+    return new Promise((resolve, reject) => {
+        const eventSource = new EventSource(`/api/job/${jobId}/stream`);
+        activeEventSources.push(eventSource);
+
+        eventSource.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+
+            // Handle heartbeat (no action needed)
+            if (data.heartbeat) {
+                return;
+            }
+
+            // Handle error
+            if (data.error) {
+                eventSource.close();
+                reject(new Error(data.error));
+                return;
+            }
+
+            // Handle cancelled status (✅ NEW)
+            if (data.status === 'cancelled') {
+                addProgress(`${emoji} Job cancelled`);
+                eventSource.close();
+                reject(new Error('Job cancelled by user'));
+                return;
+            }
+
+            // Handle completed status
+            if (data.status === 'completed') {
+                addProgress(`${emoji} Complete!`);
+                eventSource.close();
+                resolve(data.result);
+                return;
+            }
+
+            // Handle failed status
+            if (data.status === 'failed') {
+                addProgress(`${emoji} Failed: ${data.error || 'Unknown error'}`);
+                eventSource.close();
+                reject(new Error(data.error || 'Job failed'));
+                return;
+            }
+
+            // Handle progress messages
+            if (data.message) {
+                addProgress(data.message);
+            }
+        };
+
+        eventSource.onerror = (error) => {
+            console.error('EventSource error:', error);
+            eventSource.close();
+            reject(new Error('Connection error'));
+        };
+    });
+}
+
+
+Toggle Minimap

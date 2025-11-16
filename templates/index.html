@@ -74,14 +74,22 @@
 
             <!-- Status Section -->
             <section id="statusSection" class="status-section" style="display: none;">
-                <div class="status-box">
-                    <div class="status-icon">⏳</div>
-                    <div class="status-text">
-                        <h3 id="statusTitle">Processing...</h3>
-                        <p id="statusMessage">Analyzing your content</p>
+                <div class="status-card">
+                    <div class="status-header">
+                        <div class="spinner"></div>
+                        <h2>Processing...</h2>
                     </div>
-                    <!-- ✅ NEW: Progress log -->
-                    <div id="progressLog" class="progress-log"></div>
+
+                    <div class="progress-log" id="progressLog">
+                        <!-- Progress messages appear here -->
+                    </div>
+
+                    <!-- ✅ NEW: Stop button -->
+                    <div class="status-actions">
+                        <button id="stopBtn" class="btn-stop">
+                            <span class="btn-text">🛑 Stop Analysis</span>
+                        </button>
+                    </div>
                 </div>
             </section>
 

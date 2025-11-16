@@ -2,6 +2,8 @@
 """
 Job Manager for Background Fact-Checking Tasks
 Handles asynchronous job processing with real-time progress streaming
+
+ENHANCED VERSION with cancellation support for running jobs
 """
 
 import asyncio
@@ -37,7 +39,8 @@ class JobManager:
             'content': content,
             'result': None,
             'error': None,
-            'progress_log': []
+            'progress_log': [],
+            'cancelled': False  # ✅ NEW: Track cancellation flag
         }
         self.progress_queues[job_id] = queue.Queue()
         return job_id
@@ -77,11 +80,6 @@ class JobManager:
         if job_id in self.jobs:
             self.jobs[job_id]['progress'] = progress_data
             self.jobs[job_id]['last_updated'] = datetime.now().isoformat()
-
-            logger.info(
-                f"📊 Updated progress for job {job_id}",
-                extra={"job_id": job_id, "progress": progress_data}
-            )
 
     def get_progress_queue(self, job_id: str) -> Optional[queue.Queue]:
         """
@@ -163,8 +161,8 @@ class JobManager:
             jobs_to_remove = []
 
             for job_id, job in self.jobs.items():
-                if job['status'] in ['completed', 'failed']:
-                    job_time = job.get('completed_at') or job.get('failed_at') or job['created_at']
+                if job['status'] in ['completed', 'failed', 'cancelled']:
+                    job_time = job.get('completed_at') or job.get('failed_at') or job.get('cancelled_at') or job['created_at']
                     if job_time < cutoff:
                         jobs_to_remove.append(job_id)
 
@@ -194,17 +192,52 @@ class JobManager:
             for job_id, job in self.jobs.items()
         ]
 
-    def cancel_job(self, job_id: str):
+    def cancel_job(self, job_id: str) -> bool:
         """
-        Cancel a running job
+        ✅ ENHANCED: Cancel a job at any stage (pending or running)
+
+        Sets a cancellation flag that orchestrators should check periodically.
+        Returns True if cancellation was successful, False otherwise.
 
         Args:
             job_id: Job identifier
+
+        Returns:
+            bool: True if cancelled, False if job not found or already completed
         """
-        if job_id in self.jobs:
-            if self.jobs[job_id]['status'] == 'pending':
-                self.jobs[job_id]['status'] = 'cancelled'
-                self.add_progress(job_id, "🚫 Job cancelled by user")
+        if job_id not in self.jobs:
+            return False
+
+        job = self.jobs[job_id]
+        
+        # Can't cancel already completed/failed jobs
+        if job['status'] in ['completed', 'failed']:
+            return False
+
+        # Set cancellation flag
+        job['cancelled'] = True
+        job['status'] = 'cancelled'
+        job['cancelled_at'] = datetime.now()
+        self.add_progress(job_id, "🛑 Cancellation requested by user...")
+
+        return True
+
+    def is_cancelled(self, job_id: str) -> bool:
+        """
+        ✅ NEW: Check if a job has been cancelled
+
+        Orchestrators should call this periodically during processing.
+
+        Args:
+            job_id: Job identifier
+
+        Returns:
+            bool: True if job is cancelled, False otherwise
+        """
+        if job_id not in self.jobs:
+            return False
+        
+        return self.jobs[job_id].get('cancelled', False)
 
 # Global job manager instance
 job_manager = JobManager()

@@ -291,12 +291,13 @@ def stream_job_progress(job_id: str):
         while True:
             try:
                 current_job = job_manager.get_job(job_id)
-                if current_job and current_job.get('status') in ['completed', 'failed']:
-                    yield f"data: {json.dumps({
+                if current_job and current_job.get('status') in ['completed', 'failed', 'cancelled']:
+                    status_data = {
                         'status': current_job['status'],
                         'result': current_job.get('result'),
                         'error': current_job.get('error')
-                    })}\n\n"
+                    }
+                    yield f"data: {json.dumps(status_data)}\n\n"
                     break
 
                 try:
@@ -319,6 +320,47 @@ def stream_job_progress(job_id: str):
             'X-Accel-Buffering': 'no'
         }
     )
+
+@app.route('/api/job/<job_id>/cancel', methods=['POST'])
+def cancel_job(job_id: str):
+    """
+    Cancel a running job
+
+    This sets a cancellation flag that orchestrators check periodically.
+    The job will stop at the next checkpoint.
+    """
+    try:
+        success = job_manager.cancel_job(job_id)
+
+        if not success:
+            job = job_manager.get_job(job_id)
+            if not job:
+                return jsonify({
+                    "error": "Job not found",
+                    "job_id": job_id
+                }), 404
+            else:
+                return jsonify({
+                    "error": "Cannot cancel job",
+                    "message": f"Job is already {job['status']}",
+                    "job_id": job_id
+                }), 400
+
+        fact_logger.logger.info(f"🛑 Job cancellation requested: {job_id}")
+
+        return jsonify({
+            "success": True,
+            "job_id": job_id,
+            "message": "Job cancellation initiated"
+        })
+
+    except Exception as e:
+        fact_logger.log_component_error("Cancel Job API", e)
+        return jsonify({
+            "error": str(e),
+            "message": "An error occurred while cancelling the job"
+        }), 500
+
 
 @app.route('/api/health')
 def health():

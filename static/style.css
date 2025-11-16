@@ -269,6 +269,57 @@ section {
     background-color: var(--bg-color);
 }
 
+/* Status Actions */
+.status-actions {
+    display: flex;
+    justify-content: center;
+    margin-top: 1.5rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border-color);
+}
+
+/* Stop Button */
+.btn-stop {
+    padding: 0.75rem 1.5rem;
+    font-size: 1rem;
+    font-weight: 600;
+    border-radius: 8px;
+    border: 2px solid #dc2626;
+    background-color: white;
+    color: #dc2626;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.btn-stop:hover {
+    background-color: #dc2626;
+    color: white;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 6px rgba(220, 38, 38, 0.2);
+}
+
+.btn-stop:active {
+    transform: translateY(0);
+}
+
+.btn-stop:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    background-color: #f3f4f6;
+    border-color: #d1d5db;
+    color: #9ca3af;
+}
+
+.btn-stop:disabled:hover {
+    background-color: #f3f4f6;
+    color: #9ca3af;
+    transform: none;
+    box-shadow: none;
+}
+
 .spinner {
     width: 16px;
     height: 16px;
