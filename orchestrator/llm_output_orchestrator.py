@@ -196,10 +196,11 @@ class LLMInterpretationOrchestrator:
             )
 
             return {
+                "success": True,  # ← ADD THIS
                 "session_id": session_id,
-                "claims": [r.dict() for r in results],
+                "facts": [r.dict() for r in results],  # ← CHANGED from "claims" to "facts"
                 "summary": summary,
-                "duration": duration,
+                "processing_time": duration,  # ← CHANGED from "duration"
                 "total_sources_scraped": len(unique_urls),
                 "successful_scrapes": successful_scrapes,
                 "process": "llm_interpretation_verification",

@@ -387,17 +387,30 @@ async function streamFactCheckProgress(jobId) {
         eventSource.onmessage = (event) => {
             const data = JSON.parse(event.data);
 
+            // ✅ ADD DEBUGGING
+            console.log('SSE message received:', data);
+
+            // Handle heartbeat
+            if (data.heartbeat) {
+                return;
+            }
+
             if (data.status === 'completed') {
                 currentFactCheckResults = data.result;
+                // ✅ ADD DEBUGGING
+                console.log('Job completed, result:', data.result);
                 addProgress('✅ Fact checking completed');
                 eventSource.close();
                 resolve(data.result);
             } else if (data.status === 'failed') {
+                console.error('Job failed:', data.error);
                 addProgress(`❌ Fact check failed: ${data.error}`, 'error');
                 eventSource.close();
                 reject(new Error(data.error));
-            } else if (data.progress) {
-                addProgress(data.progress);
+            } else if (data.message) {  // ← CHANGED from data.progress to data.message
+                // ✅ ADD DEBUGGING
+                console.log('Progress message:', data.message);
+                addProgress(data.message);
             }
         };
 
@@ -569,25 +582,42 @@ function displayCombinedResults(type) {
 }
 
 function displayFactCheckResults() {
-    if (!currentFactCheckResults || !currentFactCheckResults.success) {
+    if (!currentFactCheckResults) {
+        console.error('No fact check results available');
+        return;
+    }
+
+    // ✅ UPDATED: Check for success field OR just proceed if we have data
+    if (currentFactCheckResults.success === false) {
+        console.error('Fact check marked as failed');
         return;
     }
 
     const data = currentFactCheckResults;
-    const facts = data.facts || [];
+    // ✅ Handle both 'facts' (web search) and 'claims' (LLM interpretation)
+    const facts = data.facts || data.claims || [];
     const sessionId = data.session_id || '-';
-    const duration = data.processing_time || 0;
+    const duration = data.processing_time || data.duration || 0;
 
     const totalFacts = facts.length;
-    const accurateFacts = facts.filter(f => (f.verification_score || 0) >= 0.9).length;
+    // ✅ Handle both verification_score (LLM) and match_score (web search)
+    const accurateFacts = facts.filter(f => 
+        (f.verification_score || f.match_score || 0) >= 0.9
+    ).length;
     const goodFacts = facts.filter(f => {
-        const score = f.verification_score || 0;
+        const score = f.verification_score || f.match_score || 0;
         return score >= 0.7 && score < 0.9;
     }).length;
-    const questionableFacts = facts.filter(f => (f.verification_score || 0) < 0.7).length;
+    const questionableFacts = facts.filter(f => 
+        (f.verification_score || f.match_score || 0) < 0.7
+    ).length;
     const avgScore = totalFacts > 0 
-        ? (facts.reduce((sum, f) => sum + (f.verification_score || 0), 0) / totalFacts) 
+        ? (facts.reduce((sum, f) => 
+            sum + (f.verification_score || f.match_score || 0), 0
+          ) / totalFacts * 100).toFixed(0)
         : 0;
+
+    // Rest of the function continues...
 
     document.getElementById('totalFacts').textContent = totalFacts;
     document.getElementById('accurateFacts').textContent = accurateFacts;

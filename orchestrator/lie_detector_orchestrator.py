@@ -1,6 +1,6 @@
 # orchestrator/lie_detector_orchestrator.py
 """
-Lie Detector Orchestrator
+Lie Detector Orchestrator - FIXED VERSION
 Manages the lie detection workflow with file management and R2 storage
 
 Workflow:
@@ -25,15 +25,15 @@ from utils.logger import fact_logger
 class LieDetectorOrchestrator:
     """
     Orchestrates lie detection analysis with storage
-    
+
     Similar to BiasCheckOrchestrator but for linguistic deception analysis
     """
-    
+
     def __init__(self, config):
         self.config = config
         self.lie_detector = LieDetector(config)
         self.file_manager = FileManager()
-        
+
         # Initialize R2 uploader
         try:
             self.r2_uploader = R2Uploader()
@@ -42,9 +42,15 @@ class LieDetectorOrchestrator:
         except Exception as e:
             fact_logger.logger.warning(f"⚠️ Cloudflare R2 not configured: {e}")
             self.r2_enabled = False
-        
+
         fact_logger.log_component_start("LieDetectorOrchestrator")
-    
+
+    def _check_cancellation(self, job_id: str):
+        """Check if job has been cancelled and raise exception if so"""
+        from utils.job_manager import job_manager
+        if job_manager.is_cancelled(job_id):
+            raise Exception("Job cancelled by user")
+
     @traceable(
         name="lie_detection_pipeline",
         run_type="chain",
@@ -59,19 +65,19 @@ class LieDetectorOrchestrator:
     ) -> dict:
         """
         Complete lie detection pipeline with R2 storage
-        
+
         Args:
             text: Text to analyze for deception markers
             url: Optional URL of the article
             publication_date: Optional publication date
             save_to_r2: Whether to save reports to Cloudflare R2
-            
+
         Returns:
             Dictionary with complete lie detection analysis results
         """
         session_id = self.file_manager.create_session()
         start_time = time.time()
-        
+
         fact_logger.logger.info(
             f"🚀 STARTING LIE DETECTION SESSION: {session_id}",
             extra={
@@ -82,20 +88,20 @@ class LieDetectorOrchestrator:
                 "r2_enabled": self.r2_enabled and save_to_r2
             }
         )
-        
+
         try:
             # Step 1: Run lie detection analysis
             fact_logger.logger.info("🔍 Step 1: Analyzing deception markers with Claude")
-            
+
             analysis_result = await self.lie_detector.analyze(
                 text=text,
                 url=url,
                 publication_date=publication_date
             )
-            
+
             # Step 2: Prepare report data
             fact_logger.logger.info("📝 Step 2: Preparing analysis report")
-            
+
             report_data = {
                 "session_id": session_id,
                 "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -104,30 +110,31 @@ class LieDetectorOrchestrator:
                     "url": url,
                     "publication_date": publication_date
                 },
-                "analysis": analysis_result.dict(),
+                "analysis": analysis_result.model_dump(),
                 "metadata": {
                     "model": "claude-sonnet-4-20250514",
                     "processing_time_seconds": time.time() - start_time
                 }
             }
-            
+
             # Step 3: Save reports locally
             fact_logger.logger.info("💾 Step 3: Saving reports locally")
-            
-            # Save full analysis report
+
+            # ✅ FIXED: Corrected save_session_file call
             analysis_report_path = self.file_manager.save_session_file(
-                data=report_data,
-                filename=f"lie_detection_{session_id}.json"
+                session_id,
+                f"lie_detection_{session_id}.json",
+                json.dumps(report_data, indent=2)
             )
             fact_logger.logger.info(f"✅ Saved analysis report: {analysis_report_path}")
-            
+
             # Step 4: Upload to R2 if enabled
             r2_upload_status = {"success": False, "error": "R2 disabled"}
             r2_link = None
-            
+
             if self.r2_enabled and save_to_r2:
                 fact_logger.logger.info("☁️ Step 4: Uploading to Cloudflare R2")
-                
+
                 try:
                     r2_link = self.r2_uploader.upload_file(
                         file_path=analysis_report_path,
@@ -141,7 +148,7 @@ class LieDetectorOrchestrator:
                             'timestamp': time.strftime("%Y-%m-%d %H:%M:%S")
                         }
                     )
-                    
+
                     if r2_link:
                         r2_upload_status = {
                             "success": True,
@@ -156,7 +163,7 @@ class LieDetectorOrchestrator:
                             "success": False,
                             "error": "Upload returned no URL"
                         }
-                        
+
                 except Exception as e:
                     fact_logger.logger.error(f"❌ R2 upload failed: {e}")
                     r2_upload_status = {
@@ -165,10 +172,10 @@ class LieDetectorOrchestrator:
                     }
             else:
                 fact_logger.logger.info("⏭️ Step 4: Skipping R2 upload (disabled or not requested)")
-            
+
             # Step 5: Calculate processing time
             processing_time = time.time() - start_time
-            
+
             fact_logger.log_component_complete(
                 "LieDetectorOrchestrator",
                 duration=processing_time,
@@ -179,24 +186,84 @@ class LieDetectorOrchestrator:
                     "r2_upload": r2_upload_status["success"]
                 }
             )
-            
-            # Return comprehensive results
+
+            # ✅ FIXED: Ensure structure matches frontend expectations
             return {
+                "success": True, 
                 "session_id": session_id,
-                "success": True,
-                "analysis": analysis_result.dict(),
-                "processing_time": processing_time,
+                "processing_time": processing_time,  
+                "analysis": analysis_result.model_dump(), 
                 "local_report_path": analysis_report_path,
                 "r2_upload": r2_upload_status,
                 "r2_url": r2_link
             }
-            
+
         except Exception as e:
             fact_logger.logger.error(f"❌ Lie detection pipeline failed: {e}", exc_info=True)
-            
+
             return {
-                "session_id": session_id,
                 "success": False,
+                "session_id": session_id,
                 "error": str(e),
                 "processing_time": time.time() - start_time
             }
+
+    # ✅ NEW: Add process_with_progress method for web interface
+    async def process_with_progress(
+        self,
+        text: str,
+        job_id: str,
+        url: Optional[str] = None,
+        publication_date: Optional[str] = None
+    ) -> dict:
+        """
+        Process with real-time progress updates (for web interface)
+
+        Args:
+            text: Text to analyze
+            job_id: Job ID for progress tracking
+            url: Optional article URL
+            publication_date: Optional publication date
+
+        Returns:
+            Complete lie detection analysis results
+        """
+        from utils.job_manager import job_manager
+
+        try:
+            job_manager.add_progress(job_id, "🕵️ Starting deception marker analysis...")
+            self._check_cancellation(job_id)
+
+            job_manager.add_progress(job_id, "🤖 Analyzing with Claude Sonnet 4...")
+            self._check_cancellation(job_id)
+
+            # Run the main process
+            result = await self.process(
+                text=text,
+                url=url,
+                publication_date=publication_date,
+                save_to_r2=True
+            )
+
+            # Add progress about R2 upload
+            if result.get("r2_upload", {}).get("success"):
+                job_manager.add_progress(job_id, "☁️ Report uploaded to R2")
+            else:
+                error_msg = result.get("r2_upload", {}).get("error", "Unknown error")
+                job_manager.add_progress(job_id, f"⚠️ R2 upload failed: {error_msg}")
+
+            job_manager.add_progress(job_id, "✅ Lie detection analysis complete!")
+
+            # Complete the job
+            job_manager.complete_job(job_id, result)
+
+            return result
+
+        except Exception as e:
+            if "cancelled" in str(e).lower():
+                job_manager.add_progress(job_id, "🛑 Analysis cancelled")
+                job_manager.fail_job(job_id, "Cancelled by user")
+            else:
+                fact_logger.log_component_error(f"Job {job_id}", e)
+                job_manager.fail_job(job_id, str(e))
+            raise

@@ -1,6 +1,6 @@
 # orchestrator/bias_check_orchestrator.py
 """
-Bias Check Orchestrator - UPDATED FOR CLOUDFLARE R2
+Bias Check Orchestrator - FIXED VERSION
 Coordinates the complete bias checking workflow with R2 uploads
 """
 
@@ -13,14 +13,13 @@ from agents.bias_checker import BiasChecker
 from utils.logger import fact_logger
 from utils.langsmith_config import langsmith_config
 from utils.file_manager import FileManager
-# ✅ CHANGED: Import R2 uploader instead of Google Drive
 from utils.r2_uploader import R2Uploader
 
 
 class BiasCheckOrchestrator:
     """
     Orchestrates bias checking workflow with R2 storage
-    
+
     Pipeline:
     1. Receive text + optional publication metadata
     2. Run multi-model bias analysis (GPT-4o + Claude)
@@ -29,13 +28,12 @@ class BiasCheckOrchestrator:
     5. Upload to Cloudflare R2
     6. Return combined assessment
     """
-    
+
     def __init__(self, config):
         self.config = config
         self.bias_checker = BiasChecker(config)
         self.file_manager = FileManager()
-        
-        # ✅ CHANGED: Initialize R2 uploader instead of Google Drive
+
         try:
             self.r2_uploader = R2Uploader()
             self.r2_enabled = True
@@ -43,9 +41,9 @@ class BiasCheckOrchestrator:
         except Exception as e:
             fact_logger.logger.warning(f"⚠️ Cloudflare R2 not configured: {e}")
             self.r2_enabled = False
-        
+
         fact_logger.log_component_start("BiasCheckOrchestrator")
-    
+
     @traceable(
         name="bias_check_pipeline",
         run_type="chain",
@@ -55,22 +53,22 @@ class BiasCheckOrchestrator:
         self, 
         text: str, 
         publication_name: Optional[str] = None,
-        save_to_r2: bool = True  # ✅ CHANGED: save_to_gdrive → save_to_r2
+        save_to_r2: bool = True
     ) -> dict:
         """
         Complete bias checking pipeline with R2 storage
-        
+
         Args:
             text: Text to analyze for bias
             publication_name: Optional publication name for metadata
             save_to_r2: Whether to save reports to Cloudflare R2
-            
+
         Returns:
             Dictionary with complete bias analysis results
         """
         session_id = self.file_manager.create_session()
         start_time = time.time()
-        
+
         fact_logger.logger.info(
             f"🚀 STARTING BIAS CHECK SESSION: {session_id}",
             extra={
@@ -80,19 +78,19 @@ class BiasCheckOrchestrator:
                 "r2_enabled": self.r2_enabled and save_to_r2
             }
         )
-        
+
         try:
             # Step 1: Run bias analysis
             fact_logger.logger.info("📊 Step 1: Multi-model bias analysis")
-            
+
             bias_results = await self.bias_checker.check_bias(
                 text=text,
                 publication_name=publication_name
             )
-            
+
             # Step 2: Prepare report data
             fact_logger.logger.info("📝 Step 2: Preparing reports")
-            
+
             report_data = {
                 "session_id": session_id,
                 "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -104,37 +102,37 @@ class BiasCheckOrchestrator:
                 "publication_profile": bias_results.get("publication_profile"),
                 "processing_time": bias_results["processing_time"]
             }
-            
+
             # Step 3: Save reports locally
             fact_logger.logger.info("💾 Step 3: Saving reports locally")
-            
+
             # Save combined report
             combined_report_path = self.file_manager.save_session_file(
                 session_id,
                 "combined_bias_report.json",
                 json.dumps(report_data, indent=2)
             )
-            
+
             # Save individual model reports
             gpt_report_path = self.file_manager.save_session_file(
                 session_id,
                 "gpt_bias_analysis.json",
                 json.dumps(bias_results["gpt_analysis"], indent=2)
             )
-            
+
             claude_report_path = self.file_manager.save_session_file(
                 session_id,
                 "claude_bias_analysis.json",
                 json.dumps(bias_results["claude_analysis"], indent=2)
             )
-            
-            # ✅ CHANGED: Step 4: Upload to Cloudflare R2 instead of Google Drive
+
+            # Step 4: Upload to Cloudflare R2
             r2_links = {}
             r2_upload_status = {"success": False, "error": None}
-            
+
             if self.r2_enabled and save_to_r2:
                 fact_logger.logger.info("☁️ Step 4: Uploading reports to Cloudflare R2")
-                
+
                 try:
                     # Upload combined report
                     combined_url = self.r2_uploader.upload_file(
@@ -149,7 +147,7 @@ class BiasCheckOrchestrator:
                     )
                     if combined_url:
                         r2_links["combined_report"] = combined_url
-                    
+
                     # Upload GPT report
                     gpt_url = self.r2_uploader.upload_file(
                         file_path=gpt_report_path,
@@ -162,7 +160,7 @@ class BiasCheckOrchestrator:
                     )
                     if gpt_url:
                         r2_links["gpt_report"] = gpt_url
-                    
+
                     # Upload Claude report
                     claude_url = self.r2_uploader.upload_file(
                         file_path=claude_report_path,
@@ -175,7 +173,7 @@ class BiasCheckOrchestrator:
                     )
                     if claude_url:
                         r2_links["claude_report"] = claude_url
-                    
+
                     # Check if all uploads succeeded
                     if len(r2_links) == 3:
                         r2_upload_status = {
@@ -197,7 +195,7 @@ class BiasCheckOrchestrator:
                             f"⚠️ Partial R2 upload: {len(r2_links)}/3 files",
                             extra={"session_id": session_id}
                         )
-                    
+
                 except Exception as e:
                     error_msg = str(e)
                     fact_logger.logger.error(f"❌ R2 upload failed: {error_msg}")
@@ -212,58 +210,77 @@ class BiasCheckOrchestrator:
                     "success": False,
                     "error": "R2 upload disabled or not configured"
                 }
-            
+
             # Prepare final output
             duration = time.time() - start_time
-            
+
+            # ✅ CRITICAL FIX: Extract combined_report fields for easy frontend access
+            combined = bias_results["combined_report"]
+
+            # ✅ FIXED: Added success field and wrapped data in "analysis" object
             output = {
+                "success": True,  # ← CRITICAL: Frontend checks this field!
                 "session_id": session_id,
                 "status": "completed",
                 "processing_time": duration,
-                
-                # Main results
-                "combined_report": bias_results["combined_report"],
-                
-                # Raw analyses (for reference)
-                "raw_analyses": {
-                    "gpt": bias_results["gpt_analysis"],
-                    "claude": bias_results["claude_analysis"]
+
+                # ✅ CRITICAL: Wrap everything in "analysis" object - frontend expects this!
+                "analysis": {
+                    # Raw model analyses
+                    "gpt_analysis": bias_results["gpt_analysis"],
+                    "claude_analysis": bias_results["claude_analysis"],
+
+                    # Combined report (full object for reference)
+                    "combined_report": combined,
+
+                    # Publication context
+                    "publication_profile": bias_results.get("publication_profile"),
+
+                    # ✅ CRITICAL: Extract key fields to top level for easy access
+                    # Frontend expects these directly under "analysis"
+                    "consensus_bias_score": combined.get("consensus_bias_score", 0),
+                    "consensus_direction": combined.get("consensus_direction", "Unknown"),
+                    "confidence": combined.get("confidence", 0),
+                    "areas_of_agreement": combined.get("areas_of_agreement", []),
+                    "areas_of_disagreement": combined.get("areas_of_disagreement", []),
+                    "gpt_unique_findings": combined.get("gpt_unique_findings", []),
+                    "claude_unique_findings": combined.get("claude_unique_findings", []),
+                    "publication_bias_context": combined.get("publication_bias_context"),
+                    "final_assessment": combined.get("final_assessment", ""),
+                    "recommendations": combined.get("recommendations", [])
                 },
-                
-                # Publication context
-                "publication_profile": bias_results.get("publication_profile"),
-                
-                # File locations
+
+                # File locations (kept for reference)
                 "local_files": {
                     "combined_report": combined_report_path,
                     "gpt_report": gpt_report_path,
                     "claude_report": claude_report_path
                 },
-                
-                # ✅ NEW: R2 upload status (replaces gdrive_links)
+
+                # R2 upload status
                 "r2_upload": r2_upload_status
             }
-            
+
             fact_logger.log_component_complete(
                 "BiasCheckOrchestrator",
                 duration,
                 session_id=session_id,
-                consensus_score=bias_results["combined_report"]["consensus_bias_score"],
+                consensus_score=combined.get("consensus_bias_score", 0),
                 r2_uploads=len(r2_links) if r2_links else 0
             )
-            
+
             return output
-            
+
         except Exception as e:
             fact_logger.log_component_error("BiasCheckOrchestrator", e)
             raise
-    
+
     def _check_cancellation(self, job_id: str):
         """Check if job has been cancelled and raise exception if so"""
         from utils.job_manager import job_manager
         if job_manager.is_cancelled(job_id):
             raise Exception("Job cancelled by user")
-    
+
     async def process_with_progress(
         self,
         text: str,
@@ -272,35 +289,35 @@ class BiasCheckOrchestrator:
     ) -> dict:
         """
         Process with real-time progress updates (for web interface)
-        
+
         Args:
             text: Text to analyze
             publication_name: Optional publication name
             job_id: Optional job ID for progress tracking
-            
+
         Returns:
             Complete bias analysis results with R2 upload status
         """
         if job_id:
             from utils.job_manager import job_manager
-            
+
             job_manager.add_progress(job_id, "📊 Starting bias analysis...")
             self._check_cancellation(job_id)
             job_manager.add_progress(job_id, "🤖 Analyzing with GPT-4o...")
             self._check_cancellation(job_id)
             job_manager.add_progress(job_id, "🤖 Analyzing with Claude Sonnet...")
             self._check_cancellation(job_id)
-        
+
         result = await self.process(
             text=text,
             publication_name=publication_name,
             save_to_r2=True  
         )
-        
+
         if job_id:
             from utils.job_manager import job_manager
-            
-            # ✅ NEW: Add progress message about R2 upload status
+
+            # Add progress message about R2 upload status
             if result.get("r2_upload", {}).get("success"):
                 job_manager.add_progress(
                     job_id, 
@@ -312,8 +329,8 @@ class BiasCheckOrchestrator:
                     job_id, 
                     f"⚠️ R2 upload failed: {error_msg}"
                 )
-            
+
             job_manager.add_progress(job_id, "✅ Bias analysis complete!")
             job_manager.complete_job(job_id, result)
-        
+
         return result

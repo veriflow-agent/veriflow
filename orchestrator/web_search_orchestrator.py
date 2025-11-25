@@ -232,10 +232,11 @@ class WebSearchOrchestrator:
             duration = time.time() - start_time
 
             return {
+                "success": True,  # ← ADD THIS
                 "session_id": session_id,
                 "facts": [r.dict() for r in results],
                 "summary": summary,
-                "duration": duration,
+                "processing_time": duration,  # ← CHANGED from "duration"
                 "methodology": "web_search_verification",
                 "statistics": {
                     "total_searches": total_queries,
@@ -301,6 +302,7 @@ class WebSearchOrchestrator:
     def _create_empty_result(self, session_id: str, message: str) -> dict:
         """Create empty result when no facts found"""
         return {
+            "success": True,
             "session_id": session_id,
             "facts": [],
             "summary": {
