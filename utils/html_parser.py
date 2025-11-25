@@ -7,13 +7,22 @@ class HTMLParser:
 
     def parse_input(self, html_content: str) -> Dict[str, Any]:
         """
-        Extract text and link mappings from pasted HTML
+        Extract text and link mappings from pasted content (HTML or markdown)
         Returns: {
             'text': str,
             'links': [{'url': str, 'anchor_text': str, 'position': int}],
-            'format': 'chatgpt' | 'perplexity'
+            'format': 'chatgpt' | 'perplexity' | 'markdown'
         }
         """
+        # First check if content has markdown-style reference links
+        markdown_ref_pattern = r'^\s*\[(\d+)\]\s*:\s*(https?://[^\s]+)'
+        markdown_matches = re.findall(markdown_ref_pattern, html_content, re.MULTILINE)
+
+        if markdown_matches:
+            # Parse as markdown reference links
+            return self._parse_markdown_references(html_content, markdown_matches)
+
+        # Otherwise parse as HTML
         soup = BeautifulSoup(html_content, 'html.parser')
 
         # Detect format
@@ -93,4 +102,46 @@ class HTMLParser:
             'text': text,
             'links': links,
             'format': 'perplexity'
+        }
+
+    def _parse_markdown_references(self, content: str, matches: list) -> Dict[str, Any]:
+        """
+        Parse markdown reference-style links: [1]: https://url.com "Title"
+
+        Args:
+            content: Full text content
+            matches: List of (number, url) tuples from regex
+
+        Returns:
+            Parsed content with links extracted
+        """
+        links = []
+
+        # Extract links from matches
+        for idx, (number, url) in enumerate(matches):
+            # Try to extract optional title in quotes
+            title_pattern = rf'\[{number}\]:\s*{re.escape(url)}\s*["\']([^"\']+)["\']'
+            title_match = re.search(title_pattern, content)
+
+            anchor_text = title_match.group(1) if title_match else f"Source {number}"
+
+            links.append({
+                'url': url,
+                'anchor_text': anchor_text,
+                'position': idx
+            })
+
+        # Clean the text (remove reference link lines)
+        text = content
+        for number, url in matches:
+            # Remove the reference link line
+            pattern = rf'^\s*\[{number}\]:\s*{re.escape(url)}[^\n]*\n?'
+            text = re.sub(pattern, '', text, flags=re.MULTILINE)
+
+        text = text.strip()
+
+        return {
+            'text': text,
+            'links': links,
+            'format': 'markdown'
         }

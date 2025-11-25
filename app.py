@@ -69,15 +69,28 @@ except Exception as e:
 
 def detect_input_format(content: str) -> str:
     """
-    Detect if input is HTML (LLM output with links) or plain text
+    Detect if input is HTML/Markdown (LLM output with links) or plain text
     """
     # Check for HTML tags
     html_pattern = r'<\s*[a-z][^>]*>'
     has_html_tags = bool(re.search(html_pattern, content, re.IGNORECASE))
-    has_links = bool(re.search(r'<\s*a\s+[^>]*href\s*=', content, re.IGNORECASE))
+    has_html_links = bool(re.search(r'<\s*a\s+[^>]*href\s*=', content, re.IGNORECASE))
 
-    if has_html_tags or has_links:
-        fact_logger.logger.info("📋 Detected HTML input format (LLM output with links)")
+    # Check for markdown reference links: [1]: https://...
+    markdown_ref_pattern = r'^\s*\[\d+\]\s*:\s*https?://'
+    has_markdown_refs = bool(re.search(markdown_ref_pattern, content, re.MULTILINE))
+
+    # Check for markdown inline links: [text](https://...)
+    markdown_inline_pattern = r'\[([^\]]+)\]\(https?://[^\)]+\)'
+    has_markdown_inline = bool(re.search(markdown_inline_pattern, content))
+
+    # Check for plain URLs (need at least 2)
+    url_pattern = r'https?://[^\s]+'
+    url_matches = re.findall(url_pattern, content)
+    has_multiple_urls = len(url_matches) >= 2
+
+    if has_html_tags or has_html_links or has_markdown_refs or has_markdown_inline or has_multiple_urls:
+        fact_logger.logger.info("📋 Detected HTML/Markdown input format (LLM output with links)")
         return 'html'
     else:
         fact_logger.logger.info("📄 Detected plain text input format (no links)")

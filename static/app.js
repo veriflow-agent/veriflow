@@ -119,12 +119,32 @@ function switchMode(mode) {
 // ============================================
 
 /**
- * Check if content contains HTML links
+ * Check if content contains links in any format
+ * Supports:
+ * - HTML anchor tags: <a href="url">
+ * - Markdown reference links: [1]: https://...
+ * - Markdown inline links: [text](url)
+ * - Plain URLs: https://...
  */
 function hasHTMLLinks(content) {
-    // Check for <a href="..."> patterns
-    const linkPattern = /<\s*a\s+[^>]*href\s*=\s*["'][^"']+["'][^>]*>/i;
-    return linkPattern.test(content);
+    // Check for HTML anchor tags
+    const htmlLinkPattern = /<\s*a\s+[^>]*href\s*=\s*["'][^"']+["'][^>]*>/i;
+    if (htmlLinkPattern.test(content)) return true;
+
+    // Check for markdown reference-style links: [1]: https://...
+    const markdownRefPattern = /^\s*\[\d+\]\s*:\s*https?:\/\//m;
+    if (markdownRefPattern.test(content)) return true;
+
+    // Check for markdown inline links: [text](https://...)
+    const markdownInlinePattern = /\[([^\]]+)\]\(https?:\/\/[^\)]+\)/;
+    if (markdownInlinePattern.test(content)) return true;
+
+    // Check for plain URLs (at least 2 to avoid false positives)
+    const urlPattern = /https?:\/\/[^\s]+/g;
+    const matches = content.match(urlPattern);
+    if (matches && matches.length >= 2) return true;
+
+    return false;
 }
 
 /**
@@ -136,12 +156,34 @@ function hasHTMLTags(content) {
 }
 
 /**
- * Count the number of links in content
+ * Count the number of links in content (all formats)
  */
 function countLinks(content) {
-    const linkPattern = /<\s*a\s+[^>]*href\s*=\s*["'][^"']+["'][^>]*>/gi;
-    const matches = content.match(linkPattern);
-    return matches ? matches.length : 0;
+    let count = 0;
+
+    // Count HTML links
+    const htmlPattern = /<\s*a\s+[^>]*href\s*=\s*["'][^"']+["'][^>]*>/gi;
+    const htmlMatches = content.match(htmlPattern);
+    if (htmlMatches) count += htmlMatches.length;
+
+    // Count markdown reference links: [1]: https://...
+    const markdownRefPattern = /^\s*\[\d+\]\s*:\s*https?:\/\//gm;
+    const refMatches = content.match(markdownRefPattern);
+    if (refMatches) count += refMatches.length;
+
+    // Count markdown inline links: [text](https://...)
+    const markdownInlinePattern = /\[([^\]]+)\]\(https?:\/\/[^\)]+\)/g;
+    const inlineMatches = content.match(markdownInlinePattern);
+    if (inlineMatches) count += inlineMatches.length;
+
+    // If no formatted links found, count plain URLs
+    if (count === 0) {
+        const urlPattern = /https?:\/\/[^\s]+/g;
+        const urlMatches = content.match(urlPattern);
+        if (urlMatches) count = urlMatches.length;
+    }
+
+    return count;
 }
 
 /**
