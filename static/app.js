@@ -381,7 +381,7 @@ async function runFactCheck(content, type) {
 
 async function streamFactCheckProgress(jobId) {
     return new Promise((resolve, reject) => {
-        const eventSource = new EventSource(`/api/stream?job_id=${jobId}`);
+        const eventSource = new EventSource(`/api/job/${jobId}/stream`);
         activeEventSources.push(eventSource);
 
         eventSource.onmessage = (event) => {
@@ -419,7 +419,7 @@ async function runBiasCheck(content) {
 
         const pubName = publicationName.value.trim() || null;
 
-        const response = await fetch('/check_bias', {
+        const response = await fetch('/api/check-bias', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -449,7 +449,7 @@ async function runBiasCheck(content) {
 
 async function streamBiasProgress(jobId) {
     return new Promise((resolve, reject) => {
-        const eventSource = new EventSource(`/bias_stream?job_id=${jobId}`);
+        const eventSource = new EventSource(`/api/job/${jobId}/stream`);
         activeEventSources.push(eventSource);
 
         eventSource.onmessage = (event) => {
@@ -485,7 +485,7 @@ async function runLieDetection(content) {
     try {
         addProgress('🕵️ Analyzing text for deception markers...');
 
-        const response = await fetch('/check_lie_detector', {
+        const response = await fetch('/api/check-lie-detection', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -514,7 +514,7 @@ async function runLieDetection(content) {
 
 async function streamLieDetectionProgress(jobId) {
     return new Promise((resolve, reject) => {
-        const eventSource = new EventSource(`/lie_detector_stream?job_id=${jobId}`);
+        const eventSource = new EventSource(`/api/job/${jobId}/stream`);
         activeEventSources.push(eventSource);
 
         eventSource.onmessage = (event) => {
