@@ -105,6 +105,94 @@ class FileManager:
         # Return full path as string
         return str(filepath)
 
+    def save_verification_report(
+        self,
+        session_id: str,
+        report_text: str,
+        original_content: str = None,
+        upload_to_r2: bool = True
+    ):
+        """
+        Save LLM verification report (simpler version for text-based reports)
+
+        Used by: LLM Output Verification pipeline
+        Different from save_session_content which handles web search scraped content
+
+        Args:
+            session_id: Session identifier
+            report_text: Formatted verification report text
+            original_content: Optional original LLM HTML input
+            upload_to_r2: Whether to upload to Cloudflare R2
+
+        Returns:
+            Dict with upload status: {'success': bool, 'url': str, 'error': str}
+        """
+        from utils.logger import fact_logger
+
+        session_path = self.temp_dir / session_id
+        filepath = session_path / "verification_report.txt"
+
+        # Write the formatted report
+        with open(filepath, 'w', encoding='utf-8') as f:
+            f.write(report_text)
+
+            # Optionally append original LLM output for reference
+            if original_content:
+                f.write("\n\n" + "=" * 100 + "\n")
+                f.write("ORIGINAL LLM OUTPUT:\n")
+                f.write("=" * 100 + "\n\n")
+                f.write(original_content)
+
+        fact_logger.logger.info(
+            f"💾 Saved verification report: verification_report.txt",
+            extra={
+                "session_id": session_id,
+                "filename": "verification_report.txt",
+                "size": len(report_text) + (len(original_content) if original_content else 0)
+            }
+        )
+
+        # Upload to R2
+        upload_result = {'success': False, 'url': None, 'error': None}
+
+        if upload_to_r2:
+            try:
+                from utils.r2_uploader import upload_session_to_r2
+
+                fact_logger.logger.info(f"📤 Uploading verification report for {session_id} to R2")
+                upload_result = upload_session_to_r2(session_id, str(filepath))
+
+                if upload_result and upload_result.get('success'):
+                    fact_logger.logger.info(
+                        f"✅ Verification report uploaded to R2: {upload_result.get('url')}",
+                        extra={
+                            "session_id": session_id,
+                            "r2_url": upload_result.get('url'),
+                            "r2_filename": upload_result.get('filename')
+                        }
+                    )
+                else:
+                    error_msg = upload_result.get('error', 'Unknown error') if upload_result else 'Upload failed'
+                    fact_logger.logger.warning(
+                        f"⚠️ Failed to upload verification report: {error_msg}",
+                        extra={"session_id": session_id, "error": error_msg}
+                    )
+                    upload_result = {'success': False, 'url': None, 'error': error_msg}
+
+            except ImportError:
+                error_msg = "R2 uploader not available. Install boto3."
+                fact_logger.logger.warning(f"⚠️ {error_msg}")
+                upload_result = {'success': False, 'url': None, 'error': error_msg}
+
+            except Exception as e:
+                error_msg = str(e)
+                fact_logger.logger.error(
+                    f"❌ Error uploading to R2: {e}",
+                    extra={"session_id": session_id, "error": error_msg}
+                )
+                upload_result = {'success': False, 'url': None, 'error': error_msg}
+
+        return upload_result
 
     def set_page_title(self, url: str, title: str):
         """

@@ -54,7 +54,7 @@ class LLMInterpretationOrchestrator:
         self.scraper = FactCheckScraper(config)
         self.highlighter = Highlighter(config)
         # Will import updated verifier
-        from agents.llm_output_verifier_updated import LLMOutputVerifier
+        from agents.llm_output_verifier import LLMOutputVerifier
         self.verifier = LLMOutputVerifier(config)
         self.file_manager = FileManager()
 
@@ -120,7 +120,7 @@ class LLMInterpretationOrchestrator:
             # Step 4: Verify each claim's interpretation
             job_manager.add_progress(
                 job_id,
-                f"🔬 Verifying how accurately LLM interpreted sources..."
+                "🔬 Verifying how accurately LLM interpreted sources..."
             )
 
             results = []
@@ -310,14 +310,21 @@ class LLMInterpretationOrchestrator:
 
         report_text = "\n".join(report_lines)
 
-        # Save to file manager
-        await self.file_manager.save_session_content(
+        # ✅ FIXED: Use the new save_verification_report method
+        upload_result = self.file_manager.save_verification_report(
             session_id,
             report_text,
-            original_content
+            original_content,
+            upload_to_r2=True
         )
 
         fact_logger.logger.info(
             f"✅ Session {session_id} saved",
-            extra={"session_id": session_id}
+            extra={
+                "session_id": session_id,
+                "r2_upload_success": upload_result.get('success', False),
+                "r2_url": upload_result.get('url')
+            }
         )
+
+        return upload_result
