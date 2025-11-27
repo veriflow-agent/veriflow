@@ -841,20 +841,6 @@ function createFactCard(fact, number) {
             </div>
         `;
         }
-    } else if (fact.sources_used && fact.sources_used.length > 0) {
-        // Web search: multiple sources
-        sourcesHtml = `
-            <div class="fact-sources">
-                <strong>🔍 Sources Found:</strong> 
-                ${fact.sources_used.map(url => 
-                    `<a href="${escapeHtml(url)}" target="_blank" class="source-tag">
-                        ${new URL(url).hostname}
-                    </a>`
-                ).join(' ')}
-            </div>
-        `;
-    }
-
     card.innerHTML = `
         <div class="fact-header">
             <span class="fact-number">#${number}</span>
