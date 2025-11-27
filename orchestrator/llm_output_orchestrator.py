@@ -29,6 +29,11 @@ from agents.highlighter import Highlighter
 # We'll update the verifier import after creating the updated file
 from utils.job_manager import job_manager
 
+class SimpleFact:
+    """Simple Fact-like object for Highlighter compatibility"""
+    def __init__(self, id: str, statement: str):
+        self.id = id
+        self.statement = statement
 
 class LLMInterpretationOrchestrator:
     """
@@ -220,12 +225,20 @@ class LLMInterpretationOrchestrator:
             )
             return {}
 
-        # Highlight excerpts from the cited source
-        excerpts = await self.highlighter.highlight(
-            claim.claim_text,  # ✅ Use claim_text
-            cited_url,
-            scraped_content[cited_url]
+        # ✅ Create a Fact-like object for Highlighter
+        simple_fact = SimpleFact(
+            id=claim.id,
+            statement=claim.claim_text
         )
+
+        # ✅ Create proper dict format: {url: content}
+        cited_content = {cited_url: scraped_content[cited_url]}
+
+        # ✅ Call highlighter with correct signature (2 args, not 3)
+        excerpts_dict = await self.highlighter.highlight(simple_fact, cited_content)
+
+        # Extract just the excerpts list for this URL
+        excerpts = excerpts_dict.get(cited_url, [])
 
         fact_logger.logger.info(
             f"✂️ Extracted {len(excerpts)} excerpts from cited source",
