@@ -2,7 +2,7 @@
 """
 LLM Interpretation Verification Orchestrator
 
-PURPOSE: Verify if LLMs (ChatGPT, Perplexity) accurately interpreted their cited sources
+PURPOSE: Verify if LLMs (ChatGPT and Perplexity) accurately interpreted their cited sources
 
 PROCESS: LLM Output Verification
 - Input: LLM output WITH embedded source links
@@ -199,7 +199,7 @@ class LLMInterpretationOrchestrator:
     @traceable(name="parse_llm_output", run_type="parser")
     async def _traced_parse(self, html_content: str) -> dict:
         """Parse LLM output with tracing"""
-        return self.parser.parse(html_content)
+        return self.parser.parse_input(html_content)
 
     @traceable(name="extract_excerpts_for_claim", run_type="chain")
     async def _extract_excerpts(self, claim, scraped_content: dict) -> dict:
