@@ -205,29 +205,61 @@
                 </div>
             </section>
 
-            <!-- Plain Text Modal (for suggesting mode switch) -->
+            <!-- Plain Text Modal (for suggesting mode switch) - IMPROVED VERSION -->
             <div id="plainTextModal" class="modal" style="display: none;">
-                <div class="modal-content">
-                    <h3>⚠️ No Source Links Detected</h3>
-                    <p>This content appears to be plain text without source links.</p>
-                    <p><strong>Would you like to:</strong></p>
-                    <div class="modal-buttons">
-                        <button id="switchToTextMode" class="btn-primary">
-                            🔍 Switch to Text Fact-Checking
-                            <span class="modal-btn-desc">Uses web search to verify claims</span>
-                        </button>
-                        <button id="switchToBiasMode" class="btn-primary">
-                            📊 Switch to Bias Analysis
-                            <span class="modal-btn-desc">Analyzes text for bias</span>
-                        </button>
-                        <button id="switchToLieMode" class="btn-primary">
-                            🕵️ Switch to Lie Detection
-                            <span class="modal-btn-desc">Analyzes deception markers</span>
-                        </button>
+                <div class="modal-content-improved">
+                    <button id="closeModal" class="modal-close-btn" aria-label="Close">×</button>
+
+                    <div class="modal-header">
+                        <div class="modal-icon-warning">⚠️</div>
+                        <h3>No Source Links Detected</h3>
+                        <p>This content appears to be plain text without source links.</p>
                     </div>
-                    <div class="modal-footer">
-                        <button id="continueAnyway" class="btn-secondary-small">Continue Anyway</button>
-                        <button id="closeModal" class="btn-secondary-small">Cancel</button>
+
+                    <div class="modal-divider"></div>
+
+                    <div class="modal-body">
+                        <p class="modal-subtitle">Choose an analysis mode:</p>
+
+                        <div class="modal-options-grid">
+                            <!-- Text Fact-Checking Option -->
+                            <button id="switchToTextMode" class="option-card option-factcheck">
+                                <div class="option-card-icon">🔍</div>
+                                <div class="option-card-content">
+                                    <h4>Text Fact-Checking</h4>
+                                    <p>Uses web search to verify claims</p>
+                                </div>
+                                <div class="option-card-arrow">→</div>
+                            </button>
+
+                            <!-- Bias Analysis Option -->
+                            <button id="switchToBiasMode" class="option-card option-bias">
+                                <div class="option-card-icon">📊</div>
+                                <div class="option-card-content">
+                                    <h4>Bias Analysis</h4>
+                                    <p>Analyzes text for political bias</p>
+                                </div>
+                                <div class="option-card-arrow">→</div>
+                            </button>
+
+                            <!-- Lie Detection Option -->
+                            <button id="switchToLieMode" class="option-card option-lie">
+                                <div class="option-card-icon">🕵️</div>
+                                <div class="option-card-content">
+                                    <h4>Lie Detection</h4>
+                                    <p>Analyzes deception markers</p>
+                                </div>
+                                <div class="option-card-arrow">→</div>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="modal-divider"></div>
+
+                    <div class="modal-footer-improved">
+                        <button id="continueAnyway" class="btn-text-link">
+                            Continue with LLM Output Mode anyway
+                        </button>
                     </div>
                 </div>
             </div>
