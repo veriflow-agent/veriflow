@@ -185,9 +185,10 @@ class LLMInterpretationOrchestrator:
                 }
             )
 
+            # ✅ Convert Pydantic objects to dicts for JSON serialization
             return {
                 'session_id': session_id,
-                'results': results,
+                'results': [result.model_dump() for result in results],  # Convert to dict
                 'summary': summary,
                 'duration': duration
             }
