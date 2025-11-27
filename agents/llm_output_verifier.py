@@ -32,6 +32,8 @@ class LLMVerificationResult(BaseModel):
     wording_comparison: Dict
     confidence: float = Field(ge=0.0, le=1.0)
     reasoning: str
+    excerpts: List[Dict] = Field(default_factory=list)  # ✅ Store highlighted excerpts
+    cited_source_url: str = ""  # ✅ Store the source URL that was verified
 
 
 class LLMOutputVerifier:
@@ -115,7 +117,9 @@ class LLMOutputVerifier:
         result = await self._verify_with_llm(
             claim,
             excerpts_text,
-            content_preview
+            content_preview,
+            excerpts,  # ✅ Pass raw excerpts
+            cited_url  # ✅ Pass source URL
         )
 
         duration = time.time() - start_time
@@ -147,7 +151,9 @@ class LLMOutputVerifier:
         self,
         claim: LLMClaim,
         excerpts_text: str,
-        source_content: str
+        source_content: str,
+        excerpts: List[Dict],  # ✅ Add excerpts parameter
+        cited_url: str  # ✅ Add cited_url parameter
     ) -> LLMVerificationResult:
         """Call LLM for verification"""
 
@@ -181,7 +187,9 @@ class LLMOutputVerifier:
             interpretation_issues=response.get('interpretation_issues', []),
             wording_comparison=response.get('wording_comparison', {}),
             confidence=response['confidence'],
-            reasoning=response['reasoning']
+            reasoning=response['reasoning'],
+            excerpts=excerpts,  # ✅ Store the excerpts
+            cited_source_url=cited_url  # ✅ Store the source URL
         )
 
     def _create_error_result(self, claim: LLMClaim, error_msg: str) -> LLMVerificationResult:
@@ -194,5 +202,7 @@ class LLMOutputVerifier:
             interpretation_issues=[error_msg],
             wording_comparison={},
             confidence=0.0,
-            reasoning=f"Could not verify: {error_msg}"
+            reasoning=f"Could not verify: {error_msg}",
+            excerpts=[],  # ✅ Empty excerpts for errors
+            cited_source_url=claim.cited_source if hasattr(claim, 'cited_source') else ""  # ✅ Include URL if available
         )

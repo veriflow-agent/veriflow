@@ -315,8 +315,45 @@ class LLMInterpretationOrchestrator:
                 f"Confidence: {result.confidence:.2f}",
             ])
 
+            # ✅ Add wording comparison section
+            if result.wording_comparison:
+                report_lines.append("\nWORDING COMPARISON:")
+                wc = result.wording_comparison
+                if wc.get('llm_claim'):
+                    report_lines.append(f"  LLM Said: \"{wc.get('llm_claim')}\"")
+                if wc.get('source_says'):
+                    report_lines.append(f"  Source Says: \"{wc.get('source_says')}\"")
+                if 'faithful' in wc:
+                    faithful_status = "✓ Faithful" if wc.get('faithful') else "✗ Not Faithful"
+                    report_lines.append(f"  {faithful_status}")
+
+            # ✅ Add highlighted excerpts section
+            if result.excerpts:
+                report_lines.append(f"\nHIGHLIGHTED EXCERPTS FROM SOURCE ({len(result.excerpts)} found):")
+                for i, excerpt in enumerate(result.excerpts[:3], 1):  # Show top 3 excerpts
+                    relevance = excerpt.get('relevance', 0)
+                    quote = excerpt.get('quote', '').strip()
+                    if quote:
+                        # Truncate long quotes
+                        if len(quote) > 300:
+                            quote = quote[:300] + "..."
+                        report_lines.append(f"  [{i}] Relevance: {relevance:.2f}")
+                        report_lines.append(f"      \"{quote}\"")
+                if len(result.excerpts) > 3:
+                    report_lines.append(f"  ... and {len(result.excerpts) - 3} more excerpts")
+                if result.cited_source_url:
+                    report_lines.append(f"  Source: {result.cited_source_url}")
+
+            # ✅ Add detailed reasoning section
+            if result.reasoning:
+                report_lines.append("\nREASONING:")
+                # Format reasoning with proper indentation
+                reasoning_lines = result.reasoning.split('\n')
+                for line in reasoning_lines:
+                    report_lines.append(f"  {line}")
+
             if result.interpretation_issues:
-                report_lines.append("Issues Found:")
+                report_lines.append("\nISSUES FOUND:")
                 for issue in result.interpretation_issues:
                     report_lines.append(f"  - {issue}")
 
