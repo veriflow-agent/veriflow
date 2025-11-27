@@ -1,4 +1,4 @@
-// static/app.js - Enhanced with Lie Detection Mode
+// static/app.js - Enhanced with proper pipeline separation
 
 // ============================================
 // DOM ELEMENTS
@@ -55,11 +55,13 @@ const retryBtn = document.getElementById('retryBtn');
 // ============================================
 
 let currentMode = 'llm-output'; // 'llm-output', 'text-factcheck', 'bias-analysis', 'lie-detection'
-let currentFactCheckResults = null;
+let currentLLMVerificationResults = null;  // ✅ NEW: Separate for LLM interpretation checking
+let currentFactCheckResults = null;        // ✅ UPDATED: Only for web search fact-checking
 let currentBiasResults = null;
 let currentLieDetectionResults = null;
 let activeEventSources = [];
 let currentJobIds = {
+    llmVerification: null,  // ✅ NEW
     factCheck: null,
     biasCheck: null,
     lieDetection: null
@@ -120,7 +122,7 @@ modeTabs.forEach(tab => {
 
 htmlInput.addEventListener('input', () => {
     const content = htmlInput.value.trim();
-    
+
     if (!content) {
         hideContentFormatIndicator();
         return;
@@ -270,7 +272,7 @@ checkBtn.addEventListener('click', handleAnalyze);
 
 async function handleAnalyze() {
     const content = htmlInput.value.trim();
-    
+
     if (!content) {
         showError('Please paste some content to analyze.');
         return;
@@ -312,17 +314,25 @@ async function processContent(content, type) {
     showSection(statusSection);
     clearProgressLog();
 
+    // ✅ CLEAR ALL RESULTS
+    currentLLMVerificationResults = null;
     currentFactCheckResults = null;
     currentBiasResults = null;
     currentLieDetectionResults = null;
+    currentJobIds.llmVerification = null;
     currentJobIds.factCheck = null;
     currentJobIds.biasCheck = null;
     currentJobIds.lieDetection = null;
 
     try {
-        if (type === 'html' || type === 'text') {
-            addProgress(`🔍 Starting fact checking (${type === 'html' ? 'LLM Output' : 'Web Search'} mode)...`);
-            await runFactCheck(content, type);
+        if (type === 'html') {
+            // ✅ LLM Output Verification Pipeline
+            addProgress('🔍 Starting LLM interpretation verification...');
+            await runLLMVerification(content);
+        } else if (type === 'text') {
+            // ✅ Web Search Fact-Checking Pipeline
+            addProgress('🔍 Starting web search fact-checking...');
+            await runFactCheck(content);
         } else if (type === 'bias') {
             addProgress('📊 Starting bias analysis...');
             await runBiasCheck(content);
@@ -346,10 +356,10 @@ async function processContent(content, type) {
 }
 
 // ============================================
-// FACT CHECKING
+// LLM VERIFICATION
 // ============================================
 
-async function runFactCheck(content, type) {
+async function runLLMVerification(content) {
     try {
         const response = await fetch('/api/check', {
             method: 'POST',
@@ -358,7 +368,80 @@ async function runFactCheck(content, type) {
             },
             body: JSON.stringify({
                 content: content,
-                input_type: type
+                input_type: 'html'
+            })
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'LLM verification failed');
+        }
+
+        const data = await response.json();
+        currentJobIds.llmVerification = data.job_id;
+
+        await streamLLMVerificationProgress(data.job_id);
+
+    } catch (error) {
+        console.error('LLM verification error:', error);
+        addProgress(`❌ LLM verification failed: ${error.message}`, 'error');
+        throw error;
+    }
+}
+
+async function streamLLMVerificationProgress(jobId) {
+    return new Promise((resolve, reject) => {
+        const eventSource = new EventSource(`/api/job/${jobId}/stream`);
+        activeEventSources.push(eventSource);
+
+        eventSource.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+
+            console.log('LLM Verification SSE:', data);
+
+            if (data.heartbeat) {
+                return;
+            }
+
+            if (data.status === 'completed') {
+                currentLLMVerificationResults = data.result;
+                console.log('LLM Verification completed:', data.result);
+                addProgress('✅ LLM interpretation verification completed');
+                eventSource.close();
+                resolve(data.result);
+            } else if (data.status === 'failed') {
+                console.error('LLM Verification failed:', data.error);
+                addProgress(`❌ LLM verification failed: ${data.error}`, 'error');
+                eventSource.close();
+                reject(new Error(data.error));
+            } else if (data.message) {
+                console.log('Progress:', data.message);
+                addProgress(data.message);
+            }
+        };
+
+        eventSource.onerror = (error) => {
+            console.error('LLM verification stream error:', error);
+            eventSource.close();
+            reject(new Error('Stream connection failed'));
+        };
+    });
+}
+
+// ============================================
+// FACT CHECKING (Web Search Only)
+// ============================================
+
+async function runFactCheck(content) {
+    try {
+        const response = await fetch('/api/check', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                content: content,
+                input_type: 'text'
             })
         });
 
@@ -387,29 +470,25 @@ async function streamFactCheckProgress(jobId) {
         eventSource.onmessage = (event) => {
             const data = JSON.parse(event.data);
 
-            // ✅ ADD DEBUGGING
-            console.log('SSE message received:', data);
+            console.log('Fact Check SSE:', data);
 
-            // Handle heartbeat
             if (data.heartbeat) {
                 return;
             }
 
             if (data.status === 'completed') {
                 currentFactCheckResults = data.result;
-                // ✅ ADD DEBUGGING
-                console.log('Job completed, result:', data.result);
+                console.log('Fact check completed:', data.result);
                 addProgress('✅ Fact checking completed');
                 eventSource.close();
                 resolve(data.result);
             } else if (data.status === 'failed') {
-                console.error('Job failed:', data.error);
+                console.error('Fact check failed:', data.error);
                 addProgress(`❌ Fact check failed: ${data.error}`, 'error');
                 eventSource.close();
                 reject(new Error(data.error));
-            } else if (data.message) {  // ← CHANGED from data.progress to data.message
-                // ✅ ADD DEBUGGING
-                console.log('Progress message:', data.message);
+            } else if (data.message) {
+                console.log('Progress:', data.message);
                 addProgress(data.message);
             }
         };
@@ -563,14 +642,15 @@ function displayCombinedResults(type) {
     hideAllSections();
     showSection(resultsSection);
 
-    // Show appropriate tabs
-    factCheckTab.style.display = currentFactCheckResults ? 'block' : 'none';
+    // ✅ Show appropriate tabs based on what results we have
+    const hasVerificationResults = currentLLMVerificationResults || currentFactCheckResults;
+    factCheckTab.style.display = hasVerificationResults ? 'block' : 'none';
     biasAnalysisTab.style.display = currentBiasResults ? 'block' : 'none';
     lieDetectionTab.style.display = currentLieDetectionResults ? 'block' : 'none';
 
     // Display results
-    if (currentFactCheckResults) {
-        displayFactCheckResults();
+    if (currentLLMVerificationResults || currentFactCheckResults) {
+        displayVerificationResults();
         switchResultTab('fact-check');
     } else if (currentBiasResults) {
         displayBiasResults();
@@ -581,86 +661,185 @@ function displayCombinedResults(type) {
     }
 }
 
-function displayFactCheckResults() {
-    if (!currentFactCheckResults) {
-        console.error('No fact check results available');
+// ============================================
+// DISPLAY VERIFICATION RESULTS (Unified)
+// ============================================
+
+function displayVerificationResults() {
+    // ✅ Handle both LLM Verification and Web Search Fact-Checking
+    let data, facts, sessionId, duration, pipelineType, auditUrl;
+
+    if (currentLLMVerificationResults) {
+        // LLM Interpretation Verification
+        console.log('📦 Displaying LLM Verification Results');
+
+        if (currentLLMVerificationResults.factCheck) {
+            // New nested structure
+            data = currentLLMVerificationResults.factCheck;
+        } else {
+            // Fallback for direct structure
+            data = currentLLMVerificationResults;
+        }
+
+        facts = data.results || data.claims || [];
+        sessionId = data.session_id || '-';
+        duration = data.duration || data.processing_time || 0;
+        pipelineType = 'LLM Interpretation Verification';
+        auditUrl = data.audit_url || currentLLMVerificationResults.audit_url;
+
+    } else if (currentFactCheckResults) {
+        // Web Search Fact-Checking
+        console.log('📦 Displaying Web Search Fact-Check Results');
+
+        data = currentFactCheckResults;
+        facts = data.facts || data.claims || [];
+        sessionId = data.session_id || '-';
+        duration = data.processing_time || data.duration || 0;
+        pipelineType = 'Web Search Fact-Checking';
+        auditUrl = data.audit_url;
+
+    } else {
+        console.error('No verification results available');
         return;
     }
 
-    // ✅ UPDATED: Check for success field OR just proceed if we have data
-    if (currentFactCheckResults.success === false) {
-        console.error('Fact check marked as failed');
+    console.log(`📊 Processing ${facts.length} facts from ${pipelineType}`);
+
+    // Check for explicit failure
+    if (data.success === false) {
+        console.error('Verification marked as failed');
+        showError('Verification failed. Please try again.');
         return;
     }
-
-    const data = currentFactCheckResults;
-    // ✅ Handle both 'facts' (web search) and 'claims' (LLM interpretation)
-    const facts = data.facts || data.claims || [];
-    const sessionId = data.session_id || '-';
-    const duration = data.processing_time || data.duration || 0;
 
     const totalFacts = facts.length;
+
     // ✅ Handle both verification_score (LLM) and match_score (web search)
     const accurateFacts = facts.filter(f => 
         (f.verification_score || f.match_score || 0) >= 0.9
     ).length;
+
     const goodFacts = facts.filter(f => {
         const score = f.verification_score || f.match_score || 0;
         return score >= 0.7 && score < 0.9;
     }).length;
+
     const questionableFacts = facts.filter(f => 
         (f.verification_score || f.match_score || 0) < 0.7
     ).length;
+
     const avgScore = totalFacts > 0 
         ? (facts.reduce((sum, f) => 
             sum + (f.verification_score || f.match_score || 0), 0
           ) / totalFacts * 100).toFixed(0)
         : 0;
 
-    // Rest of the function continues...
-
+    // Update summary display
     document.getElementById('totalFacts').textContent = totalFacts;
     document.getElementById('accurateFacts').textContent = accurateFacts;
     document.getElementById('goodFacts').textContent = goodFacts;
     document.getElementById('questionableFacts').textContent = questionableFacts;
-    document.getElementById('avgScore').textContent = Math.round(avgScore * 100) + '%';
+    document.getElementById('avgScore').textContent = Math.round(avgScore) + '%';
 
     document.getElementById('sessionId').textContent = sessionId;
     document.getElementById('processingTime').textContent = Math.round(duration) + 's';
 
+    // Handle audit URL
     const auditLink = document.getElementById('auditLink');
-    if (data.audit_url) {
-        auditLink.href = data.audit_url;
+    if (auditUrl) {
+        auditLink.href = auditUrl;
         auditLink.style.display = 'inline';
     } else {
         auditLink.style.display = 'none';
     }
 
+    // Display fact cards
     factsList.innerHTML = '';
     facts.forEach((fact, index) => {
         factsList.appendChild(createFactCard(fact, index + 1));
     });
 }
 
+// ============================================
+// CREATE FACT CARD
+// ============================================
+
 function createFactCard(fact, number) {
     const card = document.createElement('div');
     card.className = 'fact-card';
 
-    const score = fact.verification_score || 0;
+    // Handle both verification_score (LLM) and match_score (web search)
+    const score = fact.verification_score || fact.match_score || 0;
     const scoreClass = score >= 0.9 ? 'accurate' : score >= 0.7 ? 'good' : 'questionable';
+
+    // Handle both claim_text (LLM) and statement (web search)
+    const statementText = fact.claim_text || fact.statement || 'No statement available';
+
+    // Handle assessment
+    const assessmentText = fact.assessment || 'No assessment available';
+
+    // Handle discrepancies vs interpretation_issues
+    let issuesHtml = '';
+    if (fact.interpretation_issues && fact.interpretation_issues.length > 0) {
+        issuesHtml = `
+            <div class="fact-discrepancies">
+                <strong>⚠️ Interpretation Issues:</strong>
+                <ul>
+                    ${fact.interpretation_issues.map(issue => `<li>${escapeHtml(issue)}</li>`).join('')}
+                </ul>
+            </div>
+        `;
+    } else if (fact.discrepancies) {
+        issuesHtml = `
+            <div class="fact-discrepancies">
+                <strong>⚠️ Discrepancies:</strong> ${escapeHtml(fact.discrepancies)}
+            </div>
+        `;
+    }
+
+    // Handle sources display
+    let sourcesHtml = '';
+    if (fact.cited_source_url) {
+        // LLM verification: single cited source
+        sourcesHtml = `
+            <div class="fact-sources">
+                <strong>📎 Source Cited:</strong> 
+                <a href="${escapeHtml(fact.cited_source_url)}" target="_blank" class="source-tag">
+                    ${new URL(fact.cited_source_url).hostname}
+                </a>
+            </div>
+        `;
+    } else if (fact.sources_used && fact.sources_used.length > 0) {
+        // Web search: multiple sources
+        sourcesHtml = `
+            <div class="fact-sources">
+                <strong>🔍 Sources Found:</strong> 
+                ${fact.sources_used.map(url => 
+                    `<a href="${escapeHtml(url)}" target="_blank" class="source-tag">
+                        ${new URL(url).hostname}
+                    </a>`
+                ).join(' ')}
+            </div>
+        `;
+    }
 
     card.innerHTML = `
         <div class="fact-header">
             <span class="fact-number">#${number}</span>
             <span class="fact-score ${scoreClass}">${Math.round(score * 100)}%</span>
         </div>
-        <div class="fact-statement">${escapeHtml(fact.statement)}</div>
-        <div class="fact-assessment">${escapeHtml(fact.assessment || 'No assessment available')}</div>
-        ${fact.discrepancies ? `<div class="fact-discrepancies"><strong>Discrepancies:</strong> ${escapeHtml(fact.discrepancies)}</div>` : ''}
+        <div class="fact-statement">${escapeHtml(statementText)}</div>
+        <div class="fact-assessment">${escapeHtml(assessmentText)}</div>
+        ${sourcesHtml}
+        ${issuesHtml}
     `;
 
     return card;
 }
+
+// ============================================
+// DISPLAY BIAS RESULTS
+// ============================================
 
 function displayBiasResults() {
     if (!currentBiasResults || !currentBiasResults.success) {
@@ -668,7 +847,7 @@ function displayBiasResults() {
     }
 
     const analysis = currentBiasResults.analysis;
-    
+
     // Display consensus score and direction
     const score = analysis.consensus_bias_score || 0;
     const direction = analysis.consensus_direction || 'Unknown';
@@ -703,7 +882,7 @@ function displayModelAnalysis(model, data) {
     // Bias indicators
     const indicatorsList = document.getElementById(`${prefix}BiasIndicators`);
     indicatorsList.innerHTML = '';
-    
+
     if (data.biases_detected && data.biases_detected.length > 0) {
         data.biases_detected.forEach(bias => {
             const li = document.createElement('li');
@@ -750,6 +929,10 @@ function displayConsensusAnalysis(analysis) {
         recommendationsList.appendChild(li);
     });
 }
+
+// ============================================
+// DISPLAY LIE DETECTION RESULTS
+// ============================================
 
 function displayLieDetectionResults() {
     if (!currentLieDetectionResults || !currentLieDetectionResults.success) {
@@ -950,6 +1133,7 @@ clearBtn.addEventListener('click', () => {
     publicationName.value = '';
     hideContentFormatIndicator();
     hideAllSections();
+    currentLLMVerificationResults = null;
     currentFactCheckResults = null;
     currentBiasResults = null;
     currentLieDetectionResults = null;
@@ -967,6 +1151,7 @@ newCheckBtn.addEventListener('click', () => {
     htmlInput.value = '';
     publicationName.value = '';
     hideContentFormatIndicator();
+    currentLLMVerificationResults = null;
     currentFactCheckResults = null;
     currentBiasResults = null;
     currentLieDetectionResults = null;
@@ -981,6 +1166,7 @@ retryBtn.addEventListener('click', () => {
 
 exportBtn.addEventListener('click', () => {
     const data = {
+        llmVerification: currentLLMVerificationResults,
         factCheck: currentFactCheckResults,
         biasAnalysis: currentBiasResults,
         lieDetection: currentLieDetectionResults,
@@ -1002,4 +1188,4 @@ exportBtn.addEventListener('click', () => {
 // INITIALIZATION
 // ============================================
 
-console.log('App initialized successfully');
+console.log('App initialized successfully with pipeline separation');

@@ -1766,3 +1766,14 @@ footer a:hover {
         flex-direction: column;
     }
 }
+
+/* Pipeline Type Badge */
+.pipeline-badge {
+    display: inline-block;
+    padding: 0.15rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+}
