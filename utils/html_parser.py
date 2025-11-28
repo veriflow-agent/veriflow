@@ -128,7 +128,8 @@ class HTMLParser:
             links.append({
                 'url': url,
                 'anchor_text': anchor_text,
-                'position': idx
+                'position': idx,
+                'citation_number': number  # ✅ ADD THIS LINE - preserves original citation number
             })
 
         # Clean the text (remove reference link lines)

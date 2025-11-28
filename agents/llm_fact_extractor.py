@@ -233,8 +233,21 @@ class LLMFactExtractor:
         return claims, all_sources
 
     def _format_sources(self, links: List[dict]) -> str:
-        """Format source links for the prompt"""
-        return "\n".join([f"[{i+1}] {link['url']}" for i, link in enumerate(links)])
+        """
+        Format source links for the prompt
+
+        ✅ NEW: Uses original citation numbers if available (for markdown references)
+        Otherwise uses sequential numbering (for HTML links)
+        """
+        formatted = []
+
+        for i, link in enumerate(links):
+            # Use original citation_number if available (markdown format)
+            # Otherwise use sequential numbering (HTML format)
+            citation_num = link.get('citation_number', i+1)
+            formatted.append(f"[{citation_num}] {link['url']}")
+
+        return "\n".join(formatted)
 
     def _split_into_chunks(self, text: str, chunk_size: int) -> List[str]:
         """Split text into overlapping chunks at sentence boundaries"""
