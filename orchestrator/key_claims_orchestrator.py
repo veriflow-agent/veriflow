@@ -37,7 +37,7 @@ from agents.key_claims_extractor import KeyClaimsExtractor, ContentLocation
 
 # Import existing agents (reuse from web search pipeline)
 from agents.browserless_scraper import FactCheckScraper
-from agents.fact_checker import FactChecker
+from agents.fact_checker import FactChecker, FactCheckResult
 from agents.query_generator import QueryGenerator
 from agents.tavily_searcher import TavilySearcher
 from agents.credibility_filter import CredibilityFilter
@@ -47,7 +47,7 @@ from agents.highlighter import Highlighter
 class KeyClaimsOrchestrator:
     """
     Orchestrator for key claims extraction and verification
-    
+
     Extracts only 2-3 central thesis claims and verifies them thoroughly.
     For when you want to know: "What is this article trying to prove, and is it true?"
     """
@@ -105,6 +105,7 @@ class KeyClaimsOrchestrator:
             "verified_count": len([r for r in results if r.match_score >= 0.9]),
             "partial_count": len([r for r in results if 0.7 <= r.match_score < 0.9]),
             "unverified_count": len([r for r in results if r.match_score < 0.7]),
+            "debunked_count": len([r for r in results if r.match_score <= 0.1]),
             "overall_credibility": self._calculate_overall_credibility(results)
         }
 
@@ -112,9 +113,14 @@ class KeyClaimsOrchestrator:
         """Calculate overall credibility assessment"""
         if not results:
             return "Unable to assess"
-        
+
         avg_score = sum(r.match_score for r in results) / len(results)
-        
+
+        # Check for any debunked claims
+        has_debunked = any(r.match_score <= 0.1 for r in results)
+        if has_debunked:
+            return "Very Low - Contains debunked or hoax claims"
+
         if avg_score >= 0.9:
             return "High - Key claims are well-supported"
         elif avg_score >= 0.7:
@@ -128,11 +134,11 @@ class KeyClaimsOrchestrator:
     async def process(self, text_content: str, save_to_r2: bool = True) -> dict:
         """
         Process text to extract and verify key claims
-        
+
         Args:
             text_content: Text to analyze
             save_to_r2: Whether to upload results to R2
-            
+
         Returns:
             Complete verification results
         """
@@ -163,7 +169,7 @@ class KeyClaimsOrchestrator:
                     'statement': claim.statement,
                     'original_text': claim.original_text
                 })()
-                
+
                 queries = await self.query_generator.generate_queries(
                     fact_like,
                     context="",
@@ -221,15 +227,13 @@ class KeyClaimsOrchestrator:
                 scraped_content = scraped_content_by_claim.get(claim.id, {})
 
                 if not scraped_content or not any(scraped_content.values()):
-                    from agents.fact_checker import FactCheckResult
+                    # UPDATED: Use new simplified report field
                     result = FactCheckResult(
                         fact_id=claim.id,
                         statement=claim.statement,
                         match_score=0.0,
-                        assessment="Unable to verify - no credible sources found",
-                        discrepancies="No sources available for verification",
                         confidence=0.0,
-                        reasoning="Web search did not yield credible sources for this key claim"
+                        report="Unable to verify - no credible sources found. Web search did not return any Tier 1 or Tier 2 sources for this key claim. This doesn't necessarily mean the claim is false, but it cannot be verified through available web sources."
                     )
                     results.append(result)
                     continue
@@ -243,7 +247,7 @@ class KeyClaimsOrchestrator:
 
                 # Extract relevant excerpts
                 excerpts = await self.highlighter.highlight(fact_like, scraped_content)
-                
+
                 # Verify claim against excerpts
                 check_result = await self.checker.check_fact(fact_like, excerpts)
                 results.append(check_result)
@@ -312,11 +316,11 @@ class KeyClaimsOrchestrator:
     async def process_with_progress(self, text_content: str, job_id: str) -> dict:
         """
         Process with real-time progress updates (for web interface)
-        
+
         Args:
             text_content: Text to analyze
             job_id: Job ID for progress tracking
-            
+
         Returns:
             Complete key claims verification results
         """
@@ -355,23 +359,15 @@ class KeyClaimsOrchestrator:
                 if content_location.language != "english":
                     job_manager.add_progress(
                         job_id,
-                        f"🌍 Detected location: {content_location.country} ({content_location.language})"
-                    )
-                else:
-                    job_manager.add_progress(
-                        job_id,
-                        f"🌍 Detected location: {content_location.country}"
+                        f"🌍 Detected: {content_location.country} ({content_location.language})"
                     )
 
             # Step 2: Generate Search Queries
-            job_manager.add_progress(job_id, "🔍 Generating search queries for key claims...")
+            job_manager.add_progress(job_id, "🔍 Generating search queries...")
             self._check_cancellation(job_id)
 
             all_queries_by_claim = {}
-            local_language_used = None
-
             for claim in claims:
-                # Create a Fact-like object for query generator compatibility
                 fact_like = type('Fact', (), {
                     'id': claim.id,
                     'statement': claim.statement,
@@ -385,30 +381,13 @@ class KeyClaimsOrchestrator:
                 )
                 all_queries_by_claim[claim.id] = queries
 
-                if queries.local_language_used:
-                    local_language_used = queries.local_language_used
-
-            total_queries = sum(len(q.all_queries) for q in all_queries_by_claim.values())
-
-            if local_language_used:
-                job_manager.add_progress(
-                    job_id,
-                    f"✅ Generated {total_queries} queries (includes {local_language_used} queries)"
-                )
-            else:
-                job_manager.add_progress(job_id, f"✅ Generated {total_queries} search queries")
-
             # Step 3: Execute Web Searches
-            job_manager.add_progress(job_id, "🌐 Searching the web for evidence...")
+            job_manager.add_progress(job_id, "🌐 Searching for sources...")
             self._check_cancellation(job_id)
 
             search_results_by_claim = {}
-            for i, claim in enumerate(claims, 1):
-                job_manager.add_progress(
-                    job_id,
-                    f"🔎 Searching for claim {i}/{len(claims)}: \"{claim.statement[:50]}...\""
-                )
-
+            total_results = 0
+            for claim in claims:
                 queries = all_queries_by_claim[claim.id]
                 search_results = await self.searcher.search_multiple(
                     queries=queries.all_queries,
@@ -417,14 +396,18 @@ class KeyClaimsOrchestrator:
                 )
                 search_results_by_claim[claim.id] = search_results
 
-            job_manager.add_progress(job_id, "✅ Web searches complete")
+                # Count results
+                for query_results in search_results.values():
+                    total_results += len(query_results.results)
+
+            job_manager.add_progress(job_id, f"📊 Found {total_results} potential sources")
 
             # Step 4: Filter by Credibility
-            job_manager.add_progress(job_id, "⭐ Filtering sources by credibility...")
+            job_manager.add_progress(job_id, "🏆 Filtering sources by credibility...")
             self._check_cancellation(job_id)
 
             credible_urls_by_claim = {}
-            credibility_results_by_claim = {}
+            source_metadata_by_claim = {}
 
             for claim in claims:
                 all_results_for_claim = []
@@ -433,9 +416,9 @@ class KeyClaimsOrchestrator:
 
                 if not all_results_for_claim:
                     credible_urls_by_claim[claim.id] = []
+                    source_metadata_by_claim[claim.id] = {}
                     continue
 
-                # Create Fact-like object for credibility filter
                 fact_like = type('Fact', (), {
                     'id': claim.id,
                     'statement': claim.statement
@@ -445,16 +428,20 @@ class KeyClaimsOrchestrator:
                     fact=fact_like,
                     search_results=all_results_for_claim
                 )
-                credibility_results_by_claim[claim.id] = credibility_results
 
                 credible_urls = credibility_results.get_top_sources(self.max_sources_per_claim)
                 credible_urls_by_claim[claim.id] = [s.url for s in credible_urls]
 
+                # Store metadata for tier info
+                source_metadata_by_claim[claim.id] = {
+                    s.url: s for s in credibility_results.sources
+                }
+
             total_credible = sum(len(urls) for urls in credible_urls_by_claim.values())
-            job_manager.add_progress(job_id, f"✅ Found {total_credible} credible sources")
+            job_manager.add_progress(job_id, f"✅ Selected {total_credible} credible sources")
 
             # Step 5: Scrape Sources
-            job_manager.add_progress(job_id, f"🌐 Scraping {total_credible} sources...")
+            job_manager.add_progress(job_id, "📥 Fetching source content...")
             self._check_cancellation(job_id)
 
             scraped_content_by_claim = {}
@@ -464,30 +451,30 @@ class KeyClaimsOrchestrator:
                     scraped_content = await self.scraper.scrape_urls_for_facts(urls_to_scrape)
                     scraped_content_by_claim[claim.id] = scraped_content
 
-            job_manager.add_progress(job_id, "✅ Scraping complete")
-
-            # Step 6: Verify Key Claims (Parallel)
-            job_manager.add_progress(
-                job_id,
-                f"⚖️ Verifying {len(claims)} key claim(s)..."
+            total_scraped = sum(
+                len([c for c in content.values() if c])
+                for content in scraped_content_by_claim.values()
             )
+            job_manager.add_progress(job_id, f"✅ Successfully scraped {total_scraped} sources")
+
+            # Step 6: Verify Each Key Claim (in parallel)
+            job_manager.add_progress(job_id, "🔬 Verifying key claims against sources...")
             self._check_cancellation(job_id)
 
             async def verify_single_claim(claim, claim_index):
                 """Verify a single key claim and return result"""
                 try:
                     scraped_content = scraped_content_by_claim.get(claim.id, {})
+                    source_metadata = source_metadata_by_claim.get(claim.id, {})
 
                     if not scraped_content or not any(scraped_content.values()):
-                        from agents.fact_checker import FactCheckResult
+                        # UPDATED: Use new simplified report field
                         result = FactCheckResult(
                             fact_id=claim.id,
                             statement=claim.statement,
                             match_score=0.0,
-                            assessment="Unable to verify - no credible sources found",
-                            discrepancies="No sources available for verification",
                             confidence=0.0,
-                            reasoning="Web search did not yield credible sources for this key claim"
+                            report="Unable to verify - no credible sources found. Web search did not return any accessible Tier 1 or Tier 2 sources for this key claim. This doesn't necessarily mean the claim is false, but it cannot be verified through available web sources."
                         )
                         job_manager.add_progress(job_id, f"⚠️ {claim.id}: No sources found")
                         return result
@@ -501,12 +488,19 @@ class KeyClaimsOrchestrator:
 
                     # Extract relevant excerpts
                     excerpts = await self.highlighter.highlight(fact_like, scraped_content)
-                    
-                    # Verify claim
-                    check_result = await self.checker.check_fact(fact_like, excerpts)
+
+                    # Verify claim with source metadata for tier info
+                    check_result = await self.checker.check_fact(
+                        fact_like, 
+                        excerpts,
+                        source_metadata=source_metadata
+                    )
 
                     # Progress emoji based on score
-                    if check_result.match_score >= 0.9:
+                    if check_result.match_score <= 0.1:
+                        emoji = "🚫"
+                        status = "DEBUNKED"
+                    elif check_result.match_score >= 0.9:
                         emoji = "✅"
                         status = "VERIFIED"
                     elif check_result.match_score >= 0.7:
@@ -525,15 +519,13 @@ class KeyClaimsOrchestrator:
 
                 except Exception as e:
                     fact_logger.logger.error(f"❌ Error verifying {claim.id}: {e}")
-                    from agents.fact_checker import FactCheckResult
+                    # UPDATED: Use new simplified report field
                     return FactCheckResult(
                         fact_id=claim.id,
                         statement=claim.statement,
                         match_score=0.0,
-                        assessment=f"Verification error: {str(e)}",
-                        discrepancies="Error during verification",
                         confidence=0.0,
-                        reasoning=str(e)
+                        report=f"Verification error: {str(e)}. An error occurred while attempting to verify this claim against the available sources."
                     )
 
             # Execute all verifications in parallel
@@ -587,10 +579,9 @@ class KeyClaimsOrchestrator:
             summary = self._generate_summary(results)
             duration = time.time() - start_time
 
-            # Final summary
             job_manager.add_progress(
                 job_id,
-                f"🎯 Key Claims Analysis Complete: {summary['overall_credibility']}"
+                f"🏁 Complete! Verified {len(results)} key claims in {duration:.1f}s"
             )
 
             return {
@@ -608,30 +599,19 @@ class KeyClaimsOrchestrator:
                 "statistics": {
                     "claims_extracted": len(claims),
                     "claims_verified": len(results),
-                    "total_searches": total_queries,
-                    "local_language_queries": local_language_used is not None,
-                    "local_language": local_language_used,
-                    "total_sources_found": sum(
-                        sum(len(r.results) for r in sr.values())
-                        for sr in search_results_by_claim.values()
-                    ),
-                    "credible_sources_identified": total_credible,
                     "sources_scraped": len(all_scraped_content),
-                    "successful_scrapes": len([c for c in all_scraped_content.values() if c])
+                    "successful_scrapes": total_scraped
                 },
                 "r2_upload": {
                     "success": upload_result.get('success', False) if upload_result else False,
                     "url": upload_result.get('url') if upload_result else None,
-                    "filename": upload_result.get('filename') if upload_result else None,
-                    "error": upload_result.get('error') if upload_result else None
-                },
-                "langsmith_url": f"https://smith.langchain.com/projects/p/{langsmith_config.project_name}"
+                    "filename": upload_result.get('filename') if upload_result else None
+                }
             }
 
         except Exception as e:
-            # Handle cancellation specially
             if "cancelled" in str(e).lower():
-                job_manager.add_progress(job_id, "🛑 Job cancelled")
+                job_manager.add_progress(job_id, "🛑 Job cancelled by user")
                 raise
 
             fact_logger.log_component_error("KeyClaimsOrchestrator", e)
