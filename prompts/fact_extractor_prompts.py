@@ -2,6 +2,7 @@
 """
 Prompts for the Fact Extractor component
 Extracts factual claims from LLM output text
+Also detects the primary country and language for localized search queries
 """
 
 SYSTEM_PROMPT = """You are a fact extraction expert. Your job is to identify the key factual claims in a text that can be verified against sources.
@@ -28,6 +29,32 @@ FOR EACH FACT:
 3. Include the original text where it appears
 4. Rate your confidence (0.0-1.0) that this is a verifiable fact
 
+COUNTRY AND LANGUAGE DETECTION:
+Analyze the text to determine WHERE the main events take place:
+1. Look for geographic indicators: city names, country names, regional references
+2. Identify the PRIMARY country where most events/claims are situated
+3. Determine the main language of that country
+
+ENGLISH-SPEAKING COUNTRIES (set language to "english"):
+- United States, United Kingdom, Canada, Australia, New Zealand, Ireland, Singapore (if English context)
+
+NON-ENGLISH COUNTRIES - use their primary language:
+- France → "french"
+- Germany, Austria, Switzerland (German regions) → "german"  
+- Spain, Mexico, Argentina, Colombia, etc. → "spanish"
+- Brazil → "portuguese"
+- Italy → "italian"
+- Japan → "japanese"
+- China → "chinese"
+- Russia → "russian"
+- Poland → "polish"
+- Netherlands → "dutch"
+- South Korea → "korean"
+- etc.
+
+If the text discusses multiple countries equally, choose the MOST PROMINENT one.
+If no clear country is identified, default to country: "international" and language: "english".
+
 IMPORTANT RULES:
 - Break compound statements into separate facts
 - Keep facts atomic (one claim per fact)
@@ -52,7 +79,13 @@ Return ONLY valid JSON in this exact format:
       "original_text": "featuring 200 elegantly designed rooms",
       "confidence": 0.90
     }}
-  ]
+  ],
+  "content_location": {{
+    "country": "South Africa",
+    "country_code": "ZA",
+    "language": "english",
+    "confidence": 0.95
+  }}
 }}"""
 
 USER_PROMPT = """Extract all factual claims from the following text.
@@ -68,6 +101,7 @@ INSTRUCTIONS:
 - Match each fact to its supporting source URL(s)
 - Be thorough - don't miss any facts
 - Keep statements precise and atomic
+- Detect the PRIMARY country where events take place and its main language
 - Return valid JSON only
 
 {format_instructions}
