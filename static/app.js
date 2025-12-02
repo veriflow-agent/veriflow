@@ -786,37 +786,39 @@ function createKeyClaimCard(claim, number) {
     card.className = 'fact-card key-claim-card';
 
     const score = claim.match_score || 0;
-    const scoreClass = score >= 0.9 ? 'accurate' : score >= 0.7 ? 'good' : 'questionable';
+
+    // NEW: Add 'debunked' class for scores <= 0.1
+    let scoreClass;
+    if (score <= 0.1) {
+        scoreClass = 'debunked';
+    } else if (score >= 0.9) {
+        scoreClass = 'accurate';
+    } else if (score >= 0.7) {
+        scoreClass = 'good';
+    } else {
+        scoreClass = 'questionable';
+    }
 
     const statementText = claim.statement || 'No statement available';
-    const assessmentText = claim.assessment || 'No assessment available';
 
-    let discrepanciesHtml = '';
-    if (claim.discrepancies && claim.discrepancies !== 'None identified') {
-        discrepanciesHtml = `
-            <div class="fact-discrepancies">
-                <strong>⚠️ Issues:</strong> ${escapeHtml(claim.discrepancies)}
-            </div>
-        `;
-    }
+    // NEW: Use 'report' field with fallback to old fields for backwards compatibility
+    const reportText = claim.report || claim.assessment || 'No report available';
+
+    // NEW: Check if this is a debunked/hoax claim (score <= 0.1)
+    const isDebunked = score <= 0.1 && score > 0;
+    const debunkedBadge = isDebunked ? '<span class="debunked-badge">🚫 DEBUNKED</span>' : '';
 
     card.innerHTML = `
         <div class="fact-header ${scoreClass}">
             <div class="fact-title-row">
                 <span class="fact-number">#${number}</span>
                 <span class="claim-badge">KEY CLAIM</span>
+                ${debunkedBadge}
             </div>
             <span class="fact-score ${scoreClass}">${Math.round(score * 100)}%</span>
         </div>
         <div class="fact-statement">${escapeHtml(statementText)}</div>
-        <div class="fact-assessment">${escapeHtml(assessmentText)}</div>
-        ${discrepanciesHtml}
-        ${claim.reasoning ? `
-            <details class="fact-reasoning-details">
-                <summary>View Reasoning</summary>
-                <p>${escapeHtml(claim.reasoning)}</p>
-            </details>
-        ` : ''}
+        <div class="fact-report">${escapeHtml(reportText)}</div>
     `;
 
     return card;
@@ -922,11 +924,25 @@ function createFactCard(fact, number) {
     card.className = 'fact-card';
 
     const score = fact.verification_score || fact.match_score || 0;
-    const scoreClass = score >= 0.9 ? 'accurate' : score >= 0.7 ? 'good' : 'questionable';
+
+    // NEW: Add 'debunked' class for scores <= 0.1
+    let scoreClass;
+    if (score <= 0.1) {
+        scoreClass = 'debunked';
+    } else if (score >= 0.9) {
+        scoreClass = 'accurate';
+    } else if (score >= 0.7) {
+        scoreClass = 'good';
+    } else {
+        scoreClass = 'questionable';
+    }
 
     const statementText = fact.claim_text || fact.statement || 'No statement available';
-    const assessmentText = fact.assessment || 'No assessment available';
 
+    // NEW: Use 'report' field with fallback to old fields for backwards compatibility
+    const reportText = fact.report || fact.assessment || 'No report available';
+
+    // Handle LLM verification specific fields (interpretation_issues)
     let issuesHtml = '';
     if (fact.interpretation_issues && fact.interpretation_issues.length > 0) {
         issuesHtml = `
@@ -937,16 +953,10 @@ function createFactCard(fact, number) {
                 </ul>
             </div>
         `;
-    } else if (fact.discrepancies) {
-        issuesHtml = `
-            <div class="fact-discrepancies">
-                <strong>⚠️ Discrepancies:</strong> ${escapeHtml(fact.discrepancies)}
-            </div>
-        `;
     }
 
+    // Sources HTML (unchanged - supports both LLM verification and web search)
     let sourcesHtml = '';
-
     if (fact.cited_source_urls && fact.cited_source_urls.length > 0) {
         if (fact.cited_source_urls.length === 1) {
             sourcesHtml = `
@@ -984,15 +994,20 @@ function createFactCard(fact, number) {
         `;
     }
 
+    // NEW: Check if this is a debunked/hoax claim (score <= 0.1)
+    const isDebunked = score <= 0.1 && score > 0;
+    const debunkedBadge = isDebunked ? '<span class="debunked-badge">🚫 DEBUNKED</span>' : '';
+
     card.innerHTML = `
-        <div class="fact-header">
+        <div class="fact-header ${scoreClass}">
             <span class="fact-number">#${number}</span>
+            ${debunkedBadge}
             <span class="fact-score ${scoreClass}">${Math.round(score * 100)}%</span>
         </div>
         <div class="fact-statement">${escapeHtml(statementText)}</div>
-        <div class="fact-assessment">${escapeHtml(assessmentText)}</div>
-        ${sourcesHtml}
+        <div class="fact-report">${escapeHtml(reportText)}</div>
         ${issuesHtml}
+        ${sourcesHtml}
     `;
 
     return card;
