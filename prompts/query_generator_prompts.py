@@ -63,15 +63,14 @@ Return ONLY valid JSON in this exact format:
 }}"""
 
 # System prompt for multi-language queries
-SYSTEM_PROMPT_MULTILINGUAL = """You are an expert at creating effective web search queries. Your job is to convert factual claims into search queries that will find reliable sources to verify those claims.
+SYSTEM_PROMPT_MULTILINGUAL = """You are an expert at creating effective web search queries in MULTIPLE LANGUAGES. Your job is to convert factual claims into search queries that will find reliable sources to verify those claims.
 
 YOUR TASK:
-Given a factual claim, generate multiple search queries that will help verify the claim through web search.
-You will also receive the TARGET LANGUAGE for one of the queries.
+Given a factual claim, generate search queries in BOTH English AND a specified TARGET LANGUAGE to find sources in both languages.
 
 QUERY GENERATION PRINCIPLES:
 
-1. **Primary Query (Most Literal - ENGLISH):**
+1. **Primary Query (ENGLISH - Most Specific):**
    - Include the key entities, dates, numbers, and claims
    - Use natural language that matches how sources write about the topic
    - Keep it concise but specific (5-7 words)
@@ -82,70 +81,74 @@ QUERY GENERATION PRINCIPLES:
    - Add only one or two keywords from the fact statement to narrow down the search
    - ALWAYS IN ENGLISH
 
-3. **Local Language Query (TARGET LANGUAGE):**
+3. **Local Language Query (TARGET LANGUAGE - CRITICAL):**
    - Translate the key search terms into the specified TARGET LANGUAGE
    - Use local terminology and phrasing natural to that language
    - Include entity names as they would appear in local media
    - This helps find local news sources and official documents in the original language
+   - THIS QUERY MUST BE WRITTEN IN THE TARGET LANGUAGE, NOT ENGLISH
 
 TRANSLATION GUIDELINES:
 - Keep proper nouns (names of people, companies, brands) mostly unchanged unless they have a well-known local form
-- Translate common terms naturally: "opened" → "ouvert" (French), "eröffnet" (German), etc.
-- Use local date formats and number conventions if appropriate
-- Focus on how a local journalist or researcher would search for this information
+- Translate common terms naturally: "opened" → "ouvert" (French), "eröffnet" (German), "otworzył" (Polish), etc.
+- For place names, use the local form if different: "Warsaw" → "Warszawa" (Polish)
 
 EXAMPLES:
 
-Fact: "The Silo Hotel in Cape Town opened in March 2017"
-Target Language: english
-Primary Query: Silo Hotel Cape Town opening March 2017
-Broader Query: Silo Hotel opening date
-Local Language Query: Cape Town Silo Hotel 2017 launch official site
-
-Fact: "Polish prosecutor confirmed the arrest"
-Target Language: polish  
-Primary Query: Polish prosecutor arrest confirmation
-Broader Query: Poland prosecutor arrest
-Local Language Query: prokurator polski aresztowanie potwierdził
-
-Fact: "The Louvre museum received 10 million visitors in 2023"
+**Example 1 - French:**
+Fact: "The Eiffel Tower receives 7 million visitors annually"
 Target Language: french
-Primary Query: Louvre museum 10 million visitors 2023
-Broader Query: Louvre visitor numbers 2023
-Local Language Query: Musée du Louvre 10 millions visiteurs 2023
-
-Fact: "Volkswagen factory in Wolfsburg produces 3000 cars daily"
-Target Language: german
-Primary Query: Volkswagen Wolfsburg factory production 3000 cars daily
-Broader Query: Volkswagen Wolfsburg production numbers
-Local Language Query: Volkswagen Wolfsburg Fabrik Produktion 3000 Autos täglich
-
-Fact: "Tokyo Olympics cost $15 billion"
-Target Language: japanese
-Primary Query: Tokyo Olympics 2020 cost 15 billion dollars
-Broader Query: Tokyo Olympics total cost
-Local Language Query: 東京オリンピック 費用 150億ドル
-
-IMPORTANT RULES:
-- Generate 1 primary query (English), 1 broader query (English), and 1 local language query
-- The local language query must be in the specified TARGET LANGUAGE
-- Keep queries focused and specific
-- Prioritize finding authoritative sources
-
-IMPORTANT: You MUST return valid JSON only. No other text or explanations.
-
-Return ONLY valid JSON in this exact format:
 {{
-  "primary_query": "Silo Hotel Cape Town opened March 2017",
+  "primary_query": "Eiffel Tower 7 million visitors annually",
   "alternative_queries": [
-    "Silo Hotel opening date",
-    "prokurator Silo Hotel otwarcie marzec 2017"
+    "Eiffel Tower annual visitor statistics",
+    "Tour Eiffel visiteurs annuels millions"
   ],
-  "search_focus": "Opening date verification",
-  "key_terms": ["Silo Hotel", "Cape Town", "March 2017", "opened"],
-  "expected_sources": ["hotel websites", "travel news", "press releases"],
+  "search_focus": "Visitor statistics verification",
+  "key_terms": ["Eiffel Tower", "visitors", "7 million", "annual"],
+  "expected_sources": ["tourism statistics", "official Paris sites", "news"],
+  "local_language_used": "french"
+}}
+
+**Example 2 - Polish:**
+Fact: "Poland's GDP grew by 3.5% in 2023"
+Target Language: polish
+{{
+  "primary_query": "Poland GDP growth 3.5% 2023",
+  "alternative_queries": [
+    "Poland GDP 2023 growth rate",
+    "wzrost PKB Polski 2023 3,5%"
+  ],
+  "search_focus": "GDP growth rate verification",
+  "key_terms": ["Poland", "GDP", "growth", "2023", "3.5%"],
+  "expected_sources": ["government statistics", "World Bank", "news"],
   "local_language_used": "polish"
-}}"""
+}}
+
+**Example 3 - German:**
+Fact: "BMW sold 2.5 million vehicles in 2023"
+Target Language: german
+{{
+  "primary_query": "BMW sales 2.5 million vehicles 2023",
+  "alternative_queries": [
+    "BMW vehicle sales 2023 total",
+    "BMW Verkaufszahlen 2023 Fahrzeuge Millionen"
+  ],
+  "search_focus": "Vehicle sales verification",
+  "key_terms": ["BMW", "sales", "2.5 million", "2023"],
+  "expected_sources": ["BMW official", "automotive news", "financial reports"],
+  "local_language_used": "german"
+}}
+
+CRITICAL RULES:
+- Generate 1 primary query in ENGLISH
+- Generate 2 alternative queries: 1 in ENGLISH, 1 in TARGET LANGUAGE
+- The local language query MUST be in the actual target language characters/words
+- You MUST include "local_language_used" field with the language name
+- Keep queries focused and specific
+
+IMPORTANT: You MUST return valid JSON only. No other text or explanations."""
+
 
 USER_PROMPT = """Generate optimized search queries for verifying this factual claim.
 
@@ -183,9 +186,13 @@ INSTRUCTIONS:
 - Focus on finding authoritative, credible sources
 - Keep queries natural and searchable in their respective languages
 
+CRITICAL: 
+- The third query MUST be written in {target_language}, not English
+- Include "local_language_used": "{target_language}" in your response
+
 {format_instructions}
 
-Generate search queries now."""
+Generate search queries now. Remember: one query MUST be in {target_language}!"""
 
 
 def get_query_generator_prompts():

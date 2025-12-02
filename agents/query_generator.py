@@ -170,17 +170,26 @@ class QueryGenerator:
                 multilingual=use_multilingual
             )
 
+            # === ENHANCED LOGGING: Show ALL query strings ===
             fact_logger.logger.info(
                 f"✅ Generated {len(all_queries)} queries for {fact.id}" + 
                 (f" (includes {result.local_language_used} query)" if result.local_language_used else ""),
                 extra={
                     "fact_id": fact.id,
                     "primary_query": queries.primary_query,
+                    "alternative_queries": queries.alternative_queries,  # Added
+                    "all_queries": all_queries,  # Added
                     "num_alternatives": len(queries.alternative_queries),
                     "search_focus": queries.search_focus,
                     "local_language": result.local_language_used
                 }
             )
+
+            # === DIAGNOSTIC: Print all queries for visibility ===
+            fact_logger.logger.info(f"📋 ALL QUERIES for {fact.id}:")
+            for i, q in enumerate(all_queries, 1):
+                query_type = "PRIMARY" if i == 1 else f"ALT-{i-1}"
+                fact_logger.logger.info(f"   [{query_type}]: {q}")
 
             return queries
 
@@ -286,13 +295,54 @@ class QueryGenerator:
             config={"callbacks": callbacks.handlers}
         )
 
+        # === DIAGNOSTIC: Log the actual LLM response ===
+        llm_returned_local_lang = response.get('local_language_used')
+
+        fact_logger.logger.info(
+            f"🌐 MULTILINGUAL LLM Response for {fact.id}",
+            extra={
+                "fact_id": fact.id,
+                "target_language": content_location.language,
+                "primary_query": response.get('primary_query', 'MISSING'),
+                "alternative_queries": response.get('alternative_queries', []),
+                "local_language_used_from_llm": llm_returned_local_lang if llm_returned_local_lang else 'NOT_RETURNED_BY_LLM',
+                "raw_response_keys": list(response.keys())
+            }
+        )
+
+        # Check if LLM actually returned local_language_used
+        if llm_returned_local_lang:
+            fact_logger.logger.info(
+                f"✅ LLM confirmed local language used: {llm_returned_local_lang}",
+                extra={"fact_id": fact.id, "local_language": llm_returned_local_lang}
+            )
+        else:
+            fact_logger.logger.warning(
+                f"⚠️ LLM did NOT return local_language_used field for {fact.id}! "
+                f"Expected: {content_location.language}. Check if queries actually contain foreign text.",
+                extra={
+                    "fact_id": fact.id,
+                    "expected_language": content_location.language,
+                    "alternative_queries": response.get('alternative_queries', [])
+                }
+            )
+
+        # Use actual LLM response, with fallback only if not returned
+        # But log a warning when using fallback so we know it's happening
+        final_local_language = llm_returned_local_lang
+        if not final_local_language:
+            final_local_language = content_location.language
+            fact_logger.logger.warning(
+                f"⚠️ Using fallback for local_language_used: {final_local_language}"
+            )
+
         return QueryGeneratorOutput(
             primary_query=response['primary_query'],
             alternative_queries=response['alternative_queries'],
             search_focus=response['search_focus'],
             key_terms=response['key_terms'],
             expected_sources=response['expected_sources'],
-            local_language_used=response.get('local_language_used', content_location.language)
+            local_language_used=final_local_language
         )
 
     async def generate_queries_batch(
@@ -328,28 +378,8 @@ class QueryGenerator:
                 results[fact.id] = queries
             except Exception as e:
                 fact_logger.logger.error(
-                    f"❌ Failed to generate queries for {fact.id}: {e}",
+                    f"❌ Failed to generate queries for fact {fact.id}: {e}",
                     extra={"fact_id": fact.id, "error": str(e)}
                 )
-                # Create fallback query using just the fact statement
-                results[fact.id] = SearchQueries(
-                    fact_id=fact.id,
-                    fact_statement=fact.statement,
-                    primary_query=fact.statement[:100],  # Use fact as query
-                    alternative_queries=[],
-                    all_queries=[fact.statement[:100]],
-                    search_focus="Direct fact verification",
-                    key_terms=[],
-                    expected_sources=[],
-                    local_language_used=None
-                )
-
-        fact_logger.logger.info(
-            f"✅ Query generation complete for {len(results)}/{len(facts)} facts",
-            extra={
-                "successful": len(results),
-                "total": len(facts)
-            }
-        )
 
         return results
