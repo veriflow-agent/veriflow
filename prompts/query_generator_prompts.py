@@ -16,9 +16,11 @@ QUERY GENERATION PRINCIPLES:
    - Include the key entities, dates, numbers, and claims
    - Use natural language that matches how sources write about the topic
    - Keep it concise but specific (5-7 words)
+   - Always use people's names only in quotes (e.g., "Elon Musk")
 
 2. **Broader Query:**
    - Create query with the key entity, name of the person or company
+   - Always use people's names only in quotes (e.g., "Lady Gaga")
    - Add only one or two keywords from the fact statement to narrow down the search
 
 3. **Alternative Query:**
