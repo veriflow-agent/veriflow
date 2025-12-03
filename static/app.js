@@ -55,6 +55,7 @@ const exportBtn = document.getElementById('exportBtn');
 const newCheckBtn = document.getElementById('newCheckBtn');
 const retryBtn = document.getElementById('retryBtn');
 
+
 // ============================================
 // STATE
 // ============================================
@@ -1210,6 +1211,37 @@ function switchResultTab(tab) {
         lieDetectionResults.style.display = tab === 'lie-detection' ? 'block' : 'none';
     }
 }
+
+// ============================================
+// MODEL TAB SWITCHING FOR BIAS ANALYSIS
+// ============================================
+
+// Model tab listeners for bias analysis
+modelTabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+        // Update active tab styling
+        modelTabs.forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+
+        // Get selected model
+        const model = tab.dataset.model;
+
+        // Show/hide the correct analysis panel using display property
+        const gptAnalysis = document.getElementById('gptAnalysis');
+        const claudeAnalysis = document.getElementById('claudeAnalysis');
+        const consensusAnalysis = document.getElementById('consensusAnalysis');
+
+        if (gptAnalysis) {
+            gptAnalysis.style.display = model === 'gpt' ? 'block' : 'none';
+        }
+        if (claudeAnalysis) {
+            claudeAnalysis.style.display = model === 'claude' ? 'block' : 'none';
+        }
+        if (consensusAnalysis) {
+            consensusAnalysis.style.display = model === 'consensus' ? 'block' : 'none';
+        }
+    });
+});
 
 // ============================================
 // UTILITY FUNCTIONS
