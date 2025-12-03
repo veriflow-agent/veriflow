@@ -289,50 +289,55 @@ class BraveSearcher:
         run_type="chain",
         tags=["web-search", "brave", "batch"]
     )
+    @traceable(
+        name="brave_multi_search",
+        run_type="chain",
+        tags=["web-search", "brave", "batch"]
+    )
     async def search_multiple(
         self,
         queries: List[str],
-        search_depth: str = "advanced",  # Kept for compatibility
-        max_concurrent: int = 3
+        search_depth: str = "advanced",
+        max_concurrent: int = 1,
+        rate_limit_delay: float = 1.1  # Seconds between requests (confirable — change to 0 for paid tier)
     ) -> Dict[str, BraveSearchResults]:
         """
-        Execute multiple searches with concurrency control
+        Execute multiple searches with configurable rate limiting
 
         Args:
             queries: List of search query strings
             search_depth: Ignored (kept for API compatibility)
-            max_concurrent: Maximum concurrent searches (default: 3)
+            max_concurrent: Maximum concurrent searches
+            rate_limit_delay: Seconds to wait between requests (1.1 for free tier, 0 for paid)
 
         Returns:
             Dictionary mapping query to BraveSearchResults
         """
         fact_logger.logger.info(
             f"🔍 Executing {len(queries)} Brave searches",
-            extra={"num_queries": len(queries), "max_concurrent": max_concurrent}
+            extra={
+                "num_queries": len(queries), 
+                "rate_limit_delay": rate_limit_delay
+            }
         )
 
-        # Use semaphore for concurrency control
-        semaphore = asyncio.Semaphore(max_concurrent)
-
-        async def search_with_semaphore(query: str):
-            async with semaphore:
-                return await self.search(query, search_depth=search_depth)
-
-        # Execute all searches
-        tasks = [search_with_semaphore(query) for query in queries]
-        results_list = await asyncio.gather(*tasks, return_exceptions=True)
-
-        # Map queries to results
         results = {}
-        for query, result in zip(queries, results_list):
-            if isinstance(result, Exception):
+
+        for i, query in enumerate(queries):
+            # Rate limiting delay between requests
+            if i > 0 and rate_limit_delay > 0:
+                fact_logger.logger.debug(f"⏳ Rate limit delay: {rate_limit_delay}s")
+                await asyncio.sleep(rate_limit_delay)
+
+            try:
+                result = await self.search(query, search_depth=search_depth)
+                results[query] = result
+            except Exception as e:
                 fact_logger.logger.error(
                     f"❌ Search failed for query: {query}",
-                    extra={"query": query, "error": str(result)}
+                    extra={"query": query, "error": str(e)}
                 )
                 results[query] = BraveSearchResults(query=query, results=[])
-            else:
-                results[query] = result
 
         successful = len([r for r in results.values() if r.results])
         fact_logger.logger.info(
@@ -345,6 +350,7 @@ class BraveSearcher:
         )
 
         return results
+
 
     def get_stats(self) -> Dict:
         """Get search statistics"""
