@@ -10,7 +10,7 @@ PURPOSE: Find and thoroughly verify the MAIN ARGUMENTS of an article
 Pipeline:
 1. Extract 2-3 key claims (central thesis statements)
 2. Generate search queries for each key claim
-3. Execute web searches via Tavily
+3. Execute web searches via Brave
 4. Filter results by source credibility
 5. Scrape credible sources
 6. Verify each key claim against sources
@@ -39,7 +39,7 @@ from agents.key_claims_extractor import KeyClaimsExtractor, ContentLocation
 from agents.browserless_scraper import FactCheckScraper
 from agents.fact_checker import FactChecker, FactCheckResult
 from agents.query_generator import QueryGenerator
-from agents.tavily_searcher import TavilySearcher
+from agents.brave_searcher import BraveSearcher
 from agents.credibility_filter import CredibilityFilter
 from agents.highlighter import Highlighter
 
@@ -58,7 +58,7 @@ class KeyClaimsOrchestrator:
         # Initialize all agents
         self.extractor = KeyClaimsExtractor(config)
         self.query_generator = QueryGenerator(config)
-        self.searcher = TavilySearcher(config, max_results=7)  # More results per claim
+        self.searcher = BraveSearcher(config, max_results=7)  # More results per claim
         self.credibility_filter = CredibilityFilter(config, min_credibility_score=0.70)
         self.scraper = FactCheckScraper(config)
         self.highlighter = Highlighter(config)

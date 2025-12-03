@@ -32,15 +32,15 @@ class Config:
     def __init__(self):
         self.openai_api_key = os.getenv('OPENAI_API_KEY')
         self.browserless_endpoint = os.getenv('BROWSER_PLAYWRIGHT_ENDPOINT_PRIVATE')
-        self.tavily_api_key = os.getenv('TAVILY_API_KEY')
+        self.brave_api_key = os.getenv('BRAVE_API_KEY')
         self.langchain_project = os.getenv('LANGCHAIN_PROJECT', 'fact-checker')
 
         # Validate required env vars
         if not self.openai_api_key:
             raise ValueError("OPENAI_API_KEY not set in environment")
 
-        if not self.tavily_api_key:
-            fact_logger.logger.warning("⚠️ TAVILY_API_KEY not set - web search pipeline will not work")
+        if not self.brave_api_key:
+            fact_logger.logger.warning("⚠️ BRAVE_API_KEY not set - web search pipeline will not work")
 
         fact_logger.logger.info("✅ Configuration loaded successfully")
 
@@ -57,7 +57,7 @@ except Exception as e:
 
 # 2. Web Search Orchestrator (for fact-checking any text via web search)
 web_search_orchestrator: Optional[WebSearchOrchestrator] = None
-if config.tavily_api_key:
+if config.brave_api_key:
     try:
         web_search_orchestrator = WebSearchOrchestrator(config)
         fact_logger.logger.info("✅ Web Search Orchestrator initialized successfully")
@@ -66,7 +66,7 @@ if config.tavily_api_key:
         fact_logger.logger.warning("⚠️ Web search pipeline will not be available")
         web_search_orchestrator = None
 else:
-    fact_logger.logger.warning("⚠️ TAVILY_API_KEY not set - web search will not work")
+    fact_logger.logger.warning("⚠️ BRAVE_API_KEY not set - web search will not work")
 
 # 3. Bias Check Orchestrator (analyzes text for political/ideological bias)
 bias_orchestrator: Optional[BiasCheckOrchestrator] = None
@@ -88,7 +88,7 @@ except Exception as e:
 
 # 5. Key Claims Orchestrator (extracts and verifies 2-3 central thesis claims)
 key_claims_orchestrator: Optional[KeyClaimsOrchestrator] = None
-if config.tavily_api_key:
+if config.brave_api_key:
     try:
         key_claims_orchestrator = KeyClaimsOrchestrator(config)
         fact_logger.logger.info("✅ Key Claims Orchestrator initialized successfully")
@@ -183,7 +183,7 @@ def check_facts():
         if input_format == 'text' and web_search_orchestrator is None:
             return jsonify({
                 "error": "Web search pipeline not available",
-                "message": "TAVILY_API_KEY not configured or initialization failed. Please use LLM Output mode with content that has source links."
+                "message": "BRAVE_API_KEY not configured or initialization failed. Please use LLM Output mode with content that has source links."
             }), 503
 
         # Create job
@@ -408,7 +408,7 @@ def run_async_task(job_id: str, content: str, input_format: str):
         else:  # input_format == 'text'
             # Plain text → Fact-checking via web search
             if web_search_orchestrator is None:
-                raise ValueError("Web search orchestrator not initialized - TAVILY_API_KEY may be missing")
+                raise ValueError("Web search orchestrator not initialized - BRAVE_API_KEY may be missing")
 
             fact_logger.logger.info(f"🔎 Job {job_id}: Web Search Fact-Checking pipeline")
             result = run_async_in_thread(

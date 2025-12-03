@@ -6,7 +6,7 @@ Coordinates web search-based fact verification pipeline for text without links
 Pipeline:
 1. Extract facts from plain text (with country/language detection)
 2. Generate search queries for each fact (with multi-language support)
-3. Execute web searches via Tavily
+3. Execute web searches via Brave
 4. Filter results by source credibility
 5. Scrape credible sources
 6. Combine content into verification corpus
@@ -30,7 +30,7 @@ from agents.fact_checker import FactChecker
 
 # Import new agents
 from agents.query_generator import QueryGenerator
-from agents.tavily_searcher import TavilySearcher
+from agents.brave_searcher import BraveSearcher
 from agents.credibility_filter import CredibilityFilter
 
 
@@ -48,7 +48,7 @@ class WebSearchOrchestrator:
         # Initialize all agents
         self.analyzer = FactAnalyzer(config)
         self.query_generator = QueryGenerator(config)
-        self.searcher = TavilySearcher(config, max_results=5)
+        self.searcher = BraveSearcher(config, max_results=5)
         self.credibility_filter = CredibilityFilter(config, min_credibility_score=0.70)
         self.scraper = FactCheckScraper(config)
         self.checker = FactChecker(config)
