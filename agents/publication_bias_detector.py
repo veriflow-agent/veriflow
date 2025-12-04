@@ -337,27 +337,32 @@ class PublicationBiasDetector:
     
     async def _verify_publication(self, target_domain: str, mbfc_content: str) -> bool:
         """Verify that the MBFC page is about the correct publication"""
-        if not self.verify_prompts:
+        if not self.verify_prompts or not self.llm:
             # Fallback: simple string matching
             return target_domain.replace('.com', '').replace('.co.uk', '') in mbfc_content.lower()
-        
+
         try:
             prompt = ChatPromptTemplate.from_messages([
                 ("system", self.verify_prompts["system"]),
                 ("user", self.verify_prompts["user"])
             ])
-            
+
             chain = prompt | self.llm
-            
+
             response = await chain.ainvoke({
                 "target_domain": target_domain,
                 "mbfc_content": mbfc_content[:8000]  # Limit content size
             })
-            
-            # Parse response
-            result = json.loads(response.content)
+
+            # Parse response - handle different content types
+            content = response.content
+            if isinstance(content, str):
+                result = json.loads(content)
+            else:
+                result = json.loads(str(content))
+
             return result.get("is_match", False)
-            
+
         except Exception as e:
             fact_logger.logger.error(f"Verification failed: {e}")
             # Fallback to simple matching
@@ -365,25 +370,41 @@ class PublicationBiasDetector:
     
     async def _extract_bias_data(self, mbfc_content: str) -> Optional[MBFCResult]:
         """Extract structured bias data from MBFC page content"""
-        if not self.extract_prompts:
+        if not self.extract_prompts or not self.llm:
             return None
-        
+
         try:
             prompt = ChatPromptTemplate.from_messages([
                 ("system", self.extract_prompts["system"]),
                 ("user", self.extract_prompts["user"])
             ])
-            
+
             chain = prompt | self.llm
-            
+
             response = await chain.ainvoke({
                 "mbfc_content": mbfc_content[:10000]  # Limit content size
             })
-            
-            # Parse response
-            result = json.loads(response.content)
+
+            # Parse response - handle different content types
+            content = response.content
+            if isinstance(content, str):
+                result = json.loads(content)
+            else:
+                result = json.loads(str(content))
+
+            # ✅ FIX: Ensure list fields are lists, not None
+            if result.get('special_tags') is None:
+                result['special_tags'] = []
+            elif isinstance(result.get('special_tags'), str):
+                result['special_tags'] = [result['special_tags']] if result['special_tags'] else []
+
+            if result.get('failed_fact_checks') is None:
+                result['failed_fact_checks'] = []
+            elif isinstance(result.get('failed_fact_checks'), str):
+                result['failed_fact_checks'] = [result['failed_fact_checks']] if result['failed_fact_checks'] else []
+
             return MBFCResult(**result)
-            
+
         except Exception as e:
             fact_logger.logger.error(f"Data extraction failed: {e}")
             return None
@@ -584,7 +605,7 @@ class PublicationBiasDetector:
         if profile.mbfc_url:
             context_parts.append(f"SOURCE: Media Bias/Fact Check ({profile.mbfc_url})")
         else:
-            context_parts.append(f"SOURCE: Local database")
+            context_parts.append("SOURCE: Local database")
         
         context_parts.append(
             f"\n⚠️ IMPORTANT: This publication has a known {profile.political_leaning} bias. "
