@@ -1,6 +1,113 @@
 // static/js/renderers/bias.js - Bias Analysis Rendering
 
 // ============================================
+// DISPLAY PUBLICATION PROFILE (MBFC DATA)
+// ============================================
+
+function displayPublicationProfile(analysis) {
+    const profile = analysis.publication_profile;
+    const card = document.getElementById('publicationProfileCard');
+
+    if (!profile) {
+        // No publication profile - hide the card
+        if (card) card.style.display = 'none';
+        return;
+    }
+
+    // Show the card
+    card.style.display = 'block';
+
+    // Publication name
+    document.getElementById('profilePublicationName').textContent = profile.name || 'Unknown';
+
+    // Source badge (MBFC vs Local)
+    const sourceBadge = document.getElementById('profileSourceBadge');
+    if (profile.source === 'mbfc') {
+        sourceBadge.textContent = 'MBFC';
+        sourceBadge.className = 'profile-source-badge mbfc';
+    } else {
+        sourceBadge.textContent = 'Local DB';
+        sourceBadge.className = 'profile-source-badge local';
+    }
+
+    // Political leaning with color
+    const leaningEl = document.getElementById('profilePoliticalLeaning');
+    const leaning = profile.political_leaning || 'Unknown';
+    leaningEl.textContent = capitalizeWords(leaning.replace(/-/g, ' '));
+    leaningEl.className = 'profile-value ' + getLeaningClass(leaning);
+
+    // Bias rating
+    const biasRating = profile.bias_rating;
+    document.getElementById('profileBiasRating').textContent = 
+        biasRating !== null && biasRating !== undefined ? `${biasRating.toFixed(1)}/10` : '-';
+
+    // Factual reporting
+    document.getElementById('profileFactualReporting').textContent = 
+        profile.factual_reporting || '-';
+
+    // Credibility
+    document.getElementById('profileCredibility').textContent = 
+        profile.credibility_rating || '-';
+
+    // Optional details
+    const detailsSection = document.getElementById('profileDetails');
+    let hasDetails = false;
+
+    // Ownership
+    if (profile.ownership) {
+        document.getElementById('profileOwnership').textContent = profile.ownership;
+        document.getElementById('profileOwnershipRow').style.display = 'flex';
+        hasDetails = true;
+    } else {
+        document.getElementById('profileOwnershipRow').style.display = 'none';
+    }
+
+    // Known biases
+    if (profile.known_biases && profile.known_biases.length > 0) {
+        document.getElementById('profileKnownBiases').textContent = profile.known_biases.join(', ');
+        document.getElementById('profileKnownBiasesRow').style.display = 'flex';
+        hasDetails = true;
+    } else {
+        document.getElementById('profileKnownBiasesRow').style.display = 'none';
+    }
+
+    // Failed fact checks
+    if (profile.failed_fact_checks && profile.failed_fact_checks.length > 0) {
+        document.getElementById('profileFailedFactChecks').textContent = 
+            `${profile.failed_fact_checks.length} on record`;
+        document.getElementById('profileFailedFactChecksRow').style.display = 'flex';
+        hasDetails = true;
+    } else {
+        document.getElementById('profileFailedFactChecksRow').style.display = 'none';
+    }
+
+    detailsSection.style.display = hasDetails ? 'block' : 'none';
+
+    // MBFC link
+    const footer = document.getElementById('profileFooter');
+    const mbfcLink = document.getElementById('profileMbfcLink');
+    if (profile.mbfc_url) {
+        mbfcLink.href = profile.mbfc_url;
+        footer.style.display = 'block';
+    } else {
+        footer.style.display = 'none';
+    }
+}
+
+function getLeaningClass(leaning) {
+    if (!leaning) return '';
+    leaning = leaning.toLowerCase();
+    if (leaning.includes('left')) return 'bias-left';
+    if (leaning.includes('right')) return 'bias-right';
+    if (leaning.includes('center')) return 'bias-center';
+    return '';
+}
+
+function capitalizeWords(str) {
+    return str.replace(/\b\w/g, char => char.toUpperCase());
+}
+
+// ============================================
 // DISPLAY BIAS RESULTS
 // ============================================
 
@@ -10,6 +117,9 @@ function displayBiasResults() {
     }
 
     const analysis = AppState.currentBiasResults.analysis;
+
+    // ✅ NEW: Display publication profile from MBFC
+    displayPublicationProfile(analysis);
 
     const score = analysis.consensus_bias_score || 0;
     const direction = analysis.consensus_direction || 'Unknown';

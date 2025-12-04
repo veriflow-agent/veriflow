@@ -393,6 +393,56 @@
                 <!-- Bias Analysis Results -->
                 <div id="biasAnalysisResults" class="results-content" style="display: none;">
                     <!-- Consensus Summary -->
+                    <!-- Publication Profile (MBFC Data) -->
+                    <div id="publicationProfileCard" class="publication-profile-card" style="display: none;">
+                        <h3>📰 Publication Profile</h3>
+                        <div class="publication-profile-content">
+                            <div class="profile-header">
+                                <span class="publication-name" id="profilePublicationName">-</span>
+                                <span class="profile-source-badge" id="profileSourceBadge">Local</span>
+                            </div>
+
+                            <div class="profile-grid">
+                                <div class="profile-item">
+                                    <span class="profile-label">Political Leaning</span>
+                                    <span class="profile-value" id="profilePoliticalLeaning">-</span>
+                                </div>
+                                <div class="profile-item">
+                                    <span class="profile-label">Bias Rating</span>
+                                    <span class="profile-value" id="profileBiasRating">-</span>
+                                </div>
+                                <div class="profile-item">
+                                    <span class="profile-label">Factual Reporting</span>
+                                    <span class="profile-value" id="profileFactualReporting">-</span>
+                                </div>
+                                <div class="profile-item">
+                                    <span class="profile-label">Credibility</span>
+                                    <span class="profile-value" id="profileCredibility">-</span>
+                                </div>
+                            </div>
+
+                            <div class="profile-details" id="profileDetails" style="display: none;">
+                                <div class="profile-item" id="profileOwnershipRow" style="display: none;">
+                                    <span class="profile-label">Ownership</span>
+                                    <span class="profile-value" id="profileOwnership">-</span>
+                                </div>
+                                <div class="profile-item" id="profileKnownBiasesRow" style="display: none;">
+                                    <span class="profile-label">Known Biases</span>
+                                    <span class="profile-value" id="profileKnownBiases">-</span>
+                                </div>
+                                <div class="profile-item" id="profileFailedFactChecksRow" style="display: none;">
+                                    <span class="profile-label">Failed Fact Checks</span>
+                                    <span class="profile-value warning" id="profileFailedFactChecks">-</span>
+                                </div>
+                            </div>
+
+                            <div class="profile-footer" id="profileFooter" style="display: none;">
+                                <a href="#" id="profileMbfcLink" target="_blank" class="mbfc-link">
+                                    View on Media Bias/Fact Check →
+                                </a>
+                            </div>
+                        </div>
+                    </div>
                     <div class="bias-consensus-card">
                         <h3>📊 Consensus Analysis</h3>
                         <div class="consensus-summary-grid">

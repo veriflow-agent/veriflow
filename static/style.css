@@ -2329,3 +2329,108 @@ footer a:hover {
         grid-template-columns: 1fr;
     }
 }
+
+/* Publication Profile Card */
+.publication-profile-card {
+    background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+    border: 1px solid #dee2e6;
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.publication-profile-card h3 {
+    margin: 0 0 1rem 0;
+    color: #495057;
+    font-size: 1.1rem;
+}
+
+.profile-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid #dee2e6;
+}
+
+.publication-name {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: #212529;
+}
+
+.profile-source-badge {
+    padding: 0.25rem 0.75rem;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.profile-source-badge.mbfc {
+    background: #d4edda;
+    color: #155724;
+}
+
+.profile-source-badge.local {
+    background: #e2e3e5;
+    color: #383d41;
+}
+
+.profile-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.profile-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.profile-label {
+    font-size: 0.75rem;
+    color: #6c757d;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.profile-value {
+    font-size: 1rem;
+    font-weight: 500;
+    color: #212529;
+}
+
+.profile-value.warning {
+    color: #dc3545;
+}
+
+.profile-details {
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px dashed #dee2e6;
+}
+
+.profile-footer {
+    margin-top: 1rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid #dee2e6;
+}
+
+.mbfc-link {
+    color: #007bff;
+    text-decoration: none;
+    font-size: 0.9rem;
+}
+
+.mbfc-link:hover {
+    text-decoration: underline;
+}
+
+/* Bias rating colors */
+.bias-left { color: #0066cc; }
+.bias-center { color: #28a745; }
+.bias-right { color: #dc3545; }
