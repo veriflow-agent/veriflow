@@ -8,6 +8,8 @@ KEY FEATURES:
 - ✅ Support for Railway replicas with load distribution
 - ✅ Browser pooling for connection reuse
 - ✅ Fallback to local Playwright if Railway unavailable
+- ✅ TIMEOUT PROTECTION: Overall 30s timeout prevents infinite hangs
+- ✅ Individual operation timeouts for robustness
 """
 
 import asyncio
@@ -20,9 +22,10 @@ from playwright.async_api import async_playwright, Browser, Page
 
 from utils.logger import fact_logger
 
+
 class FactCheckScraper:
     """
-    ✅ OPTIMIZED: Railway Browserless scraper with persistent sessions
+    ✅ OPTIMIZED: Railway Browserless scraper with persistent sessions and timeout protection
     """
 
     def __init__(self, config):
@@ -49,6 +52,9 @@ class FactCheckScraper:
         self.slow_timeout = 10000     # 10 seconds
         self.browser_launch_timeout = 10000
 
+        # ✅ NEW: Overall timeout to prevent infinite hangs
+        self.overall_scrape_timeout = 30.0  # 30 second hard limit per URL
+
         # Domain-specific timeouts
         self.domain_timeouts = {
             'nytimes.com': 10000,
@@ -66,6 +72,7 @@ class FactCheckScraper:
             "total_scraped": 0,
             "successful_scrapes": 0,
             "failed_scrapes": 0,
+            "timeout_scrapes": 0,  # ✅ NEW: Track timeouts separately
             "avg_scrape_time": 0.0,
             "total_processing_time": 0.0,
             "browser_reuses": 0,
@@ -138,7 +145,8 @@ class FactCheckScraper:
                 extra={
                     "successful": successful, 
                     "total": len(urls),
-                    "browser_reuses": self.stats["browser_reuses"]
+                    "browser_reuses": self.stats["browser_reuses"],
+                    "timeouts": self.stats["timeout_scrapes"]
                 }
             )
 
@@ -188,6 +196,11 @@ class FactCheckScraper:
         ✅ FIXED: Create browser using proper Railway Browserless connection
         """
         try:
+            # ✅ FIX: Ensure playwright is initialized
+            if not self.playwright:
+                fact_logger.logger.error(f"❌ Playwright not initialized for browser {browser_index}")
+                return None
+
             # ✅ CRITICAL: Use chromium.connect() for Railway Browserless
             if self.browserless_endpoint:
                 try:
@@ -250,7 +263,7 @@ class FactCheckScraper:
 
     async def _scrape_single_url(self, url: str, browser_index: int) -> str:
         """
-        ✅ OPTIMIZED: Scrape single URL using persistent browser
+        ✅ FIXED: Scrape single URL with timeout protection
         """
         start_time = time.time()
         self.stats["total_scraped"] += 1
@@ -260,8 +273,36 @@ class FactCheckScraper:
             browser_index = 0
 
         browser = self.browser_pool[browser_index]
-        page = None
 
+        # ✅ FIX: Overall timeout to prevent infinite hangs
+        try:
+            return await asyncio.wait_for(
+                self._scrape_url_inner(url, browser_index, browser, start_time),
+                timeout=self.overall_scrape_timeout
+            )
+        except asyncio.TimeoutError:
+            processing_time = time.time() - start_time
+            self.stats["failed_scrapes"] += 1
+            self.stats["timeout_scrapes"] += 1
+            fact_logger.logger.error(
+                f"⏰ TIMEOUT after {processing_time:.1f}s: {url}",
+                extra={"url": url, "browser_index": browser_index, "timeout": self.overall_scrape_timeout}
+            )
+            return ""
+        except Exception as e:
+            processing_time = time.time() - start_time
+            self.stats["failed_scrapes"] += 1
+            fact_logger.logger.error(
+                f"❌ Scraping error for {url}: {e}",
+                extra={"url": url, "duration": processing_time, "error": str(e)}
+            )
+            return ""
+
+    async def _scrape_url_inner(self, url: str, browser_index: int, browser: Browser, start_time: float) -> str:
+        """
+        ✅ NEW: Inner scraping logic separated for timeout wrapper
+        """
+        page = None
         try:
             # Get domain-specific timeout
             domain = urlparse(url).netloc.lower()
@@ -273,18 +314,24 @@ class FactCheckScraper:
                 extra={"url": url, "browser_index": browser_index, "timeout_ms": timeout}
             )
 
-            # ✅ Create new page in existing browser (not a new browser!)
-            page = await browser.new_page()
+            # ✅ FIX: Add timeout to page creation
+            page = await asyncio.wait_for(browser.new_page(), timeout=10.0)
 
-            # Configure page
-            await self._configure_page_optimizations(page)
+            # ✅ FIX: Add timeout to page configuration
+            await asyncio.wait_for(
+                self._configure_page_optimizations(page),
+                timeout=5.0
+            )
 
             # Navigate
             await page.goto(url, wait_until="domcontentloaded", timeout=timeout)
             await asyncio.sleep(0.5)  # Reduced from 1.0 to 0.5
 
-            # Extract content
-            content = await self._extract_structured_content(page)
+            # ✅ FIX: Add timeout to content extraction
+            content = await asyncio.wait_for(
+                self._extract_structured_content(page),
+                timeout=10.0
+            )
 
             if content and len(content.strip()) > 100:
                 content = self._clean_content(content)
@@ -305,37 +352,23 @@ class FactCheckScraper:
                         "browser_index": browser_index
                     }
                 )
-
                 return content
             else:
                 processing_time = time.time() - start_time
                 self.stats["failed_scrapes"] += 1
-
                 fact_logger.logger.warning(
                     f"⚠️ Insufficient content from {url}",
                     extra={"url": url, "duration": processing_time}
                 )
-
                 return ""
 
-        except Exception as e:
-            processing_time = time.time() - start_time
-            self.stats["failed_scrapes"] += 1
-
-            fact_logger.logger.error(
-                f"❌ Scraping error for {url}: {e}",
-                extra={"url": url, "duration": processing_time, "error": str(e)}
-            )
-
-            return ""
-
         finally:
-            # ✅ IMPORTANT: Close page but keep browser alive!
+            # ✅ FIX: Safe page close with timeout
             if page:
                 try:
-                    await page.close()
-                except Exception as e:
-                    fact_logger.logger.debug(f"Page close error (non-critical): {e}")
+                    await asyncio.wait_for(page.close(), timeout=3.0)
+                except Exception:
+                    pass  # Non-critical, page might already be closed
 
     async def _configure_page_optimizations(self, page: Page):
         """Configure page with optimizations"""
@@ -694,7 +727,8 @@ class FactCheckScraper:
             success_rate = (self.stats["successful_scrapes"] / self.stats["total_scraped"]) * 100
             fact_logger.logger.info(
                 f"📊 Scraping stats: {self.stats['successful_scrapes']}/{self.stats['total_scraped']} "
-                f"successful ({success_rate:.1f}%), {self.stats['browser_reuses']} browser reuses"
+                f"successful ({success_rate:.1f}%), {self.stats['browser_reuses']} browser reuses, "
+                f"{self.stats['timeout_scrapes']} timeouts"
             )
 
         fact_logger.logger.info("✅ Scraper shutdown complete")
