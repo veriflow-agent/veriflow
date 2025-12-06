@@ -91,6 +91,17 @@ class KeyClaimsOrchestrator:
             max_sources_per_claim=self.max_sources_per_claim
         )
 
+    def _get_credibility_label(self, avg_score: float) -> str:
+        """Convert average score to credibility label for frontend"""
+        if avg_score >= 0.9:
+            return "High"
+        elif avg_score >= 0.7:
+            return "Medium"
+        elif avg_score >= 0.5:
+            return "Low"
+        else:
+            return "Very Low"
+
     def _check_cancellation(self, job_id: str):
         """Check if job has been cancelled"""
         if job_manager.is_cancelled(job_id):
@@ -362,10 +373,22 @@ class KeyClaimsOrchestrator:
 
             job_manager.add_progress(job_id, f"✅ Complete in {processing_time:.1f}s")
 
+            # ✅ FIX: Build summary with keys that frontend expects
+            frontend_summary = {
+                "total_key_claims": len(claims),                                              # ← Changed from "total_claims"
+                "verified_count": len([r for r in results if r.match_score >= 0.9]),         # ← Changed from "verified"
+                "partial_count": len([r for r in results if 0.7 <= r.match_score < 0.9]),    # ← Changed from "partial"
+                "unverified_count": len([r for r in results if r.match_score < 0.7]),        # ← Changed from "unverified"
+                "overall_credibility": self._get_credibility_label(
+                    sum(r.match_score for r in results) / len(results) if results else 0
+                ),
+                "average_score": sum(r.match_score for r in results) / len(results) if results else 0
+            }
+
             return {
                 "success": True,
                 "session_id": session_id,
-                "claims": [
+                "key_claims": [  # ← ✅ Changed from "claims" to "key_claims"
                     {
                         "id": r.fact_id,
                         "statement": r.statement,
@@ -376,7 +399,7 @@ class KeyClaimsOrchestrator:
                     }
                     for r in results
                 ],
-                "summary": summary,
+                "summary": frontend_summary,  # ← ✅ Use the fixed summary
                 "processing_time": processing_time,
                 "methodology": "key_claims_verification",
                 "content_location": {
@@ -390,7 +413,6 @@ class KeyClaimsOrchestrator:
                     "credible_sources": total_credible,
                     "claims_verified": len(results)
                 },
-                # NEW: Audit information
                 "audit": {
                     "local_path": audit_file_path,
                     "r2_url": audit_r2_url,
@@ -404,6 +426,11 @@ class KeyClaimsOrchestrator:
                             "tier3_filtered": session_audit.total_tier3_filtered
                         }
                     }
+                },
+                # ✅ ADD: R2 upload info for frontend
+                "r2_upload": {
+                    "success": audit_r2_url is not None,
+                    "url": audit_r2_url
                 }
             }
 
