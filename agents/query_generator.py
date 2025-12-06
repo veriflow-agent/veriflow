@@ -3,6 +3,10 @@
 Query Generator Agent
 Converts factual claims into optimized web search queries for verification
 Supports multi-language queries for non-English content locations
+
+TEMPORAL AWARENESS:
+- Current date is automatically injected into prompts
+- Publication date (if available) is used to contextualize relative time references
 """
 
 from langchain.prompts import ChatPromptTemplate
@@ -11,6 +15,7 @@ from langchain_core.output_parsers import JsonOutputParser
 from langsmith import traceable
 from pydantic import BaseModel, Field
 from typing import List, Optional
+from datetime import datetime
 import time
 
 from utils.logger import fact_logger
@@ -102,6 +107,103 @@ class QueryGenerator:
 
         return True
 
+    def _get_current_date_info(self) -> dict:
+        """Get current date information for temporal awareness"""
+        now = datetime.now()
+        return {
+            "current_date": now.strftime("%B %d, %Y"),  # e.g., "December 5, 2025"
+            "current_year": str(now.year),  # e.g., "2025"
+            "current_month": now.strftime("%B"),  # e.g., "December"
+            "current_month_year": now.strftime("%B %Y")  # e.g., "December 2025"
+        }
+
+    def _build_temporal_context(self, publication_date: Optional[str]) -> str:
+        """
+        Build temporal context string for the prompt
+
+        Args:
+            publication_date: Publication date string (can be None)
+
+        Returns:
+            Temporal context string to include in the prompt
+        """
+        date_info = self._get_current_date_info()
+
+        context_parts = [f"CURRENT DATE: {date_info['current_date']}"]
+
+        if publication_date:
+            # Parse and format publication date
+            parsed_date = self._parse_publication_date(publication_date)
+            if parsed_date:
+                pub_year = parsed_date.year
+                pub_month = parsed_date.strftime("%B")
+
+                context_parts.append(f"PUBLICATION DATE: {parsed_date.strftime('%B %Y')}")
+                context_parts.append(
+                    f"NOTE: If the fact uses relative time references like 'recently', 'this year', "
+                    f"'current', consider that the article was published in {pub_month} {pub_year}. "
+                    f"For at least one query, include '{pub_year}' to find sources from that time period."
+                )
+            else:
+                context_parts.append(f"PUBLICATION DATE: {publication_date} (format unclear)")
+        else:
+            context_parts.append("PUBLICATION DATE: Unknown")
+
+        return "\n".join(context_parts)
+
+    def _parse_publication_date(self, date_string: Optional[str]) -> Optional[datetime]:
+        """
+        Try to parse various date formats into datetime object
+
+        Args:
+            date_string: The date string to parse (can be None)
+
+        Returns:
+            datetime object if successful, None otherwise
+        """
+        if not date_string:
+            return None
+
+        # Common date formats to try
+        formats = [
+            "%Y-%m-%d",  # 2025-10-18
+            "%Y-%m-%dT%H:%M:%S",  # 2025-10-18T14:30:00
+            "%Y-%m-%dT%H:%M:%SZ",  # 2025-10-18T14:30:00Z
+            "%Y-%m-%dT%H:%M:%S%z",  # 2025-10-18T14:30:00+00:00
+            "%B %d, %Y",  # October 18, 2025
+            "%b %d, %Y",  # Oct 18, 2025
+            "%d %B %Y",  # 18 October 2025
+            "%d %b %Y",  # 18 Oct 2025
+            "%m/%d/%Y",  # 10/18/2025
+            "%d/%m/%Y",  # 18/10/2025
+            "%Y",  # Just year: 2025
+        ]
+
+        for fmt in formats:
+            try:
+                return datetime.strptime(date_string.strip(), fmt)
+            except:
+                continue
+
+        # If no format worked, try to extract just the date part if it's an ISO string
+        try:
+            if 'T' in date_string:
+                date_part = date_string.split('T')[0]
+                return datetime.strptime(date_part, "%Y-%m-%d")
+        except:
+            pass
+
+        # Try to extract just the year if present
+        try:
+            import re
+            year_match = re.search(r'\b(20\d{2}|19\d{2})\b', date_string)
+            if year_match:
+                return datetime(int(year_match.group(1)), 1, 1)
+        except:
+            pass
+
+        return None
+
     @traceable(
         name="generate_search_queries",
         run_type="chain",
@@ -111,7 +213,8 @@ class QueryGenerator:
         self, 
         fact, 
         context: str = "",
-        content_location: Optional[ContentLocation] = None
+        content_location: Optional[ContentLocation] = None,
+        publication_date: Optional[str] = None
     ) -> SearchQueries:
         """
         Generate optimized search queries for a fact
@@ -120,6 +223,7 @@ class QueryGenerator:
             fact: Fact object with id and statement
             context: Optional additional context about the fact
             content_location: Optional location/language context for multilingual queries
+            publication_date: Optional publication date of the source content (for temporal context)
 
         Returns:
             SearchQueries object with primary and alternative queries
@@ -129,21 +233,28 @@ class QueryGenerator:
         # Determine if we should use multilingual queries
         use_multilingual = self._should_use_multilingual(content_location)
 
+        # Get date info for logging
+        date_info = self._get_current_date_info()
+
         fact_logger.logger.info(
             f"🔍 Generating queries for fact {fact.id}",
             extra={
                 "fact_id": fact.id,
                 "statement": fact.statement[:100],
                 "multilingual": use_multilingual,
-                "target_language": content_location.language if content_location else "english"
+                "target_language": content_location.language if content_location else "english",
+                "current_date": date_info["current_date"],
+                "publication_date": publication_date
             }
         )
 
         try:
             if use_multilingual:
-                result = await self._generate_queries_multilingual(fact, context, content_location)
+                result = await self._generate_queries_multilingual(
+                    fact, context, content_location, publication_date
+                )
             else:
-                result = await self._generate_queries_llm(fact, context)
+                result = await self._generate_queries_llm(fact, context, publication_date)
 
             # Combine all queries for easy iteration
             all_queries = [result.primary_query] + result.alternative_queries
@@ -177,8 +288,8 @@ class QueryGenerator:
                 extra={
                     "fact_id": fact.id,
                     "primary_query": queries.primary_query,
-                    "alternative_queries": queries.alternative_queries,  # Added
-                    "all_queries": all_queries,  # Added
+                    "alternative_queries": queries.alternative_queries,
+                    "all_queries": all_queries,
                     "num_alternatives": len(queries.alternative_queries),
                     "search_focus": queries.search_focus,
                     "local_language": result.local_language_used
@@ -198,20 +309,38 @@ class QueryGenerator:
             raise
 
     @traceable(name="generate_queries_llm", run_type="llm")
-    async def _generate_queries_llm(self, fact, context: str) -> QueryGeneratorOutput:
+    async def _generate_queries_llm(
+        self, 
+        fact, 
+        context: str,
+        publication_date: Optional[str] = None
+    ) -> QueryGeneratorOutput:
         """
         Use LLM to generate search queries (English only)
 
         Args:
             fact: Fact object
             context: Additional context
+            publication_date: Optional publication date for temporal context
 
         Returns:
             QueryGeneratorOutput with generated queries
         """
+        # Get current date info
+        date_info = self._get_current_date_info()
+
+        # Build temporal context
+        temporal_context = self._build_temporal_context(publication_date)
+
+        # Format system prompt with date info
+        formatted_system = self.prompts["system"].format(
+            current_date=date_info["current_date"],
+            current_year=date_info["current_year"]
+        )
+
         prompt = ChatPromptTemplate.from_messages([
-            ("system", self.prompts["system"] + "\n\nIMPORTANT: You MUST return valid JSON only. No other text."),
-            ("user", self.prompts["user"] + "\n\n{format_instructions}\n\nReturn your response as valid JSON.")
+            ("system", formatted_system + "\n\nIMPORTANT: You MUST return valid JSON only. No other text."),
+            ("user", self.prompts["user"] + "\n\nReturn your response as valid JSON.")
         ])
 
         prompt_with_format = prompt.partial(
@@ -224,13 +353,18 @@ class QueryGenerator:
 
         fact_logger.logger.debug(
             "🔗 Invoking LLM for query generation (English only)",
-            extra={"fact_id": fact.id}
+            extra={
+                "fact_id": fact.id,
+                "current_date": date_info["current_date"],
+                "publication_date": publication_date
+            }
         )
 
         response = await chain.ainvoke(
             {
                 "fact": fact.statement,
-                "context": context or "No additional context provided"
+                "context": context or "No additional context provided",
+                "temporal_context": temporal_context
             },
             config={"callbacks": callbacks.handlers}
         )
@@ -250,7 +384,8 @@ class QueryGenerator:
         self, 
         fact, 
         context: str,
-        content_location: ContentLocation
+        content_location: ContentLocation,
+        publication_date: Optional[str] = None
     ) -> QueryGeneratorOutput:
         """
         Use LLM to generate multilingual search queries
@@ -259,12 +394,25 @@ class QueryGenerator:
             fact: Fact object
             context: Additional context
             content_location: Location/language context
+            publication_date: Optional publication date for temporal context
 
         Returns:
             QueryGeneratorOutput with one local language query
         """
+        # Get current date info
+        date_info = self._get_current_date_info()
+
+        # Build temporal context
+        temporal_context = self._build_temporal_context(publication_date)
+
+        # Format system prompt with date info
+        formatted_system = self.multilingual_prompts["system"].format(
+            current_date=date_info["current_date"],
+            current_year=date_info["current_year"]
+        )
+
         prompt = ChatPromptTemplate.from_messages([
-            ("system", self.multilingual_prompts["system"] + "\n\nIMPORTANT: You MUST return valid JSON only. No other text."),
+            ("system", formatted_system + "\n\nIMPORTANT: You MUST return valid JSON only. No other text."),
             ("user", self.multilingual_prompts["user"] + "\n\n{format_instructions}\n\nReturn your response as valid JSON.")
         ])
 
@@ -281,7 +429,9 @@ class QueryGenerator:
             extra={
                 "fact_id": fact.id,
                 "target_language": content_location.language,
-                "country": content_location.country
+                "country": content_location.country,
+                "current_date": date_info["current_date"],
+                "publication_date": publication_date
             }
         )
 
@@ -290,35 +440,21 @@ class QueryGenerator:
                 "fact": fact.statement,
                 "context": context or "No additional context provided",
                 "target_language": content_location.language,
-                "country": content_location.country
+                "country": content_location.country,
+                "temporal_context": temporal_context
             },
             config={"callbacks": callbacks.handlers}
         )
 
-        # === DIAGNOSTIC: Log the actual LLM response ===
+        # Log what the LLM returned for local_language_used
         llm_returned_local_lang = response.get('local_language_used')
-
-        fact_logger.logger.info(
-            f"🌐 MULTILINGUAL LLM Response for {fact.id}",
-            extra={
-                "fact_id": fact.id,
-                "target_language": content_location.language,
-                "primary_query": response.get('primary_query', 'MISSING'),
-                "alternative_queries": response.get('alternative_queries', []),
-                "local_language_used_from_llm": llm_returned_local_lang if llm_returned_local_lang else 'NOT_RETURNED_BY_LLM',
-                "raw_response_keys": list(response.keys())
-            }
-        )
-
-        # Check if LLM actually returned local_language_used
         if llm_returned_local_lang:
             fact_logger.logger.info(
-                f"✅ LLM confirmed local language used: {llm_returned_local_lang}",
-                extra={"fact_id": fact.id, "local_language": llm_returned_local_lang}
+                f"✅ LLM returned local_language_used: {llm_returned_local_lang}"
             )
         else:
             fact_logger.logger.warning(
-                f"⚠️ LLM did NOT return local_language_used field for {fact.id}! "
+                f"⚠️ LLM did NOT return local_language_used. "
                 f"Expected: {content_location.language}. Check if queries actually contain foreign text.",
                 extra={
                     "fact_id": fact.id,
@@ -349,7 +485,8 @@ class QueryGenerator:
         self, 
         facts: list, 
         context: str = "",
-        content_location: Optional[ContentLocation] = None
+        content_location: Optional[ContentLocation] = None,
+        publication_date: Optional[str] = None
     ) -> dict:
         """
         Generate queries for multiple facts in batch
@@ -358,6 +495,7 @@ class QueryGenerator:
             facts: List of Fact objects
             context: Optional context shared across all facts
             content_location: Optional location/language for all facts
+            publication_date: Optional publication date for temporal context
 
         Returns:
             Dictionary mapping fact_id to SearchQueries
@@ -366,7 +504,8 @@ class QueryGenerator:
             f"🔍 Generating queries for {len(facts)} facts",
             extra={
                 "num_facts": len(facts),
-                "multilingual": self._should_use_multilingual(content_location)
+                "multilingual": self._should_use_multilingual(content_location),
+                "publication_date": publication_date
             }
         )
 
@@ -374,7 +513,9 @@ class QueryGenerator:
 
         for fact in facts:
             try:
-                queries = await self.generate_queries(fact, context, content_location)
+                queries = await self.generate_queries(
+                    fact, context, content_location, publication_date
+                )
                 results[fact.id] = queries
             except Exception as e:
                 fact_logger.logger.error(

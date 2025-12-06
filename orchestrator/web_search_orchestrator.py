@@ -1,16 +1,23 @@
 # orchestrator/web_search_orchestrator.py
 """
-Web Search Orchestrator
+Web Search Orchestrator - WITH COMPREHENSIVE SEARCH AUDIT
 Coordinates web search-based fact verification pipeline for text without links
+
+UPDATES:
+- ✅ Tracks all raw Brave Search results
+- ✅ Records filtered sources with reasoning
+- ✅ Records credible sources with tier assignments
+- ✅ Saves comprehensive audit file
 
 Pipeline:
 1. Extract facts from plain text (with country/language detection)
 2. Generate search queries for each fact (with multi-language support)
-3. Execute web searches via Brave
-4. Filter results by source credibility
-5. Scrape credible sources
+3. Execute web searches via Brave → AUDIT: Track all raw results
+4. Filter results by source credibility → AUDIT: Track filtered + credible
+5. Scrape credible sources → AUDIT: Track scrape success/failure
 6. Combine content into verification corpus
 7. Check facts against combined content
+8. Save comprehensive search audit → NEW
 """
 
 from langsmith import traceable
@@ -31,6 +38,15 @@ from agents.fact_checker import FactChecker
 from agents.query_generator import QueryGenerator
 from agents.credibility_filter import CredibilityFilter
 
+# NEW: Import search audit utilities
+from utils.search_audit_builder import (
+    build_session_search_audit,
+    build_fact_search_audit,
+    build_query_audit,
+    save_search_audit,
+    upload_search_audit_to_r2
+)
+
 
 class WebSearchOrchestrator:
     """
@@ -38,6 +54,8 @@ class WebSearchOrchestrator:
 
     For plain text input without provided sources
     Supports multi-language queries for non-English content
+
+    NEW: Comprehensive search audit tracking
     """
 
     def __init__(self, config):
@@ -55,6 +73,16 @@ class WebSearchOrchestrator:
         # Configuration
         self.max_sources_per_fact = 10  # Maximum sources to scrape per fact
         self.max_concurrent_scrapes = 5  # Limit concurrent scraping
+
+        # NEW: Initialize R2 uploader for audit upload
+        try:
+            from utils.r2_uploader import R2Uploader
+            self.r2_uploader = R2Uploader()
+            self.r2_enabled = True
+            fact_logger.logger.info("✅ R2 uploader initialized for search audits")
+        except Exception as e:
+            self.r2_enabled = False
+            fact_logger.logger.warning(f"⚠️ R2 not available for audits: {e}")
 
         fact_logger.log_component_start(
             "WebSearchOrchestrator",
@@ -94,11 +122,14 @@ class WebSearchOrchestrator:
         }
 
     async def process_with_progress(self, text_content: str, job_id: str) -> dict:
-        """Process with real-time progress updates and multi-language support"""
+        """Process with real-time progress updates, multi-language support, and search audit"""
         from utils.job_manager import job_manager
 
         session_id = self.file_manager.create_session()
         start_time = time.time()
+
+        # NEW: Initialize session search audit
+        session_audit = None
 
         try:
             # Step 1: Extract Facts (now includes country/language detection)
@@ -111,7 +142,6 @@ class WebSearchOrchestrator:
                 'format': 'plain_text'
             }
 
-            # ✅ NEW: Now returns content_location as third value
             facts, _, content_location = await self.analyzer.analyze(parsed_input)
 
             if not facts:
@@ -120,7 +150,15 @@ class WebSearchOrchestrator:
 
             job_manager.add_progress(job_id, f"✅ Extracted {len(facts)} facts")
 
-            # ✅ NEW: Log detected location
+            # NEW: Initialize session audit with content location
+            session_audit = build_session_search_audit(
+                session_id=session_id,
+                pipeline_type="web_search",
+                content_country=content_location.country if content_location else "international",
+                content_language=content_location.language if content_location else "english"
+            )
+
+            # Log detected location
             if content_location.country != "international":
                 if content_location.language != "english":
                     job_manager.add_progress(
@@ -138,43 +176,27 @@ class WebSearchOrchestrator:
             self._check_cancellation(job_id)
 
             all_queries_by_fact = {}
-            local_language_used = None
-
             for fact in facts:
-                # ✅ NEW: Pass content_location to query generator
                 queries = await self.query_generator.generate_queries(
-                    fact, 
-                    context="",
+                    fact,
                     content_location=content_location
                 )
                 all_queries_by_fact[fact.id] = queries
 
-                # Track if local language was used
-                if queries.local_language_used:
-                    local_language_used = queries.local_language_used
+            total_queries = sum(
+                len(q.all_queries) for q in all_queries_by_fact.values()
+            )
+            job_manager.add_progress(job_id, f"✅ Generated {total_queries} queries")
 
-            total_queries = sum(len(q.all_queries) for q in all_queries_by_fact.values())
-
-            # ✅ NEW: Show if multilingual queries were generated
-            if local_language_used:
-                job_manager.add_progress(
-                    job_id, 
-                    f"✅ Generated {total_queries} queries (includes {local_language_used} queries)"
-                )
-            else:
-                job_manager.add_progress(job_id, f"✅ Generated {total_queries} search queries")
-
-            # Step 3: Execute Web Searches
+            # Step 3: Execute Searches (with multi-language queries)
             job_manager.add_progress(job_id, "🌐 Searching the web...")
             self._check_cancellation(job_id)
 
             search_results_by_fact = {}
-            for i, fact in enumerate(facts, 1):
-                job_manager.add_progress(
-                    job_id,
-                    f"🔎 Searching for fact {i}/{len(facts)}: \"{fact.statement[:60]}...\""
-                )
+            query_audits_by_fact = {}  # NEW: Track query audits per fact
+            total_results = 0
 
+            for fact in facts:
                 queries = all_queries_by_fact[fact.id]
                 search_results = await self.searcher.search_multiple(
                     queries=queries.all_queries,
@@ -183,14 +205,35 @@ class WebSearchOrchestrator:
                 )
                 search_results_by_fact[fact.id] = search_results
 
-            job_manager.add_progress(job_id, "✅ Web searches complete")
+                # NEW: Build query audits for this fact
+                fact_query_audits = []
+                for query, brave_results in search_results.items():
+                    # Determine query type
+                    query_type = "english"
+                    if queries.local_queries and query in queries.local_queries:
+                        query_type = "local_language"
+                    elif queries.fallback_query and query == queries.fallback_query:
+                        query_type = "fallback"
+
+                    qa = build_query_audit(
+                        query=query,
+                        brave_results=brave_results,
+                        query_type=query_type,
+                        language=content_location.language if content_location else "en"
+                    )
+                    fact_query_audits.append(qa)
+                    total_results += len(brave_results.results)
+
+                query_audits_by_fact[fact.id] = fact_query_audits
+
+            job_manager.add_progress(job_id, f"📊 Found {total_results} potential sources")
 
             # Step 4: Filter by Credibility
-            job_manager.add_progress(job_id, "⭐ Filtering sources by credibility...")
+            job_manager.add_progress(job_id, "🏆 Filtering sources by credibility...")
             self._check_cancellation(job_id)
 
             credible_urls_by_fact = {}
-            credibility_results_by_fact = {}
+            credibility_results_by_fact = {}  # NEW: Store full credibility results
 
             for fact in facts:
                 all_results_for_fact = []
@@ -199,6 +242,7 @@ class WebSearchOrchestrator:
 
                 if not all_results_for_fact:
                     credible_urls_by_fact[fact.id] = []
+                    credibility_results_by_fact[fact.id] = None
                     continue
 
                 credibility_results = await self.credibility_filter.evaluate_sources(
@@ -218,13 +262,39 @@ class WebSearchOrchestrator:
             self._check_cancellation(job_id)
 
             scraped_content_by_fact = {}
+            scraped_urls_by_fact = {}  # NEW: Track successfully scraped URLs
+            scrape_errors_by_fact = {}  # NEW: Track scrape errors
+
             for fact in facts:
                 urls_to_scrape = credible_urls_by_fact.get(fact.id, [])
                 if urls_to_scrape:
                     scraped_content = await self.scraper.scrape_urls_for_facts(urls_to_scrape)
                     scraped_content_by_fact[fact.id] = scraped_content
 
+                    # NEW: Track which URLs were successfully scraped
+                    scraped_urls_by_fact[fact.id] = [
+                        url for url, content in scraped_content.items()
+                        if content  # Non-empty content means success
+                    ]
+                    scrape_errors_by_fact[fact.id] = {
+                        url: "Scrape failed or empty content"
+                        for url in urls_to_scrape
+                        if url not in scraped_urls_by_fact[fact.id]
+                    }
+
             job_manager.add_progress(job_id, "✅ Scraping complete")
+
+            # NEW: Build fact search audits BEFORE verification
+            for fact in facts:
+                fact_audit = build_fact_search_audit(
+                    fact_id=fact.id,
+                    fact_statement=fact.statement,
+                    query_audits=query_audits_by_fact.get(fact.id, []),
+                    credibility_results=credibility_results_by_fact.get(fact.id),
+                    scraped_urls=scraped_urls_by_fact.get(fact.id, []),
+                    scrape_errors=scrape_errors_by_fact.get(fact.id, {})
+                )
+                session_audit.add_fact_audit(fact_audit)
 
             # Step 6: Verify Facts (Parallel processing with asyncio.gather)
             job_manager.add_progress(
@@ -237,6 +307,8 @@ class WebSearchOrchestrator:
                 """Verify a single fact and return result"""
                 try:
                     scraped_content = scraped_content_by_fact.get(fact.id, {})
+                    cred_results = credibility_results_by_fact.get(fact.id)
+                    source_metadata = cred_results.source_metadata if cred_results else {}
 
                     if not scraped_content or not any(scraped_content.values()):
                         from agents.fact_checker import FactCheckResult
@@ -244,119 +316,153 @@ class WebSearchOrchestrator:
                             fact_id=fact.id,
                             statement=fact.statement,
                             match_score=0.0,
-                            assessment="Unable to verify - no credible sources found",
-                            discrepancies="No sources available for verification",
                             confidence=0.0,
-                            reasoning="Web search did not yield credible sources"
+                            report="Unable to verify - no credible sources found. Web search did not yield sources that could be successfully scraped."
                         )
-                        job_manager.add_progress(job_id, f"⚠️ {fact.id}: No sources found")
+                        job_manager.add_progress(job_id, f"⚠️ {fact.id}: No sources")
                         return result
 
-                    from agents.highlighter import Highlighter
-                    highlighter = Highlighter(self.config)
+                    # Run highlighter to extract relevant excerpts
+                    excerpts = await self.checker.highlighter.extract_excerpts(
+                        fact=fact,
+                        scraped_content=scraped_content
+                    ) if hasattr(self.checker, 'highlighter') else scraped_content
 
-                    excerpts = await highlighter.highlight(fact, scraped_content)
-                    check_result = await self.checker.check_fact(fact, excerpts)
-
-                    emoji = "✅" if check_result.match_score >= 0.9 else "⚠️" if check_result.match_score >= 0.7 else "❌"
-                    job_manager.add_progress(
-                        job_id,
-                        f"{emoji} {fact.id}: Score {check_result.match_score:.2f}"
+                    result = await self.checker.check_fact(
+                        fact=fact,
+                        excerpts=excerpts if isinstance(excerpts, dict) else scraped_content,
+                        source_metadata=source_metadata
                     )
 
-                    return check_result
+                    score_emoji = "✅" if result.match_score >= 0.9 else "⚠️" if result.match_score >= 0.7 else "❌"
+                    job_manager.add_progress(
+                        job_id,
+                        f"{score_emoji} {fact.id}: {result.match_score:.0%} verified"
+                    )
+                    return result
 
                 except Exception as e:
-                    fact_logger.logger.error(f"❌ Error verifying {fact.id}: {e}")
+                    fact_logger.logger.error(f"Error verifying {fact.id}: {e}")
                     from agents.fact_checker import FactCheckResult
                     return FactCheckResult(
                         fact_id=fact.id,
                         statement=fact.statement,
                         match_score=0.0,
-                        assessment=f"Verification error: {str(e)}",
-                        discrepancies="Error during verification",
                         confidence=0.0,
-                        reasoning=str(e)
+                        report=f"Verification error: {str(e)}"
                     )
 
-            # Execute all verifications in parallel
-            verification_tasks = [
+            # Create verification tasks
+            tasks = [
                 verify_single_fact(fact, i)
-                for i, fact in enumerate(facts, 1)
+                for i, fact in enumerate(facts)
             ]
 
-            results = await asyncio.gather(*verification_tasks, return_exceptions=False)
-
-            # Sort by match score (lowest first to surface issues)
-            results.sort(key=lambda x: x.match_score)
+            # Execute all verifications in parallel
+            results = await asyncio.gather(*tasks)
 
             job_manager.add_progress(job_id, "✅ All facts verified")
 
-            # Save and upload to R2
-            job_manager.add_progress(job_id, "💾 Saving results...")
-            self._check_cancellation(job_id)
+            # Step 7: Generate Summary
+            processing_time = time.time() - start_time
+            summary = self._generate_summary(results)
 
-            all_scraped_content = {}
-            for fact_scraped in scraped_content_by_fact.values():
-                all_scraped_content.update(fact_scraped)
+            # NEW: Save search audit
+            job_manager.add_progress(job_id, "📋 Saving search audit...")
 
-            upload_result = self.file_manager.save_session_content(
-                session_id,
-                all_scraped_content,
-                facts,
-                upload_to_r2=True,  
-                queries_by_fact=all_queries_by_fact
+            audit_file_path = save_search_audit(
+                session_audit=session_audit,
+                file_manager=self.file_manager,
+                session_id=session_id,
+                filename="search_audit.json"
             )
 
-            if upload_result and upload_result.get('success'):
-                job_manager.add_progress(job_id, "☁️ Report uploaded to R2")
-            else:
-                error_msg = upload_result.get('error', 'Unknown error') if upload_result else 'Upload returned no result'
-                job_manager.add_progress(job_id, f"⚠️ R2 upload failed: {error_msg}")
+            # NEW: Upload audit to R2 if available
+            audit_r2_url = None
+            if self.r2_enabled:
+                audit_r2_url = await upload_search_audit_to_r2(
+                    session_audit=session_audit,
+                    session_id=session_id,
+                    r2_uploader=self.r2_uploader,
+                    pipeline_type="web-search"
+                )
 
-            summary = self._generate_summary(results)
-            duration = time.time() - start_time
+            job_manager.add_progress(job_id, f"✅ Complete in {processing_time:.1f}s")
 
             return {
                 "success": True,
                 "session_id": session_id,
-                "facts": [r.dict() for r in results],
+                "facts": [
+                    {
+                        "id": r.fact_id,
+                        "statement": r.statement,
+                        "match_score": r.match_score,
+                        "confidence": r.confidence,
+                        "report": r.report,
+                        "tier_breakdown": r.tier_breakdown
+                    }
+                    for r in results
+                ],
                 "summary": summary,
-                "processing_time": duration,
+                "processing_time": processing_time,
                 "methodology": "web_search_verification",
-                # ✅ NEW: Include location info in response
                 "content_location": {
                     "country": content_location.country,
-                    "language": content_location.language,
-                    "confidence": content_location.confidence
-                },
+                    "language": content_location.language
+                } if content_location else None,
                 "statistics": {
-                    "total_searches": total_queries,
-                    "local_language_queries": local_language_used is not None,
-                    "local_language": local_language_used,
-                    "total_sources_found": sum(
-                        sum(len(r.results) for r in sr.values())
-                        for sr in search_results_by_fact.values()
-                    ),
-                    "credible_sources_identified": total_credible,
-                    "sources_scraped": len(all_scraped_content),
-                    "successful_scrapes": len([c for c in all_scraped_content.values() if c])
+                    "facts_extracted": len(facts),
+                    "queries_generated": total_queries,
+                    "raw_results_found": total_results,
+                    "credible_sources": total_credible,
+                    "facts_verified": len(results)
                 },
-                "r2_upload": {
-                    "success": upload_result.get('success', False) if upload_result else False,
-                    "url": upload_result.get('url') if upload_result else None,
-                    "filename": upload_result.get('filename') if upload_result else None,
-                    "error": upload_result.get('error') if upload_result else None
-                },
-                "langsmith_url": f"https://smith.langchain.com/projects/p/{langsmith_config.project_name}"
+                # NEW: Audit information
+                "audit": {
+                    "local_path": audit_file_path,
+                    "r2_url": audit_r2_url,
+                    "summary": {
+                        "total_raw_results": session_audit.total_raw_results,
+                        "total_credible": session_audit.total_credible_sources,
+                        "total_filtered": session_audit.total_filtered_sources,
+                        "tier_breakdown": {
+                            "tier1": session_audit.total_tier1,
+                            "tier2": session_audit.total_tier2,
+                            "tier3_filtered": session_audit.total_tier3_filtered
+                        }
+                    }
+                }
             }
 
         except Exception as e:
-            # Handle cancellation specially
-            if "cancelled" in str(e).lower():
-                job_manager.add_progress(job_id, "🛑 Job cancelled")
-                raise
+            error_msg = str(e)
+            if "cancelled" in error_msg.lower():
+                job_manager.add_progress(job_id, "🛑 Verification cancelled")
+                return {
+                    "success": False,
+                    "session_id": session_id,
+                    "error": "Cancelled by user",
+                    "processing_time": time.time() - start_time
+                }
 
-            fact_logger.log_component_error("WebSearchOrchestrator", e)
-            job_manager.add_progress(job_id, f"❌ Error: {str(e)}")
-            raise
+            fact_logger.logger.error(f"Web search orchestrator error: {e}")
+            job_manager.add_progress(job_id, f"❌ Error: {error_msg}")
+
+            # NEW: Try to save partial audit even on error
+            if session_audit and session_audit.total_facts > 0:
+                try:
+                    save_search_audit(
+                        session_audit=session_audit,
+                        file_manager=self.file_manager,
+                        session_id=session_id,
+                        filename="search_audit_partial.json"
+                    )
+                except:
+                    pass  # Don't fail on audit save error
+
+            return {
+                "success": False,
+                "session_id": session_id,
+                "error": error_msg,
+                "processing_time": time.time() - start_time
+            }

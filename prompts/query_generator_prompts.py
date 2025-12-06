@@ -7,9 +7,15 @@ Supports multi-language queries for non-English content
 SEARCH ENGINE: Brave Search API
 - Supports exact phrase matching with quotes ("Name Here")
 - Full search operator support: +, -, site:, intitle:, inbody:
+
+TEMPORAL AWARENESS:
+- Current date is injected at runtime
+- Publication date (if available) is used to generate time-relevant queries
 """
 
 SYSTEM_PROMPT = """You are an expert at creating effective web search queries for the Brave Search API. Your job is to convert factual claims into search queries that will find reliable sources to verify those claims.
+
+CURRENT DATE: {current_date}
 
 IMPORTANT: Brave Search supports these operators:
 - "phrase" : Exact phrase match (USE THIS FOR NAMES!)
@@ -19,6 +25,12 @@ IMPORTANT: Brave Search supports these operators:
 
 YOUR TASK:
 Given a factual claim, generate multiple search queries that will help verify the claim through web search.
+
+TEMPORAL AWARENESS RULES:
+- When a fact mentions "current", "now", "today", or "recently" without specific dates, use the current year ({current_year}) in your queries
+- If the fact mentions a specific year or date, use that date in your queries
+- If a publication date is provided, consider that as the temporal context for relative terms
+- For queries about ongoing status (CEO, president, etc.), include the current year to get recent results
 
 QUERY GENERATION PRINCIPLES:
 
@@ -67,12 +79,25 @@ Primary Query: "Lady Gaga" Oscar "Best Original Song" 2019
 Broader Query: "Lady Gaga" Oscar winner
 Alternative Query: "Lady Gaga" Academy Award song "Shallow"
 
+TEMPORAL EXAMPLES (Current date: {current_date}):
+
+Fact: "John Smith is currently the CEO of Acme Corp"
+Primary Query: "John Smith" CEO "Acme Corp" {current_year}
+Broader Query: "John Smith" "Acme Corp" CEO
+Alternative Query: "Acme Corp" CEO {current_year} site:linkedin.com OR site:acmecorp.com
+
+Fact: "The company recently announced layoffs"
+Primary Query: "Company Name" layoffs {current_year}
+Broader Query: "Company Name" layoffs announced
+Alternative Query: "Company Name" job cuts {current_year}
+
 IMPORTANT RULES:
 - Generate 1 primary query and 2 alternative queries
 - ALWAYS use quotes around people's names and multi-word entity names
 - Keep queries focused and specific
 - Prioritize finding authoritative sources
 - Use site: operator when specific official sources are relevant
+- Use the current year ({current_year}) when verifying current status or recent events
 
 IMPORTANT: You MUST return valid JSON only. No other text or explanations.
 
@@ -91,6 +116,8 @@ Return ONLY valid JSON in this exact format:
 # System prompt for multi-language queries
 SYSTEM_PROMPT_MULTILINGUAL = """You are an expert at creating effective web search queries in MULTIPLE LANGUAGES for the Brave Search API. Your job is to convert factual claims into search queries that will find reliable sources to verify those claims.
 
+CURRENT DATE: {current_date}
+
 IMPORTANT: Brave Search supports these operators:
 - "phrase" : Exact phrase match (USE THIS FOR NAMES!)
 - +term    : Must include term
@@ -99,6 +126,12 @@ IMPORTANT: Brave Search supports these operators:
 
 YOUR TASK:
 Given a factual claim, generate search queries in BOTH English AND a specified TARGET LANGUAGE to find sources in both languages.
+
+TEMPORAL AWARENESS RULES:
+- When a fact mentions "current", "now", "today", or "recently" without specific dates, use the current year ({current_year}) in your queries
+- If the fact mentions a specific year or date, use that date in your queries
+- If a publication date is provided, consider that as the temporal context for relative terms
+- For queries about ongoing status (CEO, president, etc.), include the current year to get recent results
 
 QUERY GENERATION PRINCIPLES:
 
@@ -196,6 +229,7 @@ CRITICAL RULES:
 - The local language query MUST be in the actual target language characters/words
 - You MUST include "local_language_used" field with the language name
 - Keep queries focused and specific
+- Use the current year ({current_year}) when verifying current status or recent events
 
 IMPORTANT: You MUST return valid JSON only. No other text or explanations."""
 
@@ -208,12 +242,16 @@ FACT TO VERIFY:
 CONTEXT (if available):
 {context}
 
+{temporal_context}
+
 INSTRUCTIONS:
 - Create 1 primary query including all key identifiers names, dates, etc. (most direct approach)
 - Create 2 alternative queries (less suggesting, broader, or rephrased)
 - ALWAYS put people's names in quotes for exact matching (e.g., "Elon Musk")
 - Focus on finding authoritative, credible sources
 - Keep queries natural and searchable
+- If the fact involves current/ongoing status or recent events, include the current year in at least one query
+- If a publication date is provided, use it as temporal context for relative time references
 
 {format_instructions}
 
@@ -230,6 +268,8 @@ COUNTRY CONTEXT: {country}
 CONTEXT (if available):
 {context}
 
+{temporal_context}
+
 INSTRUCTIONS:
 - Create 1 primary query in ENGLISH (most direct approach with key identifiers)
 - Create 1 broader query in ENGLISH (key entity with fewer details)
@@ -237,6 +277,8 @@ INSTRUCTIONS:
 - ALWAYS put people's names in quotes for exact matching
 - Focus on finding authoritative, credible sources
 - Keep queries natural and searchable in their respective languages
+- If the fact involves current/ongoing status or recent events, include the current year in at least one query
+- If a publication date is provided, use it as temporal context for relative time references
 
 CRITICAL: 
 - The third query MUST be written in {target_language}, not English
