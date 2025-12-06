@@ -11,6 +11,9 @@ SEARCH ENGINE: Brave Search API
 TEMPORAL AWARENESS:
 - Current date is injected at runtime
 - Publication date (if available) is used to generate time-relevant queries
+
+FIX APPLIED: Removed escaped quotes (\\") from JSON examples.
+Using description instead of literal quotes in examples to avoid LLM parsing confusion.
 """
 
 SYSTEM_PROMPT = """You are an expert at creating effective web search queries for the Brave Search API. Your job is to convert factual claims into search queries that will find reliable sources to verify those claims.
@@ -64,20 +67,10 @@ Primary Query: "Tesla" vehicle sales 2023 1.8 million
 Broader Query: "Tesla" sales 2023
 Alternative Query: "Tesla" 2023 annual sales site:sec.gov OR site:tesla.com
 
-Fact: "Trésind Studio restaurant in Dubai is awarded two stars by Michelin Guide"
-Primary Query: "Trésind Studio" Dubai two Michelin stars
-Broader Query: "Trésind Studio" Michelin
-Alternative Query: "Trésind Studio" Michelin guide site:guide.michelin.com
-
 Fact: "Elon Musk acquired Twitter in October 2022"
 Primary Query: "Elon Musk" acquired Twitter October 2022
 Broader Query: "Elon Musk" Twitter acquisition
 Alternative Query: "Elon Musk" Twitter purchase 2022
-
-Fact: "Lady Gaga won the Oscar for Best Original Song in 2019"
-Primary Query: "Lady Gaga" Oscar "Best Original Song" 2019
-Broader Query: "Lady Gaga" Oscar winner
-Alternative Query: "Lady Gaga" Academy Award song "Shallow"
 
 TEMPORAL EXAMPLES (Current date: {current_date}):
 
@@ -85,11 +78,6 @@ Fact: "John Smith is currently the CEO of Acme Corp"
 Primary Query: "John Smith" CEO "Acme Corp" {current_year}
 Broader Query: "John Smith" "Acme Corp" CEO
 Alternative Query: "Acme Corp" CEO {current_year} site:linkedin.com OR site:acmecorp.com
-
-Fact: "The company recently announced layoffs"
-Primary Query: "Company Name" layoffs {current_year}
-Broader Query: "Company Name" layoffs announced
-Alternative Query: "Company Name" job cuts {current_year}
 
 IMPORTANT RULES:
 - Generate 1 primary query and 2 alternative queries
@@ -99,19 +87,11 @@ IMPORTANT RULES:
 - Use site: operator when specific official sources are relevant
 - Use the current year ({current_year}) when verifying current status or recent events
 
-IMPORTANT: You MUST return valid JSON only. No other text or explanations.
+You MUST respond with valid JSON only. No markdown code blocks, no explanations, no text before or after the JSON.
 
-Return ONLY valid JSON in this exact format:
-{{
-  "primary_query": "\\"Silo Hotel\\" Cape Town opening March 2017",
-  "alternative_queries": [
-    "\\"Silo Hotel\\" Cape Town opened",
-    "\\"Silo Hotel\\" opening date site:tripadvisor.com"
-  ],
-  "search_focus": "Opening date verification",
-  "key_terms": ["Silo Hotel", "Cape Town", "March 2017", "opened"],
-  "expected_sources": ["hotel websites", "travel news", "press releases"]
-}}"""
+Your response must be a raw JSON object in exactly this structure:
+
+{{"primary_query": "your query with names in quotes", "alternative_queries": ["broader query", "alternative with site: operator"], "search_focus": "what aspect you are verifying", "key_terms": ["term1", "term2"], "expected_sources": ["source type 1", "source type 2"]}}"""
 
 # System prompt for multi-language queries
 SYSTEM_PROMPT_MULTILINGUAL = """You are an expert at creating effective web search queries in MULTIPLE LANGUAGES for the Brave Search API. Your job is to convert factual claims into search queries that will find reliable sources to verify those claims.
@@ -162,65 +142,20 @@ TRANSLATION GUIDELINES:
 
 EXAMPLES:
 
-**Example 1 - French:**
+Example 1 - French:
 Fact: "The Eiffel Tower receives 7 million visitors annually"
 Target Language: french
-{{
-  "primary_query": "\\"Eiffel Tower\\" 7 million visitors annually",
-  "alternative_queries": [
-    "\\"Eiffel Tower\\" annual visitor statistics",
-    "\\"Tour Eiffel\\" visiteurs annuels millions"
-  ],
-  "search_focus": "Visitor statistics verification",
-  "key_terms": ["Eiffel Tower", "visitors", "7 million", "annual"],
-  "expected_sources": ["tourism statistics", "official Paris sites", "news"],
-  "local_language_used": "french"
-}}
+Response: primary_query is "Eiffel Tower" 7 million visitors annually, alternative_queries are "Eiffel Tower" annual visitor statistics AND "Tour Eiffel" visiteurs annuels millions, local_language_used is french
 
-**Example 2 - Polish:**
+Example 2 - Polish:
 Fact: "Poland's GDP grew by 3.5% in 2023"
 Target Language: polish
-{{
-  "primary_query": "\\"Poland\\" GDP growth 3.5% 2023",
-  "alternative_queries": [
-    "\\"Poland\\" GDP 2023 growth rate",
-    "wzrost PKB \\"Polski\\" 2023 3,5%"
-  ],
-  "search_focus": "GDP growth rate verification",
-  "key_terms": ["Poland", "GDP", "growth", "2023", "3.5%"],
-  "expected_sources": ["government statistics", "World Bank", "news"],
-  "local_language_used": "polish"
-}}
+Response: primary_query is "Poland" GDP growth 3.5% 2023, alternative_queries are "Poland" GDP 2023 growth rate AND wzrost PKB "Polski" 2023 3,5%, local_language_used is polish
 
-**Example 3 - German:**
+Example 3 - German:
 Fact: "BMW sold 2.5 million vehicles in 2023"
 Target Language: german
-{{
-  "primary_query": "\\"BMW\\" sales 2.5 million vehicles 2023",
-  "alternative_queries": [
-    "\\"BMW\\" vehicle sales 2023 total",
-    "\\"BMW\\" Verkaufszahlen 2023 Fahrzeuge Millionen"
-  ],
-  "search_focus": "Vehicle sales verification",
-  "key_terms": ["BMW", "sales", "2.5 million", "2023"],
-  "expected_sources": ["BMW official", "automotive news", "financial reports"],
-  "local_language_used": "german"
-}}
-
-**Example 4 - Spanish:**
-Fact: "Lionel Messi joined Inter Miami in July 2023"
-Target Language: spanish
-{{
-  "primary_query": "\\"Lionel Messi\\" joined \\"Inter Miami\\" July 2023",
-  "alternative_queries": [
-    "\\"Lionel Messi\\" \\"Inter Miami\\" transfer",
-    "\\"Lionel Messi\\" fichaje \\"Inter Miami\\" julio 2023"
-  ],
-  "search_focus": "Transfer date verification",
-  "key_terms": ["Lionel Messi", "Inter Miami", "July 2023", "transfer"],
-  "expected_sources": ["sports news", "official team sites", "ESPN"],
-  "local_language_used": "spanish"
-}}
+Response: primary_query is "BMW" sales 2.5 million vehicles 2023, alternative_queries are "BMW" vehicle sales 2023 total AND "BMW" Verkaufszahlen 2023 Fahrzeuge Millionen, local_language_used is german
 
 CRITICAL RULES:
 - Generate 1 primary query in ENGLISH
@@ -231,7 +166,9 @@ CRITICAL RULES:
 - Keep queries focused and specific
 - Use the current year ({current_year}) when verifying current status or recent events
 
-IMPORTANT: You MUST return valid JSON only. No other text or explanations."""
+You MUST respond with valid JSON only. No markdown code blocks, no explanations, no text before or after the JSON.
+
+Your response must be a raw JSON object with these exact fields: primary_query, alternative_queries (array of 2), search_focus, key_terms, expected_sources, local_language_used"""
 
 
 USER_PROMPT = """Generate optimized search queries for verifying this factual claim.
@@ -255,7 +192,7 @@ INSTRUCTIONS:
 
 {format_instructions}
 
-Generate search queries now. Remember to use quotes around names!"""
+Respond with JSON only. No markdown, no code blocks, no explanations."""
 
 USER_PROMPT_MULTILINGUAL = """Generate optimized search queries for verifying this factual claim.
 
@@ -287,7 +224,7 @@ CRITICAL:
 
 {format_instructions}
 
-Generate search queries now. Remember: one query MUST be in {target_language}, and use quotes around names!"""
+Respond with JSON only. No markdown, no code blocks, no explanations."""
 
 
 def get_query_generator_prompts():
