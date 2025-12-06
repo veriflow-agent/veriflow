@@ -116,7 +116,14 @@ class KeyClaimsOrchestrator:
             job_manager.add_progress(job_id, "📄 Extracting key claims from text...")
             self._check_cancellation(job_id)
 
-            claims, content_location = await self.extractor.extract(text_content)
+            # Prepare parsed content for extractor
+            parsed_content = {
+                'text': text_content,
+                'links': [],
+                'format': 'plain_text'
+            }
+
+            claims, all_sources, content_location = await self.extractor.extract(parsed_content)
 
             if not claims:
                 job_manager.add_progress(job_id, "⚠️ No key claims found")
