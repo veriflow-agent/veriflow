@@ -4,6 +4,9 @@ Search Audit Builder
 Helper functions to build and save search audits from orchestrator data
 
 Used by: WebSearchOrchestrator, KeyClaimsOrchestrator
+
+FIXED: Comprehensive defensive coding to handle edge cases where
+results might be strings, None, or unexpected types
 """
 
 from typing import List, Dict, Any, Optional
@@ -19,6 +22,17 @@ from utils.search_audit import (
     create_filtered_source
 )
 from utils.logger import fact_logger
+
+
+def _safe_get(obj: Any, key: str, default: Any = None) -> Any:
+    """Safely get a value from dict or object, handling strings and None"""
+    if obj is None:
+        return default
+    if isinstance(obj, str):
+        return default
+    if isinstance(obj, dict):
+        return obj.get(key, default)
+    return getattr(obj, key, default)
 
 
 def build_query_audit(
@@ -40,17 +54,65 @@ def build_query_audit(
         QueryAudit with all raw results
     """
     raw_results = []
+    search_time = 0.0
     
-    for i, result in enumerate(brave_results.results, 1):
-        raw = create_raw_search_result(result, position=i, query=query)
-        raw_results.append(raw)
+    # DEFENSIVE: Handle None or unexpected brave_results
+    if brave_results is None:
+        fact_logger.logger.warning(f"⚠️ brave_results is None for query: {query}")
+        return QueryAudit(
+            query=query,
+            query_type=query_type,
+            language=language,
+            results_count=0,
+            search_time_seconds=0.0,
+            raw_results=[]
+        )
+    
+    # Get search time safely
+    search_time = _safe_get(brave_results, 'search_time', 0.0)
+    
+    # Get results list safely
+    results_list = []
+    if hasattr(brave_results, 'results') and brave_results.results is not None:
+        results_list = brave_results.results
+    elif isinstance(brave_results, dict):
+        results_list = brave_results.get('results', []) or []
+    elif isinstance(brave_results, list):
+        results_list = brave_results
+    
+    # Ensure it's a list
+    if not isinstance(results_list, list):
+        fact_logger.logger.warning(
+            f"⚠️ results_list is {type(results_list).__name__}, expected list"
+        )
+        results_list = []
+    
+    # Process each result with defensive coding
+    for i, result in enumerate(results_list, 1):
+        try:
+            raw = create_raw_search_result(result, position=i, query=query)
+            raw_results.append(raw)
+        except Exception as e:
+            fact_logger.logger.warning(
+                f"⚠️ Failed to create raw search result at position {i}: {e}"
+            )
+            # Create a minimal result to avoid losing data
+            raw_results.append(RawSearchResult(
+                url='',
+                title='',
+                content=str(result)[:200] if result else '',
+                position=i,
+                score=0.0,
+                published_date=None,
+                query=query
+            ))
     
     return QueryAudit(
         query=query,
         query_type=query_type,
         language=language,
         results_count=len(raw_results),
-        search_time_seconds=brave_results.search_time,
+        search_time_seconds=search_time if isinstance(search_time, (int, float)) else 0.0,
         raw_results=raw_results
     )
 
@@ -79,6 +141,7 @@ def build_fact_search_audit(
     """
     scraped_urls = scraped_urls or []
     scrape_errors = scrape_errors or {}
+    query_audits = query_audits or []
     
     fact_audit = FactSearchAudit(
         fact_id=fact_id,
@@ -86,58 +149,105 @@ def build_fact_search_audit(
         queries=query_audits
     )
     
-    # Collect all unique URLs across queries
+    # Collect all unique URLs across queries (with defensive coding)
     unique_urls = set()
     for qa in query_audits:
-        for raw in qa.raw_results:
-            unique_urls.add(raw.url)
+        if qa is None:
+            continue
+        raw_results = getattr(qa, 'raw_results', None) or []
+        for raw in raw_results:
+            if raw is None:
+                continue
+            url = getattr(raw, 'url', None)
+            if url:
+                unique_urls.add(url)
     fact_audit.total_unique_urls = len(unique_urls)
     
     # Build URL to query mapping (which query found each URL)
     url_to_query = {}
     for qa in query_audits:
-        for raw in qa.raw_results:
-            if raw.url not in url_to_query:
-                url_to_query[raw.url] = qa.query
+        if qa is None:
+            continue
+        query_str = getattr(qa, 'query', '') or ''
+        raw_results = getattr(qa, 'raw_results', None) or []
+        for raw in raw_results:
+            if raw is None:
+                continue
+            url = getattr(raw, 'url', None)
+            if url and url not in url_to_query:
+                url_to_query[url] = query_str
     
-    # Process credibility evaluations
-    if credibility_results and hasattr(credibility_results, 'evaluations'):
-        source_metadata = credibility_results.source_metadata if hasattr(credibility_results, 'source_metadata') else {}
+    # Process credibility evaluations with defensive coding
+    if credibility_results is not None:
+        # Get evaluations list safely
+        evaluations = []
+        if hasattr(credibility_results, 'evaluations'):
+            evaluations = credibility_results.evaluations or []
+        elif isinstance(credibility_results, dict):
+            evaluations = credibility_results.get('evaluations', []) or []
         
-        for evaluation in credibility_results.evaluations:
-            query_origin = url_to_query.get(evaluation.url, "")
-            tier_lower = evaluation.credibility_tier.lower() if evaluation.credibility_tier else ""
+        # Get source_metadata safely
+        source_metadata = {}
+        if hasattr(credibility_results, 'source_metadata'):
+            source_metadata = credibility_results.source_metadata or {}
+        elif isinstance(credibility_results, dict):
+            source_metadata = credibility_results.get('source_metadata', {}) or {}
+        
+        for evaluation in evaluations:
+            if evaluation is None:
+                continue
             
-            # Determine if credible (Tier 1 or Tier 2, score >= 0.70)
-            is_credible = evaluation.credibility_score >= 0.70 and evaluation.recommended
-            
-            if is_credible:
-                # Credible source
-                credible = create_credible_source(evaluation, query_origin)
+            try:
+                # Get evaluation attributes safely
+                eval_url = _safe_get(evaluation, 'url', '')
+                eval_tier = _safe_get(evaluation, 'credibility_tier', '')
+                eval_score = _safe_get(evaluation, 'credibility_score', 0.0)
+                eval_recommended = _safe_get(evaluation, 'recommended', False)
                 
-                # Add metadata if available
-                if evaluation.url in source_metadata:
-                    meta = source_metadata[evaluation.url]
-                    credible.source_name = meta.name if hasattr(meta, 'name') else None
-                    credible.source_type = meta.source_type if hasattr(meta, 'source_type') else None
+                # Ensure score is a number
+                if not isinstance(eval_score, (int, float)):
+                    eval_score = 0.0
                 
-                # Track scraping status
-                credible.was_scraped = evaluation.url in scraped_urls
-                if evaluation.url in scrape_errors:
-                    credible.scrape_error = scrape_errors[evaluation.url]
+                query_origin = url_to_query.get(eval_url, "") if eval_url else ""
+                tier_lower = eval_tier.lower() if isinstance(eval_tier, str) else ""
                 
-                fact_audit.credible_sources.append(credible)
+                # Determine if credible (Tier 1 or Tier 2, score >= 0.70)
+                is_credible = eval_score >= 0.70 and eval_recommended
                 
-                # Update tier counts
-                if "tier 1" in tier_lower:
-                    fact_audit.tier1_count += 1
+                if is_credible:
+                    # Credible source
+                    credible = create_credible_source(evaluation, query_origin)
+                    
+                    # Add metadata if available
+                    if eval_url and eval_url in source_metadata:
+                        meta = source_metadata[eval_url]
+                        if meta is not None:
+                            credible.source_name = _safe_get(meta, 'name', None)
+                            credible.source_type = _safe_get(meta, 'source_type', None)
+                    
+                    # Track scraping status
+                    credible.was_scraped = eval_url in scraped_urls if eval_url else False
+                    if eval_url and eval_url in scrape_errors:
+                        credible.scrape_error = scrape_errors[eval_url]
+                    
+                    fact_audit.credible_sources.append(credible)
+                    
+                    # Update tier counts
+                    if "tier 1" in tier_lower:
+                        fact_audit.tier1_count += 1
+                    else:
+                        fact_audit.tier2_count += 1
                 else:
-                    fact_audit.tier2_count += 1
-            else:
-                # Filtered source
-                filtered = create_filtered_source(evaluation, query_origin)
-                fact_audit.filtered_sources.append(filtered)
-                fact_audit.tier3_filtered_count += 1
+                    # Filtered source
+                    filtered = create_filtered_source(evaluation, query_origin)
+                    fact_audit.filtered_sources.append(filtered)
+                    fact_audit.tier3_filtered_count += 1
+                    
+            except Exception as e:
+                fact_logger.logger.warning(
+                    f"⚠️ Failed to process credibility evaluation: {e}"
+                )
+                continue
     
     return fact_audit
 
@@ -163,8 +273,8 @@ def build_session_search_audit(
     return SessionSearchAudit(
         session_id=session_id,
         pipeline_type=pipeline_type,
-        content_country=content_country,
-        content_language=content_language
+        content_country=content_country or "international",
+        content_language=content_language or "english"
     )
 
 

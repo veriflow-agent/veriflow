@@ -10,7 +10,7 @@ PURPOSE: Complete transparency for fact-checking pipeline
 """
 
 from dataclasses import dataclass, field, asdict
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Union
 from datetime import datetime
 import json
 
@@ -200,50 +200,177 @@ class SessionSearchAudit:
 
 # =============================================================================
 # Factory Functions - Used by search_audit_builder.py
+# WITH DEFENSIVE CODING to handle edge cases
 # =============================================================================
 
+def _safe_get(obj: Any, key: str, default: Any = '') -> Any:
+    """Safely get a value from a dict-like object, handling strings and other types"""
+    if obj is None:
+        return default
+    if isinstance(obj, str):
+        # If it's a string, we can't get attributes from it
+        return default
+    if isinstance(obj, dict):
+        return obj.get(key, default)
+    # Try attribute access for objects
+    if hasattr(obj, key):
+        return getattr(obj, key, default)
+    # Try dict-like access
+    if hasattr(obj, 'get'):
+        return obj.get(key, default)
+    return default
+
+
 def create_raw_search_result(
-    brave_result: Dict[str, Any],
+    brave_result: Union[Dict[str, Any], str, Any],
     position: int,
     query: str
 ) -> RawSearchResult:
-    """Factory function to create RawSearchResult from Brave Search response"""
-    return RawSearchResult(
-        url=brave_result.get('url', ''),
-        title=brave_result.get('title', ''),
-        content=brave_result.get('content', brave_result.get('description', '')),
-        position=position,
-        score=brave_result.get('score', 1.0 - (position - 1) * 0.1),
-        published_date=brave_result.get('published_date'),
-        query=query
-    )
+    """
+    Factory function to create RawSearchResult from Brave Search response
+    
+    Handles edge cases where brave_result might be:
+    - A proper dict with url, title, content keys
+    - A string (malformed response)
+    - None or other unexpected types
+    """
+    # Handle None
+    if brave_result is None:
+        return RawSearchResult(
+            url='',
+            title='',
+            content='',
+            position=position,
+            score=0.0,
+            published_date=None,
+            query=query
+        )
+    
+    # Handle string (malformed result)
+    if isinstance(brave_result, str):
+        return RawSearchResult(
+            url='',
+            title='',
+            content=brave_result[:500] if brave_result else '',  # Truncate long strings
+            position=position,
+            score=0.0,
+            published_date=None,
+            query=query
+        )
+    
+    # Handle proper dict
+    if isinstance(brave_result, dict):
+        return RawSearchResult(
+            url=brave_result.get('url', ''),
+            title=brave_result.get('title', ''),
+            content=brave_result.get('content', brave_result.get('description', '')),
+            position=position,
+            score=brave_result.get('score', 1.0 - (position - 1) * 0.1),
+            published_date=brave_result.get('published_date'),
+            query=query
+        )
+    
+    # Handle object with attributes (like a Pydantic model)
+    try:
+        return RawSearchResult(
+            url=getattr(brave_result, 'url', ''),
+            title=getattr(brave_result, 'title', ''),
+            content=getattr(brave_result, 'content', getattr(brave_result, 'description', '')),
+            position=position,
+            score=getattr(brave_result, 'score', 1.0 - (position - 1) * 0.1),
+            published_date=getattr(brave_result, 'published_date', None),
+            query=query
+        )
+    except Exception:
+        # Last resort fallback
+        return RawSearchResult(
+            url='',
+            title='',
+            content=str(brave_result)[:500] if brave_result else '',
+            position=position,
+            score=0.0,
+            published_date=None,
+            query=query
+        )
 
 
 def create_credible_source(
-    evaluation,  # SourceEvaluation from credibility_filter
+    evaluation: Any,  # SourceEvaluation from credibility_filter
     query_origin: str = ""
 ) -> CredibleSource:
-    """Factory function to create CredibleSource from credibility evaluation"""
+    """
+    Factory function to create CredibleSource from credibility evaluation
+    
+    Handles both dict and object-style evaluations
+    """
+    if evaluation is None:
+        return CredibleSource(
+            url='',
+            title='',
+            credibility_score=0.0,
+            credibility_tier='Unknown',
+            reasoning='No evaluation data',
+            query_origin=query_origin
+        )
+    
+    # Handle dict
+    if isinstance(evaluation, dict):
+        return CredibleSource(
+            url=evaluation.get('url', ''),
+            title=evaluation.get('title', ''),
+            credibility_score=evaluation.get('credibility_score', 0.0),
+            credibility_tier=evaluation.get('credibility_tier', 'Unknown'),
+            reasoning=evaluation.get('reasoning', ''),
+            query_origin=query_origin
+        )
+    
+    # Handle object with attributes
     return CredibleSource(
-        url=evaluation.url,
-        title=evaluation.title,
-        credibility_score=evaluation.credibility_score,
-        credibility_tier=evaluation.credibility_tier,
-        reasoning=evaluation.reasoning,
+        url=getattr(evaluation, 'url', ''),
+        title=getattr(evaluation, 'title', ''),
+        credibility_score=getattr(evaluation, 'credibility_score', 0.0),
+        credibility_tier=getattr(evaluation, 'credibility_tier', 'Unknown'),
+        reasoning=getattr(evaluation, 'reasoning', ''),
         query_origin=query_origin
     )
 
 
 def create_filtered_source(
-    evaluation,  # SourceEvaluation from credibility_filter
+    evaluation: Any,  # SourceEvaluation from credibility_filter
     query_origin: str = ""
 ) -> FilteredSource:
-    """Factory function to create FilteredSource from credibility evaluation"""
+    """
+    Factory function to create FilteredSource from credibility evaluation
+    
+    Handles both dict and object-style evaluations
+    """
+    if evaluation is None:
+        return FilteredSource(
+            url='',
+            title='',
+            credibility_score=0.0,
+            credibility_tier='Unknown',
+            reasoning='No evaluation data',
+            query_origin=query_origin
+        )
+    
+    # Handle dict
+    if isinstance(evaluation, dict):
+        return FilteredSource(
+            url=evaluation.get('url', ''),
+            title=evaluation.get('title', ''),
+            credibility_score=evaluation.get('credibility_score', 0.0),
+            credibility_tier=evaluation.get('credibility_tier', 'Unknown'),
+            reasoning=evaluation.get('reasoning', ''),
+            query_origin=query_origin
+        )
+    
+    # Handle object with attributes
     return FilteredSource(
-        url=evaluation.url,
-        title=evaluation.title,
-        credibility_score=evaluation.credibility_score,
-        credibility_tier=evaluation.credibility_tier,
-        reasoning=evaluation.reasoning,
+        url=getattr(evaluation, 'url', ''),
+        title=getattr(evaluation, 'title', ''),
+        credibility_score=getattr(evaluation, 'credibility_score', 0.0),
+        credibility_tier=getattr(evaluation, 'credibility_tier', 'Unknown'),
+        reasoning=getattr(evaluation, 'reasoning', ''),
         query_origin=query_origin
     )
