@@ -134,7 +134,17 @@ class KeyClaimsOrchestrator:
                 'format': 'plain_text'
             }
 
-            claims, all_sources, content_location = await self.extractor.extract(parsed_content)
+            claims, all_sources, content_location, broad_context, media_sources, query_instructions = await self.extractor.extract(parsed_content)
+
+            fact_logger.logger.info(
+                "📊 Content Analysis:",
+                extra={
+                    "content_type": broad_context.content_type,
+                    "credibility": broad_context.credibility_assessment,
+                    "num_media_sources": len(media_sources),
+                    "primary_strategy": query_instructions.primary_strategy
+                }
+            )
 
             if not claims:
                 job_manager.add_progress(job_id, "⚠️ No key claims found")
@@ -161,6 +171,8 @@ class KeyClaimsOrchestrator:
             self._check_cancellation(job_id)
 
             all_queries_by_claim = {}
+            freshness_by_claim = {}  # NEW: Store freshness recommendations
+
             for claim in claims:
                 # Create fact-like object for query generator
                 fact_like = type('Fact', (), {
@@ -169,10 +181,18 @@ class KeyClaimsOrchestrator:
                 })()
 
                 queries = await self.query_generator.generate_queries(
-                    fact_like,
-                    content_location=content_location
+                    fact=fact_like,
+                    context="",
+                    content_location=content_location,
+                    publication_date=None,
+                    # NEW: Pass the enhanced context
+                    broad_context=broad_context,
+                    media_sources=media_sources,
+                    query_instructions=query_instructions
                 )
+
                 all_queries_by_claim[claim.id] = queries
+                freshness_by_claim[claim.id] = queries.recommended_freshness  # NEW: Store freshness
 
             total_queries = sum(len(q.all_queries) for q in all_queries_by_claim.values())
             job_manager.add_progress(job_id, f"✅ Generated {total_queries} queries")
@@ -187,12 +207,19 @@ class KeyClaimsOrchestrator:
 
             for claim in claims:
                 queries = all_queries_by_claim[claim.id]
+                claim_freshness = freshness_by_claim.get(claim.id)  # NEW: Get freshness for this claim
+
                 search_results = await self.searcher.search_multiple(
                     queries=queries.all_queries,
                     search_depth="advanced",
-                    max_concurrent=3
+                    max_concurrent=3,
+                    freshness=claim_freshness  # NEW: Pass freshness to Brave
                 )
                 search_results_by_claim[claim.id] = search_results
+
+                # NEW: Log if freshness filter was applied
+                if claim_freshness:
+                    fact_logger.logger.info(f"🕐 {claim.id}: Using freshness={claim_freshness}")
 
                 # Build query audits for this claim
                 # SIMPLIFIED: No need to distinguish query types - AI handles language detection

@@ -144,7 +144,8 @@ class BraveSearcher:
         include_domains: Optional[List[str]] = None,
         exclude_domains: Optional[List[str]] = None,
         country: str = "us",
-        search_lang: str = "en"
+        search_lang: str = "en",
+        freshness: Optional[str] = None  # NEW: pd=24h, pw=7d, pm=31d, py=365d
     ) -> BraveSearchResults:
         """
         Execute a single web search using Brave Search API
@@ -156,6 +157,7 @@ class BraveSearcher:
             exclude_domains: List of domains to exclude (converted to -site: operators)
             country: Country code for results (default: "us")
             search_lang: Language code (default: "en")
+            freshness: Time filter - pd (24h), pw (7d), pm (31d), py (365d), or YYYY-MM-DDtoYYYY-MM-DD
 
         Returns:
             BraveSearchResults object
@@ -198,6 +200,13 @@ class BraveSearcher:
                 "text_decorations": False,  # Don't add <strong> tags
                 "spellcheck": True
             }
+
+            # NEW: Add freshness filter if specified
+            # Valid values: pd (24h), pw (7 days), pm (31 days), py (365 days)
+            # Or custom range: "YYYY-MM-DDtoYYYY-MM-DD"
+            if freshness:
+                params["freshness"] = freshness
+                fact_logger.logger.debug(f"🕐 Freshness filter: {freshness}")
 
             # Execute search
             response = await self.client.get(self.BRAVE_API_URL, params=params)
@@ -299,7 +308,8 @@ class BraveSearcher:
         queries: List[str],
         search_depth: str = "advanced",
         max_concurrent: int = 1,
-        rate_limit_delay: float = 1.1  # Seconds between requests (confirable — change to 0 for paid tier)
+        rate_limit_delay: float = 1.1,
+        freshness: Optional[str] = None  # NEW: pd=24h, pw=7d, pm=31d, py=365d
     ) -> Dict[str, BraveSearchResults]:
         """
         Execute multiple searches with configurable rate limiting
@@ -330,7 +340,11 @@ class BraveSearcher:
                 await asyncio.sleep(rate_limit_delay)
 
             try:
-                result = await self.search(query, search_depth=search_depth)
+                result = await self.search(
+                    query, 
+                    search_depth=search_depth,
+                    freshness=freshness  # NEW: Pass freshness to each search
+                )
                 results[query] = result
             except Exception as e:
                 fact_logger.logger.error(

@@ -1,16 +1,15 @@
 # agents/key_claims_extractor.py
 """
-Key Claims Extractor Agent
-Extracts ONLY the 2-3 central thesis claims from text
+Key Claims Extractor Agent - ENHANCED VERSION
+Extracts the 2-3 central thesis claims from text PLUS content analysis
 
-KEY DIFFERENCES from FactAnalyzer:
-- Extracts 2-3 KEY CLAIMS only (not all verifiable facts)
-- Focuses on THESIS statements, not supporting evidence
-- Identifies what the author is trying to PROVE
+ENHANCEMENTS:
+- Uses GPT-4o for more nuanced analysis
+- Extracts broad_context: content credibility assessment
+- Extracts media_sources: all sources mentioned in text
+- Generates query_instructions: strategic guidance for query generator
 
-USAGE: Key Claims Pipeline
-- For finding the main arguments an article is built around
-- These are claims that supporting facts are meant to prove
+These new fields help the query generator create more targeted, effective searches.
 """
 
 from langchain.prompts import ChatPromptTemplate
@@ -18,13 +17,17 @@ from langchain_openai import ChatOpenAI
 from langchain_core.output_parsers import JsonOutputParser
 from langsmith import traceable
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 import time
 
 from prompts.key_claims_extractor_prompts import get_key_claims_prompts
 from utils.logger import fact_logger
 from utils.langsmith_config import langsmith_config
 
+
+# ============================================================================
+# OUTPUT MODELS
+# ============================================================================
 
 class KeyClaim(BaseModel):
     """A key claim (central thesis) from the text"""
@@ -43,33 +46,94 @@ class ContentLocation(BaseModel):
     confidence: float = Field(default=0.5, description="Confidence in location detection")
 
 
+class BroadContext(BaseModel):
+    """Assessment of content's overall credibility indicators"""
+    content_type: str = Field(
+        default="unknown",
+        description="Type: news article | blog post | social media | press release | unknown"
+    )
+    credibility_assessment: str = Field(
+        default="unknown",
+        description="Assessment: appears legitimate | some concerns | significant red flags | likely hoax/satire"
+    )
+    reasoning: str = Field(
+        default="",
+        description="Brief explanation of the credibility assessment"
+    )
+    red_flags: List[str] = Field(
+        default_factory=list,
+        description="List of concerning indicators found"
+    )
+    positive_indicators: List[str] = Field(
+        default_factory=list,
+        description="List of credibility-boosting factors"
+    )
+
+
+class QueryInstructions(BaseModel):
+    """Strategic instructions for query generation"""
+    primary_strategy: str = Field(
+        default="standard verification",
+        description="Overall approach for searching"
+    )
+    suggested_modifiers: List[str] = Field(
+        default_factory=list,
+        description="Terms to add to queries (e.g., 'hoax', 'official', 'announcement')"
+    )
+    temporal_guidance: str = Field(
+        default="recent",
+        description="Time-based search guidance"
+    )
+    source_priority: List[str] = Field(
+        default_factory=list,
+        description="Types of sources to prioritize"
+    )
+    special_considerations: str = Field(
+        default="",
+        description="Any other relevant guidance"
+    )
+
+
 class KeyClaimsOutput(BaseModel):
-    """Output from key claims extraction"""
+    """Complete output from key claims extraction"""
     facts: List[dict] = Field(description="List of 2-3 key claims")
     all_sources: List[str] = Field(description="All source URLs mentioned")
     content_location: Optional[dict] = Field(default=None, description="Country and language info")
+    # NEW FIELDS
+    broad_context: Optional[dict] = Field(default=None, description="Content credibility assessment")
+    media_sources: List[str] = Field(default_factory=list, description="Media sources mentioned")
+    query_instructions: Optional[dict] = Field(default=None, description="Instructions for query generator")
 
 
 class KeyClaimsResult(BaseModel):
-    """Complete result from key claims extraction including location context"""
+    """Complete result from key claims extraction including all analysis"""
     claims: List[KeyClaim]
     all_sources: List[str]
     content_location: ContentLocation
+    # NEW FIELDS
+    broad_context: BroadContext
+    media_sources: List[str]
+    query_instructions: QueryInstructions
 
+
+# ============================================================================
+# MAIN EXTRACTOR CLASS
+# ============================================================================
 
 class KeyClaimsExtractor:
     """
-    Extract ONLY the 2-3 key claims (central thesis) from text
+    Extract the 2-3 key claims (central thesis) from text
+    PLUS content analysis for smarter query generation
     
-    Unlike FactAnalyzer which extracts ALL verifiable facts,
-    this extracts only the main arguments the text is trying to prove.
+    Uses GPT-4o for more nuanced analysis.
     """
 
     def __init__(self, config):
         self.config = config
 
+        # UPGRADED: Using GPT-4o for better analysis
         self.llm = ChatOpenAI(
-            model="gpt-4o-mini",
+            model="gpt-4o",
             temperature=0
         ).bind(response_format={"type": "json_object"})
 
@@ -81,26 +145,26 @@ class KeyClaimsExtractor:
 
         fact_logger.log_component_start(
             "KeyClaimsExtractor",
-            model="gpt-4o-mini",
+            model="gpt-4o",  # Updated
             max_claims=3
         )
 
     @traceable(name="key_claims_extraction")
-    async def extract(self, parsed_content: dict) -> tuple[List[KeyClaim], List[str], ContentLocation]:
+    async def extract(self, parsed_content: dict) -> tuple[List[KeyClaim], List[str], ContentLocation, BroadContext, List[str], QueryInstructions]:
         """
-        Extract 2-3 key claims from parsed content
+        Extract 2-3 key claims from parsed content with full analysis
         
         Args:
             parsed_content: Dict with 'text', 'links', 'format' keys
             
         Returns:
-            Tuple of (key_claims, all_sources, content_location)
+            Tuple of (key_claims, all_sources, content_location, broad_context, media_sources, query_instructions)
         """
         start_time = time.time()
 
         text_length = len(parsed_content.get('text', ''))
         fact_logger.logger.info(
-            f"🎯 Starting key claims extraction",
+            f"🎯 Starting key claims extraction (enhanced)",
             extra={
                 "text_length": text_length,
                 "num_links": len(parsed_content.get('links', []))
@@ -110,25 +174,30 @@ class KeyClaimsExtractor:
         # Check if we need chunking (for very large files)
         if text_length > self.max_input_chars:
             fact_logger.logger.info(f"📄 Large content detected ({text_length} chars), using chunked extraction")
-            claims, sources, location = await self._extract_with_chunking(parsed_content)
+            result = await self._extract_with_chunking(parsed_content)
         else:
-            claims, sources, location = await self._extract_single_pass(parsed_content)
+            result = await self._extract_single_pass(parsed_content)
+
+        claims, sources, location, broad_context, media_sources, query_instructions = result
 
         duration = time.time() - start_time
         fact_logger.logger.info(
-            f"✅ Key claims extraction complete",
+            f"✅ Key claims extraction complete (enhanced)",
             extra={
                 "num_claims": len(claims),
                 "duration_seconds": round(duration, 2),
                 "country": location.country,
-                "language": location.language
+                "language": location.language,
+                "content_type": broad_context.content_type,
+                "credibility": broad_context.credibility_assessment,
+                "num_media_sources": len(media_sources)
             }
         )
 
-        return claims, sources, location
+        return claims, sources, location, broad_context, media_sources, query_instructions
 
-    async def _extract_single_pass(self, parsed_content: dict) -> tuple[List[KeyClaim], List[str], ContentLocation]:
-        """Extract key claims in a single LLM call"""
+    async def _extract_single_pass(self, parsed_content: dict) -> tuple:
+        """Extract key claims and analysis in a single LLM call"""
 
         system_prompt = self.prompts["system"]
         user_prompt = self.prompts["user"]
@@ -145,7 +214,7 @@ class KeyClaimsExtractor:
         callbacks = langsmith_config.get_callbacks("key_claims_extractor")
         chain = prompt_with_format | self.llm | self.parser
 
-        fact_logger.logger.debug("🔗 Invoking LangChain for key claims extraction")
+        fact_logger.logger.debug("🔗 Invoking LangChain for key claims extraction (GPT-4o)")
 
         try:
             response = await chain.ainvoke(
@@ -164,7 +233,7 @@ class KeyClaimsExtractor:
             fact_logger.logger.error(f"Traceback: {traceback.format_exc()}")
             raise
 
-    async def _extract_with_chunking(self, parsed_content: dict) -> tuple[List[KeyClaim], List[str], ContentLocation]:
+    async def _extract_with_chunking(self, parsed_content: dict) -> tuple:
         """Extract key claims from large content by splitting into chunks"""
 
         text = parsed_content['text']
@@ -179,6 +248,9 @@ class KeyClaimsExtractor:
 
         all_claims = []
         all_location_votes = []
+        all_broad_contexts = []
+        all_media_sources = []
+        all_query_instructions = []
 
         for i, chunk in enumerate(chunks, 1):
             fact_logger.logger.debug(f"🔍 Analyzing chunk {i}/{len(chunks)}")
@@ -189,11 +261,16 @@ class KeyClaimsExtractor:
                 'format': parsed_content.get('format', 'unknown')
             }
 
-            chunk_claims, _, chunk_location = await self._extract_single_pass(chunk_parsed)
+            chunk_result = await self._extract_single_pass(chunk_parsed)
+            chunk_claims, _, chunk_location, chunk_context, chunk_media, chunk_instructions = chunk_result
+            
             all_claims.extend(chunk_claims)
             all_location_votes.append(chunk_location)
+            all_broad_contexts.append(chunk_context)
+            all_media_sources.extend(chunk_media)
+            all_query_instructions.append(chunk_instructions)
 
-        # For key claims, we want to deduplicate and keep only the top 2-3
+        # Deduplicate and rank claims
         unique_claims = self._deduplicate_and_rank_claims(all_claims)
 
         # Get all sources from parsed content
@@ -202,7 +279,16 @@ class KeyClaimsExtractor:
         # Aggregate location votes
         content_location = self._aggregate_location_votes(all_location_votes)
 
-        return unique_claims, all_sources, content_location
+        # Aggregate broad context (use most concerning assessment)
+        broad_context = self._aggregate_broad_context(all_broad_contexts)
+
+        # Deduplicate media sources
+        unique_media = list(set(all_media_sources))
+
+        # Merge query instructions
+        query_instructions = self._merge_query_instructions(all_query_instructions)
+
+        return unique_claims, all_sources, content_location, broad_context, unique_media, query_instructions
 
     def _split_into_chunks(self, text: str, chunk_size: int) -> List[str]:
         """Split text into chunks, trying to break at paragraph boundaries"""
@@ -226,76 +312,58 @@ class KeyClaimsExtractor:
 
         return chunks
 
-    def _process_response(self, response: dict, parsed_content: dict) -> tuple[List[KeyClaim], List[str], ContentLocation]:
+    def _process_response(self, response: dict, parsed_content: dict) -> tuple:
         """Process LLM response into structured output"""
 
+        # Extract claims
         claims = []
-        raw_claims = response.get('facts', [])
+        for i, fact in enumerate(response.get('facts', []), 1):
+            claims.append(KeyClaim(
+                id=fact.get('id', f'KC{i}'),
+                statement=fact.get('statement', ''),
+                sources=fact.get('sources', []),
+                original_text=fact.get('original_text', ''),
+                confidence=fact.get('confidence', 0.5)
+            ))
 
-        # Limit to 3 claims maximum
-        for i, claim_data in enumerate(raw_claims[:3], 1):
-            claim = KeyClaim(
-                id=claim_data.get('id', f'KC{i}'),
-                statement=claim_data.get('statement', ''),
-                sources=claim_data.get('sources', []),
-                original_text=claim_data.get('original_text', ''),
-                confidence=float(claim_data.get('confidence', 0.8))
-            )
-            claims.append(claim)
-
-        # Extract sources
+        # Get all sources
         all_sources = response.get('all_sources', [])
+        if not all_sources:
+            all_sources = [link['url'] for link in parsed_content.get('links', [])]
 
-        # Extract location
-        location_data = response.get('content_location', {})
+        # Parse content location
+        loc_data = response.get('content_location', {})
         content_location = ContentLocation(
-            country=location_data.get('country', 'international'),
-            country_code=location_data.get('country_code', ''),
-            language=location_data.get('language', 'english'),
-            confidence=float(location_data.get('confidence', 0.5))
+            country=loc_data.get('country', 'international'),
+            country_code=loc_data.get('country_code', ''),
+            language=loc_data.get('language', 'english'),
+            confidence=loc_data.get('confidence', 0.5)
         )
 
-        return claims, all_sources, content_location
-
-    def _deduplicate_and_rank_claims(self, claims: List[KeyClaim]) -> List[KeyClaim]:
-        """Deduplicate claims and keep top 3 by confidence"""
-        seen_statements = set()
-        unique_claims = []
-
-        for claim in claims:
-            # Normalize for comparison
-            normalized = claim.statement.lower().strip()
-            if normalized not in seen_statements:
-                seen_statements.add(normalized)
-                unique_claims.append(claim)
-
-        # Sort by confidence and take top 3
-        unique_claims.sort(key=lambda x: x.confidence, reverse=True)
-        return unique_claims[:3]
-
-    def _aggregate_location_votes(self, votes: List[ContentLocation]) -> ContentLocation:
-        """Aggregate location votes from multiple chunks"""
-        if not votes:
-            return ContentLocation()
-
-        # Find most common country
-        country_counts = {}
-        for vote in votes:
-            key = (vote.country, vote.language)
-            if key not in country_counts:
-                country_counts[key] = {'count': 0, 'confidence': 0, 'code': vote.country_code}
-            country_counts[key]['count'] += 1
-            country_counts[key]['confidence'] = max(country_counts[key]['confidence'], vote.confidence)
-
-        # Get the most common
-        best_key = max(country_counts.keys(), key=lambda k: (country_counts[k]['count'], country_counts[k]['confidence']))
-
-        return ContentLocation(
-            country=best_key[0],
-            country_code=country_counts[best_key]['code'],
-            language=best_key[1],
-            confidence=country_counts[best_key]['confidence']
+        # Parse broad context (NEW)
+        ctx_data = response.get('broad_context', {})
+        broad_context = BroadContext(
+            content_type=ctx_data.get('content_type', 'unknown'),
+            credibility_assessment=ctx_data.get('credibility_assessment', 'unknown'),
+            reasoning=ctx_data.get('reasoning', ''),
+            red_flags=ctx_data.get('red_flags', []),
+            positive_indicators=ctx_data.get('positive_indicators', [])
         )
+
+        # Extract media sources (NEW)
+        media_sources = response.get('media_sources', [])
+
+        # Parse query instructions (NEW)
+        qi_data = response.get('query_instructions', {})
+        query_instructions = QueryInstructions(
+            primary_strategy=qi_data.get('primary_strategy', 'standard verification'),
+            suggested_modifiers=qi_data.get('suggested_modifiers', []),
+            temporal_guidance=qi_data.get('temporal_guidance', 'recent'),
+            source_priority=qi_data.get('source_priority', []),
+            special_considerations=qi_data.get('special_considerations', '')
+        )
+
+        return claims, all_sources, content_location, broad_context, media_sources, query_instructions
 
     def _format_sources(self, links: list) -> str:
         """Format source links for the prompt"""
@@ -303,11 +371,78 @@ class KeyClaimsExtractor:
             return "No source links provided"
 
         formatted = []
-        for i, link in enumerate(links, 1):
-            url = link.get('url', 'Unknown URL')
-            text = link.get('text', '')[:100]
-            formatted.append(f"[{i}] {url}")
-            if text:
-                formatted.append(f"    Text: {text}")
+        for link in links:
+            if isinstance(link, dict):
+                url = link.get('url', '')
+                text = link.get('text', '')
+                formatted.append(f"- {text}: {url}" if text else f"- {url}")
+            else:
+                formatted.append(f"- {link}")
 
         return "\n".join(formatted)
+
+    def _deduplicate_and_rank_claims(self, claims: List[KeyClaim]) -> List[KeyClaim]:
+        """Remove duplicate claims and keep top 2-3 by confidence"""
+        # Simple deduplication by statement similarity
+        seen = set()
+        unique = []
+        for claim in claims:
+            # Normalize for comparison
+            normalized = claim.statement.lower().strip()
+            if normalized not in seen:
+                seen.add(normalized)
+                unique.append(claim)
+
+        # Sort by confidence and keep top 3
+        unique.sort(key=lambda c: c.confidence, reverse=True)
+        return unique[:3]
+
+    def _aggregate_location_votes(self, votes: List[ContentLocation]) -> ContentLocation:
+        """Combine location votes from multiple chunks"""
+        if not votes:
+            return ContentLocation()
+
+        # Simple: return highest confidence vote
+        return max(votes, key=lambda v: v.confidence)
+
+    def _aggregate_broad_context(self, contexts: List[BroadContext]) -> BroadContext:
+        """Combine broad context assessments - use most concerning"""
+        if not contexts:
+            return BroadContext()
+
+        # Priority order (most concerning first)
+        priority = {
+            'likely hoax/satire': 0,
+            'significant red flags': 1,
+            'some concerns': 2,
+            'appears legitimate': 3,
+            'unknown': 4
+        }
+
+        # Return most concerning assessment
+        return min(contexts, key=lambda c: priority.get(c.credibility_assessment, 4))
+
+    def _merge_query_instructions(self, instructions: List[QueryInstructions]) -> QueryInstructions:
+        """Merge query instructions from multiple chunks"""
+        if not instructions:
+            return QueryInstructions()
+
+        if len(instructions) == 1:
+            return instructions[0]
+
+        # Merge all modifiers and source priorities
+        all_modifiers = []
+        all_priorities = []
+        
+        for inst in instructions:
+            all_modifiers.extend(inst.suggested_modifiers)
+            all_priorities.extend(inst.source_priority)
+
+        # Use first strategy and temporal guidance
+        return QueryInstructions(
+            primary_strategy=instructions[0].primary_strategy,
+            suggested_modifiers=list(set(all_modifiers)),
+            temporal_guidance=instructions[0].temporal_guidance,
+            source_priority=list(set(all_priorities)),
+            special_considerations=instructions[0].special_considerations
+        )
