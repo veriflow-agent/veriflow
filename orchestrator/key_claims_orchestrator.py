@@ -213,7 +213,7 @@ class KeyClaimsOrchestrator:
                     queries=queries.all_queries,
                     search_depth="advanced",
                     max_concurrent=3,
-                    freshness=claim_freshness  # NEW: Pass freshness to Brave
+                    freshness=None  # ← Remove freshness filter, search all time
                 )
                 search_results_by_claim[claim.id] = search_results
 

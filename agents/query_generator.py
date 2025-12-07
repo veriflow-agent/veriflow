@@ -20,7 +20,7 @@ from typing import List, Optional, Any
 from datetime import datetime
 import time
 
-from prompts.query_generator_prompts import get_query_generator_prompts, get_multilingual_query_prompts
+from prompts.query_generator_prompts_simple import get_query_generator_prompts, get_multilingual_query_prompts
 from utils.logger import fact_logger
 from utils.langsmith_config import langsmith_config
 
