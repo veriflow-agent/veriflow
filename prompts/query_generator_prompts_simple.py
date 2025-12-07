@@ -5,6 +5,10 @@ Minimal instructions, delegating strategy decisions to the AI
 
 Goal: See what the model produces naturally with just the context,
 without prescriptive examples or scenarios.
+
+NOTE: JSON examples use {{{{ and }}}} (quadruple braces) because:
+1. Python .format() turns {{{{ → {{
+2. LangChain ChatPromptTemplate turns {{ → {
 """
 
 SYSTEM_PROMPT = """You are an expert at creating web search queries. Convert factual claims into effective Brave Search queries.
@@ -20,14 +24,14 @@ TASK:
 Generate 3 search queries to verify the given claim. You will receive content analysis context - use it to inform your query strategy.
 
 OUTPUT FORMAT (JSON only):
-{{
+{{{{
   "primary_query": "most direct query",
   "alternative_queries": ["query 2", "query 3"],
   "search_focus": "what aspect you're verifying",
   "key_terms": ["important", "terms"],
   "expected_sources": ["types of sources"],
   "recommended_freshness": "pd|pw|pm|py or null"
-}}"""
+}}}}"""
 
 
 USER_PROMPT = """FACT TO VERIFY:
@@ -66,7 +70,7 @@ TASK:
 Generate 3 search queries: 2 in English, 1 in the target language. Use the content analysis context to inform your strategy.
 
 OUTPUT FORMAT (JSON only):
-{{
+{{{{
   "primary_query": "English - most direct",
   "alternative_queries": ["English - alternative angle", "target language query"],
   "search_focus": "what you're verifying",
@@ -74,7 +78,7 @@ OUTPUT FORMAT (JSON only):
   "expected_sources": ["source types"],
   "local_language_used": "language name",
   "recommended_freshness": "pd|pw|pm|py or null"
-}}"""
+}}}}"""
 
 
 USER_PROMPT_MULTILINGUAL = """FACT TO VERIFY:
