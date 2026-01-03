@@ -23,7 +23,7 @@ from playwright.async_api import async_playwright, Browser, Page
 from utils.logger import fact_logger
 
 
-class FactCheckScraper:
+class BrowserlessScraper:
     """
     ✅ OPTIMIZED: Railway Browserless scraper with persistent sessions and timeout protection
     """
@@ -87,7 +87,7 @@ class FactCheckScraper:
             fact_logger.logger.info("🔧 Local Playwright mode")
 
         fact_logger.log_component_start(
-            "FactCheckScraper",
+            "BrowserlessScraper",
             browserless=bool(self.browserless_endpoint),
             replica_id=self.replica_id,
             browser_pool_size=self.max_concurrent

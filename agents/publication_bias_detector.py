@@ -86,7 +86,7 @@ class PublicationBiasDetector:
         Args:
             config: Configuration object with API keys
             brave_searcher: BraveSearcher instance for web search
-            scraper: FactCheckScraper instance for web scraping
+            scraper: BrowserlessScraper instance for web scraping
         """
         self.config = config
         self.brave_searcher = brave_searcher

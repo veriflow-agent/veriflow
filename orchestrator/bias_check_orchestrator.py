@@ -55,10 +55,10 @@ class BiasCheckOrchestrator:
             # Check if Brave API is available
             if hasattr(config, 'brave_api_key') and config.brave_api_key:
                 from utils.brave_searcher import BraveSearcher
-                from utils.browserless_scraper import FactCheckScraper
+                from utils.browserless_scraper import BrowserlessScraper
 
                 self.brave_searcher = BraveSearcher(config, max_results=5)
-                self.scraper = FactCheckScraper(config)
+                self.scraper = BrowserlessScraper(config)
                 self.pub_detector = PublicationBiasDetector(
                     config=config,
                     brave_searcher=self.brave_searcher,

@@ -29,7 +29,7 @@ from utils.logger import fact_logger
 from utils.langsmith_config import langsmith_config
 from utils.file_manager import FileManager
 from utils.job_manager import job_manager
-from utils.browserless_scraper import FactCheckScraper
+from utils.browserless_scraper import BrowserlessScraper
 from utils.brave_searcher import BraveSearcher
 
 # Import agents
@@ -66,7 +66,7 @@ class WebSearchOrchestrator:
         self.query_generator = QueryGenerator(config)
         self.searcher = BraveSearcher(config, max_results=5)
         self.credibility_filter = CredibilityFilter(config, min_credibility_score=0.70)
-        self.scraper = FactCheckScraper(config)
+        self.scraper = BrowserlessScraper(config)
         self.checker = FactChecker(config)
         self.file_manager = FileManager()
 

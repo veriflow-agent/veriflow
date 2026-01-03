@@ -18,7 +18,7 @@ from utils.html_parser import HTMLParser
 from utils.file_manager import FileManager
 from utils.logger import fact_logger
 from utils.langsmith_config import langsmith_config
-from utils.browserless_scraper import FactCheckScraper
+from utils.browserless_scraper import BrowserlessScraper
 
 # Import your existing components
 from agents.fact_checker import FactChecker
@@ -33,7 +33,7 @@ class ImprovedFactCheckOrchestrator:
         self.config = config
         self.parser = HTMLParser()
         self.analyzer = ImprovedFactAnalyzer(config)  # Use improved analyzer
-        self.scraper = FactCheckScraper(config)
+        self.scraper = BrowserlessScraper(config)
         self.checker = FactChecker(config)
         self.file_manager = FileManager()
 
