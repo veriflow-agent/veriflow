@@ -2,16 +2,203 @@
 // This file ties together all modules and sets up event listeners
 
 // ============================================
+// URL INPUT ELEMENTS (add to config.js if you prefer)
+// ============================================
+
+const articleUrl = document.getElementById('articleUrl');
+const fetchUrlBtn = document.getElementById('fetchUrlBtn');
+const urlFetchStatus = document.getElementById('urlFetchStatus');
+
+// ============================================
+// URL INPUT HANDLING
+// ============================================
+
+// Validate URL format
+function isValidUrl(string) {
+    try {
+        const url = new URL(string);
+        return url.protocol === 'http:' || url.protocol === 'https:';
+    } catch (_) {
+        return false;
+    }
+}
+
+// Show URL fetch status with different states
+function showUrlStatus(type, message) {
+    if (!urlFetchStatus) return;
+    urlFetchStatus.style.display = 'flex';
+    urlFetchStatus.className = `url-fetch-status ${type}`;
+
+    const icons = {
+        loading: '⏳',
+        success: '✅',
+        error: '❌'
+    };
+
+    urlFetchStatus.innerHTML = `
+        <span class="status-icon">${icons[type] || '📄'}</span>
+        <span class="status-text">${message}</span>
+    `;
+}
+
+function hideUrlStatus() {
+    if (urlFetchStatus) {
+        urlFetchStatus.style.display = 'none';
+    }
+}
+
+// Fetch article content from URL via backend
+async function fetchArticleFromUrl(url) {
+    showUrlStatus('loading', 'Fetching article content...');
+
+    try {
+        const response = await fetch('/api/scrape-url', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ url: url })
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || error.message || 'Failed to fetch article');
+        }
+
+        const data = await response.json();
+
+        if (!data.content || data.content.trim().length < 100) {
+            throw new Error('Could not extract sufficient content from the URL');
+        }
+
+        // Show success with content length
+        const charCount = data.content.length.toLocaleString();
+        const titleInfo = data.title ? ` from "${data.title}"` : '';
+        showUrlStatus('success', `Fetched ${charCount} characters${titleInfo}`);
+
+        return {
+            content: data.content,
+            title: data.title,
+            url: data.url
+        };
+
+    } catch (error) {
+        showUrlStatus('error', error.message);
+        throw error;
+    }
+}
+
+// Initialize URL input event listeners
+function initUrlInputListeners() {
+    if (!articleUrl || !fetchUrlBtn) {
+        console.log('URL input elements not found, skipping URL input initialization');
+        return;
+    }
+
+    // Enable/disable fetch button based on URL validity
+    articleUrl.addEventListener('input', () => {
+        const url = articleUrl.value.trim();
+        fetchUrlBtn.disabled = !isValidUrl(url);
+
+        // Add visual indicator when URL is entered
+        if (url && isValidUrl(url)) {
+            htmlInput.classList.add('url-filled');
+        } else {
+            htmlInput.classList.remove('url-filled');
+        }
+    });
+
+    // Clear URL styling when textarea is used directly
+    htmlInput.addEventListener('input', () => {
+        if (htmlInput.value.trim()) {
+            htmlInput.classList.remove('url-filled');
+        }
+    });
+
+    // Fetch button click handler
+    fetchUrlBtn.addEventListener('click', async () => {
+        const url = articleUrl.value.trim();
+
+        if (!isValidUrl(url)) {
+            showUrlStatus('error', 'Please enter a valid URL');
+            return;
+        }
+
+        try {
+            // Disable button and show loading state
+            fetchUrlBtn.disabled = true;
+            fetchUrlBtn.innerHTML = '<span class="fetch-icon">⏳</span><span class="fetch-text">Fetching...</span>';
+
+            const result = await fetchArticleFromUrl(url);
+
+            // Put the fetched content into the textarea
+            htmlInput.value = result.content;
+            htmlInput.classList.add('url-filled');
+
+            // Trigger input event to update any format detection
+            htmlInput.dispatchEvent(new Event('input'));
+
+        } catch (error) {
+            console.error('URL fetch error:', error);
+            // Error already shown via showUrlStatus
+        } finally {
+            // Re-enable button with original text
+            fetchUrlBtn.disabled = !isValidUrl(articleUrl.value.trim());
+            fetchUrlBtn.innerHTML = '<span class="fetch-icon">📥</span><span class="fetch-text">Fetch</span>';
+        }
+    });
+
+    // Allow Enter key to trigger fetch
+    articleUrl.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter' && !fetchUrlBtn.disabled) {
+            e.preventDefault();
+            fetchUrlBtn.click();
+        }
+    });
+
+    console.log('✅ URL input listeners initialized');
+}
+
+// Clear URL input field
+function clearUrlInput() {
+    if (articleUrl) {
+        articleUrl.value = '';
+    }
+    if (fetchUrlBtn) {
+        fetchUrlBtn.disabled = true;
+    }
+    hideUrlStatus();
+    htmlInput.classList.remove('url-filled');
+}
+
+// ============================================
 // ANALYZE BUTTON HANDLER
 // ============================================
 
 async function handleAnalyze() {
-    const content = htmlInput.value.trim();
+    let content = htmlInput.value.trim();
+    const url = articleUrl ? articleUrl.value.trim() : '';
+
+    // If URL is provided but content is empty, fetch from URL first
+    if (url && isValidUrl(url) && !content) {
+        try {
+            addProgress('🔗 Fetching article from URL...');
+            const result = await fetchArticleFromUrl(url);
+            content = result.content;
+            htmlInput.value = content;
+        } catch (error) {
+            showError('Failed to fetch article: ' + error.message);
+            return;
+        }
+    }
 
     if (!content) {
-        showError('Please paste some content to analyze.');
+        showError('Please paste some content or enter a URL to analyze.');
         return;
     }
+
+    // Hide URL status when starting analysis
+    hideUrlStatus();
 
     // Mode-specific validation
     if (AppState.currentMode === 'llm-output') {
@@ -183,7 +370,8 @@ function initEventListeners() {
     // Clear button
     clearBtn.addEventListener('click', () => {
         htmlInput.value = '';
-        publicationUrl.value = '';  // NEW
+        publicationUrl.value = '';
+        clearUrlInput();  // NEW: Clear URL input
         hideContentFormatIndicator();
         hideAllSections();
         AppState.clearResults();
@@ -201,7 +389,8 @@ function initEventListeners() {
     newCheckBtn.addEventListener('click', () => {
         hideAllSections();
         htmlInput.value = '';
-        publicationUrl.value = '';  // NEW: was publicationName
+        publicationUrl.value = '';
+        clearUrlInput();  // NEW: Clear URL input
         hideContentFormatIndicator();
         AppState.clearResults();
     });
@@ -224,9 +413,10 @@ function initEventListeners() {
 
 function init() {
     initEventListeners();
+    initUrlInputListeners();  // NEW: Initialize URL input
     initModalListeners();
     initBiasModelTabs();
-    
+
     console.log('✅ VeriFlow app initialized successfully');
     console.log('📦 Modules loaded: config, utils, ui, modal, api, renderers');
 }

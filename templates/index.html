@@ -176,6 +176,32 @@
                     <p class="help-text" id="inputHelpText">Paste ChatGPT, Perplexity, or any LLM output with source links</p>
                 </div>
 
+                <!-- URL Input Field (visible in all modes) -->
+                <div class="url-input-field" id="urlInputField">
+                    <div class="url-input-wrapper">
+                        <span class="url-icon">🔗</span>
+                        <input 
+                            type="url" 
+                            id="articleUrl" 
+                            placeholder="Or paste an article URL to analyze..."
+                            autocomplete="off"
+                        >
+                        <button type="button" id="fetchUrlBtn" class="btn-fetch" disabled>
+                            <span class="fetch-icon">📥</span>
+                            <span class="fetch-text">Fetch</span>
+                        </button>
+                    </div>
+                    <p class="url-help-text">Enter a URL to automatically fetch and analyze the article content</p>
+                    <div id="urlFetchStatus" class="url-fetch-status" style="display: none;">
+                        <span class="status-icon">⏳</span>
+                        <span class="status-text">Fetching article...</span>
+                    </div>
+                </div>
+
+                <div class="input-divider">
+                    <span>OR</span>
+                </div>
+                
                 <div class="input-wrapper">
                     <textarea id="htmlInput" placeholder="Paste content here..." rows="12"></textarea>
                 </div>

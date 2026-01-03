@@ -2434,3 +2434,145 @@ footer a:hover {
 .bias-left { color: #0066cc; }
 .bias-center { color: #28a745; }
 .bias-right { color: #dc3545; }
+
+/* ============================================
+   URL INPUT FIELD STYLES
+   ============================================ */
+
+.url-input-field {
+    margin-bottom: 1rem;
+}
+
+.url-input-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    background: #f8fafc;
+    border: 2px solid var(--border-color);
+    border-radius: 12px;
+    transition: all 0.2s ease;
+}
+
+.url-input-wrapper:focus-within {
+    border-color: var(--primary-color);
+    background: white;
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+}
+
+.url-icon {
+    font-size: 1.2rem;
+    flex-shrink: 0;
+}
+
+.url-input-wrapper input[type="url"] {
+    flex: 1;
+    border: none;
+    background: transparent;
+    font-size: 0.95rem;
+    padding: 0.5rem;
+    outline: none;
+}
+
+.url-input-wrapper input[type="url"]::placeholder {
+    color: #94a3b8;
+}
+
+.btn-fetch {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.5rem 1rem;
+    background: var(--primary-color);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+}
+
+.btn-fetch:hover:not(:disabled) {
+    background: var(--primary-hover);
+    transform: translateY(-1px);
+}
+
+.btn-fetch:disabled {
+    background: #cbd5e1;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.btn-fetch .fetch-icon {
+    font-size: 1rem;
+}
+
+.url-help-text {
+    font-size: 0.8rem;
+    color: #64748b;
+    margin-top: 0.5rem;
+    margin-left: 0.5rem;
+}
+
+/* URL Fetch Status */
+.url-fetch-status {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    margin-top: 0.75rem;
+    border-radius: 8px;
+    font-size: 0.9rem;
+}
+
+.url-fetch-status.loading {
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    color: #1e40af;
+}
+
+.url-fetch-status.success {
+    background: #ecfdf5;
+    border: 1px solid #a7f3d0;
+    color: #065f46;
+}
+
+.url-fetch-status.error {
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    color: #991b1b;
+}
+
+.url-fetch-status .status-icon {
+    font-size: 1.1rem;
+}
+
+/* Input Divider */
+.input-divider {
+    display: flex;
+    align-items: center;
+    margin: 1.5rem 0;
+    color: #94a3b8;
+    font-size: 0.85rem;
+    font-weight: 500;
+}
+
+.input-divider::before,
+.input-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(to right, transparent, #e2e8f0, transparent);
+}
+
+.input-divider span {
+    padding: 0 1rem;
+}
+
+/* Textarea adjustment when URL content is loaded */
+.input-group textarea.url-filled {
+    background: #f8fafc;
+    border-style: dashed;
+}

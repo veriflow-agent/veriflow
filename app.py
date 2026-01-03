@@ -516,6 +516,104 @@ def stream_job_progress(job_id: str):
         }
     )
 
+# ============================================
+# URL SCRAPING ENDPOINT
+# ============================================
+
+@app.route('/api/scrape-url', methods=['POST'])
+def scrape_url():
+    """
+    Scrape and clean article content from a URL.
+    Used by the frontend to fetch articles for analysis.
+
+    Request body:
+        {"url": "https://example.com/article"}
+
+    Returns:
+        {
+            "success": true,
+            "url": "https://example.com/article",
+            "title": "Article Title",
+            "content": "Cleaned article text...",
+            "content_length": 5432
+        }
+    """
+    try:
+        request_json = request.get_json()
+        if not request_json:
+            return jsonify({"error": "Invalid request format"}), 400
+
+        url = request_json.get('url')
+        if not url:
+            return jsonify({"error": "No URL provided"}), 400
+
+        # Validate URL format
+        if not url.startswith(('http://', 'https://')):
+            return jsonify({
+                "error": "Invalid URL format",
+                "message": "URL must start with http:// or https://"
+            }), 400
+
+        fact_logger.logger.info(
+            "🔗 Received URL scrape request",
+            extra={"url": url}
+        )
+
+        # Import the scraper
+        from utils.browserless_scraper import BrowserlessScraper
+
+        # Run the async scrape operation
+        async def scrape_content():
+            scraper = BrowserlessScraper(config)
+            try:
+                await scraper.initialize()
+                content = await scraper.scrape_url(url)
+                return content
+            finally:
+                await scraper.close()
+
+        content = run_async_in_thread(scrape_content())
+
+        # Validate we got meaningful content
+        if not content or len(content.strip()) < 100:
+            return jsonify({
+                "error": "Could not extract content from URL",
+                "message": "The page may be empty, paywalled, or use JavaScript rendering that we couldn't process. Try copying the article text directly."
+            }), 422
+
+        # Extract title from content if it starts with a markdown heading
+        title = None
+        lines = content.strip().split('\n')
+        if lines:
+            first_line = lines[0].strip()
+            if first_line.startswith('#'):
+                title = first_line.lstrip('#').strip()
+                if len(title) > 200:
+                    title = title[:197] + '...'
+
+        fact_logger.logger.info(
+            "✅ Successfully scraped URL",
+            extra={
+                "url": url,
+                "content_length": len(content),
+                "title": title
+            }
+        )
+
+        return jsonify({
+            "success": True,
+            "url": url,
+            "title": title,
+            "content": content,
+            "content_length": len(content)
+        })
+
+    except Exception as e:
+        fact_logger.log_component_error("URL Scraper API", e)
+        return jsonify({
+            "error": str(e),
+            "message": "An error occurred while fetching the URL. Please try pasting the content directly."
+        }), 500
 
 @app.route('/api/job/<job_id>/cancel', methods=['POST'])
 def cancel_job(job_id: str):
