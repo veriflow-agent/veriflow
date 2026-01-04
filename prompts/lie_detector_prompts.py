@@ -1,101 +1,231 @@
-# prompts/lie_detector_prompts.py
+# agents/lie_detector.py - PARSING FIX
 """
-Prompts for the Lie Detector / Deception Marker Analyzer
-Analyzes text for linguistic markers of fake news and disinformation
+This file shows the changes needed to fix JSON parsing errors in lie_detector.py
+
+The problem: Claude sometimes returns JSON wrapped in markdown code fences like:
+```json
+{ ... }
+```
+
+Or with preamble text like "Here's my analysis:"
+
+The fix: Add a cleaning function and use it before parsing.
 """
 
-SYSTEM_PROMPT = """You are an expert linguist and fact-checker specializing in detecting fake news and disinformation. 
-Analyze the provided article for linguistic markers of deception based on established research.
+import re
+import json
 
-IMPORTANT CONTEXT ABOUT DATES:
-- Current date: {current_date}
-- Your knowledge cutoff: January 2025
-- Articles may discuss events that occurred AFTER your knowledge cutoff
-- DO NOT flag an article as fake simply because it discusses recent events you don't know about
-- Focus on LINGUISTIC MARKERS of deception, not whether you personally know about the events
-- If an article discusses events after January 2025, that's NORMAL and EXPECTED for news articles
-- Recent dates or unfamiliar recent events are NOT red flags for fake news
+# ============================================
+# ADD THIS HELPER FUNCTION (near the top of the file, after imports)
+# ============================================
 
-KEY DECEPTION MARKERS TO ANALYZE:
+def clean_json_response(text: str) -> str:
+    """
+    Clean LLM response to extract pure JSON.
+    Handles markdown code fences and preamble text.
+    """
+    if not text:
+        return text
 
-1. LEXICAL AND WORD-CHOICE MARKERS:
-   - More social words (people, friends, family) - suggests focus on social engagement over facts
-   - More positive emotion words (amazing, wonderful, shocking, incredible)
-   - More certainty words (always, definitely, clearly) - used to sound authoritative
-   - Fewer cognitive process words (think, believe, because, reason) - reduced analytical language
-   - More verbs and adverbs - emphasis on action and drama
-   - Fewer function words (articles, prepositions) - simplified, less precise syntax
-   - More present and future tense verbs (is happening, will change) - projecting urgency
-   - Fewer negations (not, never) - fake writers avoid direct contradiction
-   - Fewer quantifiers and numbers (some, many, 12%) - less verifiable precision
+    # Remove markdown code fences
+    # Pattern matches ```json ... ``` or ``` ... ```
+    code_block_pattern = r'```(?:json)?\s*([\s\S]*?)\s*```'
+    match = re.search(code_block_pattern, text)
+    if match:
+        text = match.group(1)
 
-2. SYNTACTIC AND STRUCTURAL MARKERS:
-   - Simpler syntax (shorter sentences, lower syntactic depth)
-   - Less grammatical variety (fewer subordinations, complex clauses)
-   - Repetitive structure - similar sentence forms repeated
-   - Excessive punctuation (!!!, ???, multiple exclamation marks)
-   - All caps words or phrases for emphasis
-   - Clickbait-style formatting
+    # Remove any text before the first { or [
+    first_brace = text.find('{')
+    first_bracket = text.find('[')
 
-3. PSYCHOLINGUISTIC MARKERS:
-   - Emotional, sensational tone vs analytical, factual tone
-   - Appeals to fear, anger, or outrage
-   - Us vs them framing
-   - Conspiracy-oriented language
-   - Lack of attribution or vague sources
-   - Claims without evidence
+    if first_brace != -1 and first_bracket != -1:
+        start = min(first_brace, first_bracket)
+    elif first_brace != -1:
+        start = first_brace
+    elif first_bracket != -1:
+        start = first_bracket
+    else:
+        return text  # No JSON structure found
 
-4. READABILITY AND COMPLEXITY:
-   - Too simple or too sensational
-   - Lack of nuance or balanced perspective
-   - Overgeneralization
-   - False dichotomies
+    # Find the matching closing brace/bracket
+    if text[start] == '{':
+        # Find last }
+        last_close = text.rfind('}')
+        if last_close != -1:
+            text = text[start:last_close + 1]
+    else:
+        # Find last ]
+        last_close = text.rfind(']')
+        if last_close != -1:
+            text = text[start:last_close + 1]
 
-5. TEMPORAL AND PRONOUN PATTERNS:
-   - Present/future tense (fake) vs past tense (real)
-   - 2nd person or collective pronouns (we, they) vs 3rd person neutral
-   - Personal appeals to reader
-
-6. SOURCE AND ATTRIBUTION:
-   - Vague or anonymous sources
-   - Lack of verifiable facts
-   - Missing citations or references
-   - Reliance on anecdotes over data
-
-Your analysis should be:
-- Objective and evidence-based
-- Specific with examples from the text
-- Balanced - note both presence AND absence of markers
-- Concluding with an overall credibility assessment
-
-Provide a detailed report with:
-1. Presence/absence of each marker category
-2. Specific examples from the text
-3. Risk assessment (LOW, MEDIUM, HIGH)
-4. Credibility score (0-100, where 100 = highly credible)
-5. Clear conclusion about likelihood of disinformation
-
-IMPORTANT: You MUST return valid JSON only. No other text or explanations."""
-
-USER_PROMPT = """Analyze this article for linguistic markers of fake news and disinformation:
-
-CURRENT DATE: {current_date}
-{temporal_context}
-{article_source}
-
-ARTICLE CONTENT:
-{text}
-
-IMPORTANT: Consider the timeline context provided above. If this article is from the past, the events it describes may now be verifiable or may have been debunked. Focus on LINGUISTIC MARKERS, not just whether you personally know about the events.
-
-{format_instructions}
-
-Provide a comprehensive analysis following the framework described."""
+    return text.strip()
 
 
-def get_lie_detector_prompts():
-    """Return prompts for lie detection analysis"""
-    return {
-        "system": SYSTEM_PROMPT,
-        "user": USER_PROMPT
-    }
+# ============================================
+# MODIFY THE analyze() METHOD - Replace the try/except block
+# ============================================
+
+# BEFORE (problematic code):
+"""
+try:
+    response = await chain.ainvoke(
+        {
+            "current_date": current_date_str,
+            "temporal_context": temporal_context,
+            "article_source": article_source,
+            "text": text
+        },
+        config={"callbacks": callbacks.handlers}
+    )
+
+    fact_logger.logger.info("✅ Lie detection analysis completed")
+
+    return LieDetectionResult(**response)
+"""
+
+# AFTER (fixed code):
+"""
+try:
+    # Get raw response from Claude (without the parser in the chain)
+    prompt_chain = prompt_with_format | self.claude_llm
+
+    raw_response = await prompt_chain.ainvoke(
+        {
+            "current_date": current_date_str,
+            "temporal_context": temporal_context,
+            "article_source": article_source,
+            "text": text
+        },
+        config={"callbacks": callbacks.handlers}
+    )
+
+    # Extract content from AIMessage
+    if hasattr(raw_response, 'content'):
+        response_text = raw_response.content
+    else:
+        response_text = str(raw_response)
+
+    # Clean the JSON response
+    cleaned_json = clean_json_response(response_text)
+
+    # Parse the cleaned JSON
+    try:
+        response = json.loads(cleaned_json)
+    except json.JSONDecodeError as e:
+        fact_logger.logger.error(f"JSON parsing failed: {e}")
+        fact_logger.logger.error(f"Raw response: {response_text[:500]}...")
+        raise ValueError(f"Invalid JSON response: {e}")
+
+    fact_logger.logger.info("✅ Lie detection analysis completed")
+
+    return LieDetectionResult(**response)
+"""
+
+
+# ============================================
+# FULL UPDATED analyze() METHOD
+# ============================================
+
+async def analyze_FIXED(
+    self, 
+    text: str,
+    url: Optional[str] = None,
+    publication_date: Optional[str] = None
+) -> "LieDetectionResult":
+    """
+    Analyze text for deception markers - FIXED VERSION
+
+    Args:
+        text: The article text to analyze
+        url: Optional article URL
+        publication_date: Optional publication date (if available)
+
+    Returns:
+        LieDetectionResult with comprehensive analysis
+    """
+    from utils.logger import fact_logger
+    from utils.langsmith_config import langsmith_config
+    from datetime import datetime
+
+    fact_logger.logger.info("🔍 Starting lie detection analysis")
+
+    # Limit content to avoid token limits
+    if len(text) > 20000:
+        fact_logger.logger.info("⚠️ Content too long, truncating to 20000 characters")
+        text = text[:20000]
+
+    # Get current date
+    current_date = datetime.now()
+    current_date_str = current_date.strftime("%B %d, %Y")
+
+    # Build temporal context
+    temporal_context = self._build_temporal_context(publication_date, current_date)
+
+    # Build article source context
+    article_source = f"ARTICLE URL: {url}" if url else "ARTICLE SOURCE: Plain text input"
+
+    # Create prompt with system prompt that includes current date
+    system_prompt = self.prompts["system"].format(current_date=current_date_str)
+
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", system_prompt + "\n\nCRITICAL: Return ONLY valid JSON. No markdown, no explanations, just the JSON object."),
+        ("user", self.prompts["user"] + "\n\nReturn ONLY the JSON object, nothing else.")
+    ])
+
+    prompt_with_format = prompt.partial(
+        format_instructions=self.parser.get_format_instructions()
+    )
+
+    callbacks = langsmith_config.get_callbacks("lie_detector_claude")
+
+    # NOTE: Don't include parser in chain - we'll parse manually after cleaning
+    prompt_chain = prompt_with_format | self.claude_llm
+
+    try:
+        # Get raw response
+        raw_response = await prompt_chain.ainvoke(
+            {
+                "current_date": current_date_str,
+                "temporal_context": temporal_context,
+                "article_source": article_source,
+                "text": text
+            },
+            config={"callbacks": callbacks.handlers}
+        )
+
+        # Extract content from AIMessage
+        if hasattr(raw_response, 'content'):
+            response_text = raw_response.content
+        else:
+            response_text = str(raw_response)
+
+        fact_logger.logger.debug(f"Raw response length: {len(response_text)}")
+
+        # Clean the JSON response (remove markdown fences, preamble, etc.)
+        cleaned_json = clean_json_response(response_text)
+
+        # Parse the cleaned JSON
+        try:
+            response = json.loads(cleaned_json)
+        except json.JSONDecodeError as e:
+            fact_logger.logger.error(f"JSON parsing failed after cleaning: {e}")
+            fact_logger.logger.error(f"Cleaned JSON (first 500 chars): {cleaned_json[:500]}...")
+            raise ValueError(f"Invalid JSON response from model: {e}")
+
+        fact_logger.logger.info("✅ Lie detection analysis completed")
+
+        return LieDetectionResult(**response)
+
+    except Exception as e:
+        fact_logger.logger.error(f"❌ Lie detection analysis failed: {e}")
+        # Return a fallback result
+        return LieDetectionResult(
+            risk_level="UNKNOWN",
+            credibility_score=50,
+            markers_detected=[],
+            positive_indicators=["Analysis incomplete due to error"],
+            overall_assessment=f"Analysis failed: {str(e)}",
+            conclusion="Unable to complete analysis",
+            reasoning=f"Error occurred: {str(e)}"
+        )

@@ -12,6 +12,8 @@ from orchestrator.web_search_orchestrator import WebSearchOrchestrator
 from orchestrator.bias_check_orchestrator import BiasCheckOrchestrator
 from orchestrator.lie_detector_orchestrator import LieDetectorOrchestrator
 from orchestrator.key_claims_orchestrator import KeyClaimsOrchestrator
+from orchestrator.manipulation_orchestrator import ManipulationOrchestrator
+
 from utils.logger import fact_logger
 from utils.langsmith_config import langsmith_config
 from utils.job_manager import job_manager
@@ -95,6 +97,18 @@ if config.brave_api_key:
     except Exception as e:
         fact_logger.logger.error(f"❌ Failed to initialize Key Claims Orchestrator: {e}")
         key_claims_orchestrator = None
+
+# 6. Manipulation Detection Orchestrator (detects agenda-driven fact manipulation)
+manipulation_orchestrator: Optional[ManipulationOrchestrator] = None
+if config.brave_api_key:
+    try:
+        manipulation_orchestrator = ManipulationOrchestrator(config)
+        fact_logger.logger.info("✅ Manipulation Detection Orchestrator initialized successfully")
+    except Exception as e:
+        fact_logger.logger.error(f"❌ Failed to initialize Manipulation Orchestrator: {e}")
+        manipulation_orchestrator = None
+else:
+    fact_logger.logger.warning("⚠️ Manipulation Detection requires BRAVE_API_KEY for fact verification")
 
 # Log summary
 fact_logger.logger.info("📊 Orchestrator initialization complete:")
@@ -358,6 +372,58 @@ def check_lie_detection():
             "message": "An error occurred during lie detection"
         }), 500
 
+@app.route('/api/manipulation', methods=['POST'])
+def check_manipulation():
+    """Analyze article for opinion manipulation and agenda-driven fact distortion"""
+    try:
+        # Get content from request
+        request_json = request.get_json()
+        if not request_json:
+            return jsonify({"error": "Invalid request format"}), 400
+
+        content = request_json.get('content') or request_json.get('text')
+        source_info = request_json.get('source_info', 'Unknown source')
+
+        if not content:
+            return jsonify({"error": "No content provided"}), 400
+
+        if manipulation_orchestrator is None:
+            return jsonify({
+                "error": "Manipulation detection not available",
+                "message": "Manipulation Orchestrator not initialized. Requires BRAVE_API_KEY."
+            }), 503
+
+        fact_logger.logger.info(
+            "📥 Received manipulation detection request",
+            extra={
+                "content_length": len(content),
+                "source_info": source_info
+            }
+        )
+
+        # Create job
+        job_id = job_manager.create_job(content)
+        fact_logger.logger.info(f"✅ Created manipulation detection job: {job_id}")
+
+        # Start background processing
+        threading.Thread(
+            target=run_manipulation_task,
+            args=(job_id, content, source_info),
+            daemon=True
+        ).start()
+
+        return jsonify({
+            "job_id": job_id,
+            "status": "processing",
+            "message": "Manipulation analysis started"
+        })
+
+    except Exception as e:
+        fact_logger.log_component_error("Flask API - Manipulation Detection", e)
+        return jsonify({
+            "error": str(e),
+            "message": "An error occurred during manipulation analysis"
+        }), 500
 
 def run_lie_detection_task(job_id: str, text: str, article_source: Optional[str], article_date: Optional[str]):
     """Background task runner for lie detection analysis."""
@@ -386,6 +452,18 @@ def run_lie_detection_task(job_id: str, text: str, article_source: Optional[str]
     finally:
         cleanup_thread_loop()
 
+def run_manipulation_task(job_id: str, content: str, source_info: str):
+    """Background task runner for manipulation detection"""
+    try:
+        result = run_async_in_thread(
+            manipulation_orchestrator.process_with_progress(content, job_id, source_info)
+        )
+        job_manager.complete_job(job_id, result)
+    except Exception as e:
+        fact_logger.logger.error(f"Manipulation task error: {e}")
+        job_manager.fail_job(job_id, str(e))
+    finally:
+        cleanup_thread_loop()
 
 def run_async_task(job_id: str, content: str, input_format: str):
     """

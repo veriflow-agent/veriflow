@@ -222,7 +222,10 @@ async function handleAnalyze() {
         processContent(content, 'bias');
 
     } else if (AppState.currentMode === 'lie-detection') {
-        processContent(content, 'lie-detection');
+                processContent(content, 'lie-detection');
+
+    } else if (AppState.currentMode === 'manipulation') {
+                processContent(content, 'manipulation');
     }
 }
 
@@ -261,6 +264,10 @@ async function processContent(content, type) {
         } else if (type === 'lie-detection') {
             addProgress('🕵️ Starting lie detection analysis...');
             await runLieDetection(content);
+
+        } else if (type === 'manipulation') {
+            addProgress('🎭 Starting manipulation analysis...');
+            await runManipulationCheck(content);
         }
 
         displayCombinedResults(type);
@@ -290,6 +297,7 @@ function displayCombinedResults(type) {
     if (keyClaimsTab) keyClaimsTab.style.display = 'none';
     biasAnalysisTab.style.display = 'none';
     lieDetectionTab.style.display = 'none';
+    if (manipulationTab) manipulationTab.style.display = 'none';
 
     // Show ONLY the tab for what was just run
     switch (type) {
@@ -328,10 +336,17 @@ function displayCombinedResults(type) {
             switchResultTab('lie-detection');
             break;
 
+        case 'manipulation':
+            // Manipulation Detection
+            if (manipulationTab) manipulationTab.style.display = 'block';
+            displayManipulationResults();
+            switchResultTab('manipulation');
+            break;
+
         default:
             console.error('Unknown result type:', type);
+        }
     }
-}
 
 // ============================================
 // EVENT LISTENERS SETUP

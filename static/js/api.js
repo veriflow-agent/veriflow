@@ -201,10 +201,6 @@ async function streamKeyClaimsProgress(jobId) {
 // BIAS ANALYSIS
 // ============================================
 
-// ============================================
-// BIAS ANALYSIS
-// ============================================
-
 async function runBiasCheck(content) {
     try {
         addProgress('📊 Starting bias analysis...');
@@ -298,5 +294,46 @@ async function streamLieDetectionProgress(jobId) {
     const result = await streamJobProgress(jobId, '🕵️');
     AppState.currentLieDetectionResults = result;
     addProgress('✅ Lie detection analysis completed');
+    return result;
+}
+
+// ============================================
+// MANIPULATION DETECTION
+// ============================================
+
+async function runManipulationCheck(content) {
+    try {
+        const response = await fetch('/api/manipulation', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                content: content
+            })
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Manipulation analysis failed');
+        }
+
+        const data = await response.json();
+        AppState.currentJobIds.manipulation = data.job_id;
+
+        await streamManipulationProgress(data.job_id);
+
+    } catch (error) {
+        console.error('Manipulation analysis error:', error);
+        addProgress(`❌ Manipulation analysis failed: ${error.message}`, 'error');
+        throw error;
+    }
+}
+
+async function streamManipulationProgress(jobId) {
+    const result = await streamJobProgress(jobId, '🎭');
+    AppState.currentManipulationResults = result;
+    console.log('Manipulation analysis completed:', result);
+    addProgress('✅ Manipulation analysis completed');
     return result;
 }

@@ -94,6 +94,11 @@ function switchMode(mode) {
     biasAnalysisInstructions.style.display = mode === 'bias-analysis' ? 'block' : 'none';
     lieDetectionInstructions.style.display = mode === 'lie-detection' ? 'block' : 'none';
 
+    // Manipulation mode
+    if (manipulationInstructions) {
+        manipulationInstructions.style.display = mode === 'manipulation' ? 'block' : 'none';
+    }
+
     // Update input section labels
     if (mode === 'llm-output') {
         inputSectionTitle.textContent = 'Paste LLM Output with Sources';
@@ -115,6 +120,11 @@ function switchMode(mode) {
         inputSectionTitle.textContent = 'Paste Article or Text to Analyze';
         inputHelpText.textContent = 'Paste any article or text to analyze for deception markers';
         publicationField.style.display = 'none';
+        } else if (mode === 'manipulation') {
+            inputSectionTitle.textContent = 'Paste Article for Manipulation Analysis';
+            inputHelpText.textContent = 'Paste any article - we\'ll detect agenda-driven fact manipulation';
+            publicationField.style.display = 'none';
+        }
     }
 
     // Clear format indicator when switching modes
@@ -149,5 +159,8 @@ function switchResultTab(tab) {
     }
     if (lieDetectionResults) {
         lieDetectionResults.style.display = tab === 'lie-detection' ? 'block' : 'none';
+    }
+    if (manipulationResults) {
+        manipulationResults.style.display = tab === 'manipulation' ? 'block' : 'none';
     }
 }

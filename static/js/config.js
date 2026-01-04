@@ -55,24 +55,35 @@ const exportBtn = document.getElementById('exportBtn');
 const newCheckBtn = document.getElementById('newCheckBtn');
 const retryBtn = document.getElementById('retryBtn');
 
+// Manipulation mode elements
+const manipulationInstructions = document.getElementById('manipulationInstructions');
+const manipulationTab = document.getElementById('manipulationTab');
+const manipulationResults = document.getElementById('manipulationResults');
+
+// Modal element for manipulation
+const switchToManipulationMode = document.getElementById('switchToManipulationMode');
+
+
 // ============================================
 // STATE
 // ============================================
 
 const AppState = {
-    currentMode: 'llm-output', // 'llm-output', 'text-factcheck', 'key-claims', 'bias-analysis', 'lie-detection'
+    currentMode: 'llm-output', // 'llm-output', 'text-factcheck', 'key-claims', 'bias-analysis', 'lie-detection', 'manipulation'
     currentLLMVerificationResults: null,
     currentFactCheckResults: null,
     currentKeyClaimsResults: null,
     currentBiasResults: null,
     currentLieDetectionResults: null,
+    currentManipulationResults: null,
     activeEventSources: [],
     currentJobIds: {
         llmVerification: null,
         factCheck: null,
         keyClaims: null,
         biasCheck: null,
-        lieDetection: null
+        lieDetection: null,
+        manipulation: null
     },
     pendingContent: null,
 
@@ -88,6 +99,8 @@ const AppState = {
         this.currentJobIds.keyClaims = null;
         this.currentJobIds.biasCheck = null;
         this.currentJobIds.lieDetection = null;
+        this.currentManipulationResults = null;
+        this.currentJobIds.manipulation = null;
     },
 
     closeAllStreams() {

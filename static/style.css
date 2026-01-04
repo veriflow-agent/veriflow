@@ -2576,3 +2576,709 @@ footer a:hover {
     background: #f8fafc;
     border-style: dashed;
 }
+
+/* ============================================================================
+   MANIPULATION DETECTION - CSS Styles
+   ============================================================================
+   Add these styles to your main CSS file (static/styles.css or similar)
+   ============================================================================ */
+
+/* ============================================
+   MODE TAB - Manipulation
+   ============================================ */
+
+.mode-tab[data-mode="manipulation"] {
+    border-left: 3px solid #8b5cf6;
+}
+
+.mode-tab[data-mode="manipulation"].active {
+    background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+    color: white;
+}
+
+.mode-tab[data-mode="manipulation"] .mode-icon {
+    font-size: 1.5rem;
+}
+
+
+/* ============================================
+   INSTRUCTIONS CARD - Manipulation
+   ============================================ */
+
+.instructions-card-manipulation {
+    border-left: 4px solid #8b5cf6;
+    background: linear-gradient(135deg, #faf5ff 0%, #f3e8ff 100%);
+}
+
+.instructions-card-manipulation h3 {
+    color: #7c3aed;
+}
+
+
+/* ============================================
+   RESULTS TAB - Manipulation
+   ============================================ */
+
+#manipulationTab {
+    border-color: #8b5cf6;
+}
+
+#manipulationTab.active {
+    background: #8b5cf6;
+    color: white;
+}
+
+
+/* ============================================
+   MANIPULATION SCORE
+   ============================================ */
+
+.manipulation-score-container {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    padding: 1.5rem;
+    background: linear-gradient(135deg, #faf5ff 0%, #f3e8ff 100%);
+    border-radius: 12px;
+    margin-bottom: 1.5rem;
+}
+
+.manipulation-score-value {
+    font-size: 3rem;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.manipulation-score-value.score-low {
+    color: #22c55e;
+}
+
+.manipulation-score-value.score-medium {
+    color: #f59e0b;
+}
+
+.manipulation-score-value.score-high {
+    color: #ef4444;
+}
+
+.manipulation-score-label {
+    font-size: 0.875rem;
+    color: #6b7280;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.manipulation-score-details {
+    flex: 1;
+}
+
+#manipScoreJustification {
+    font-size: 0.95rem;
+    color: #374151;
+    line-height: 1.5;
+    margin-top: 0.5rem;
+}
+
+#manipConfidence {
+    font-size: 0.8rem;
+    color: #6b7280;
+    margin-top: 0.5rem;
+}
+
+
+/* ============================================
+   ARTICLE SUMMARY
+   ============================================ */
+
+.manipulation-summary-card {
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.manipulation-summary-card h4 {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #374151;
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.summary-meta-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.meta-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.meta-label {
+    font-size: 0.75rem;
+    color: #6b7280;
+    text-transform: uppercase;
+}
+
+/* Political lean badges */
+.lean-badge {
+    display: inline-block;
+    padding: 0.25rem 0.75rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.lean-badge.lean-far-left {
+    background: #fecaca;
+    color: #991b1b;
+}
+
+.lean-badge.lean-left {
+    background: #fed7aa;
+    color: #c2410c;
+}
+
+.lean-badge.lean-center-left {
+    background: #fef3c7;
+    color: #b45309;
+}
+
+.lean-badge.lean-center {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+.lean-badge.lean-center-right {
+    background: #dbeafe;
+    color: #1e40af;
+}
+
+.lean-badge.lean-right {
+    background: #c7d2fe;
+    color: #4338ca;
+}
+
+.lean-badge.lean-far-right {
+    background: #e9d5ff;
+    color: #7e22ce;
+}
+
+.lean-badge.lean-unclear {
+    background: #e5e7eb;
+    color: #374151;
+}
+
+/* Opinion ratio */
+.ratio-value {
+    font-weight: 600;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+}
+
+.ratio-value.low-opinion {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+.ratio-value.medium-opinion {
+    background: #fef3c7;
+    color: #b45309;
+}
+
+.ratio-value.high-opinion {
+    background: #fecaca;
+    color: #991b1b;
+}
+
+/* Summary sections */
+.summary-section {
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid #e5e7eb;
+}
+
+.summary-section-label {
+    font-size: 0.75rem;
+    color: #6b7280;
+    text-transform: uppercase;
+    margin-bottom: 0.5rem;
+}
+
+.summary-section-content {
+    font-size: 0.95rem;
+    color: #1f2937;
+    line-height: 1.5;
+}
+
+/* Rhetorical strategies tags */
+.strategy-tag {
+    display: inline-block;
+    padding: 0.25rem 0.5rem;
+    background: #f3f4f6;
+    color: #4b5563;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    margin-right: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+
+
+/* ============================================
+   TECHNIQUES USED
+   ============================================ */
+
+.techniques-section {
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.techniques-section h4 {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #374151;
+    margin-bottom: 1rem;
+}
+
+.technique-chip {
+    display: inline-block;
+    padding: 0.5rem 1rem;
+    background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+    color: #92400e;
+    border-radius: 9999px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    margin-right: 0.5rem;
+    margin-bottom: 0.5rem;
+    border: 1px solid #fcd34d;
+}
+
+.no-techniques {
+    color: #059669;
+    font-weight: 500;
+}
+
+
+/* ============================================
+   FACTS LIST
+   ============================================ */
+
+.manipulation-facts-section {
+    margin-bottom: 1.5rem;
+}
+
+.manipulation-facts-section h4 {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #374151;
+    margin-bottom: 1rem;
+}
+
+.manipulation-fact-card {
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 1.25rem;
+    margin-bottom: 1rem;
+    transition: box-shadow 0.2s ease;
+}
+
+.manipulation-fact-card:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.manipulation-fact-card.has-manipulation {
+    border-left: 4px solid #f59e0b;
+}
+
+.manipulation-fact-card.no-manipulation {
+    border-left: 4px solid #22c55e;
+}
+
+.fact-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
+}
+
+.fact-id {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #6b7280;
+    background: #f3f4f6;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+}
+
+.severity-badge {
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 0.25rem 0.75rem;
+    border-radius: 9999px;
+    text-transform: uppercase;
+}
+
+.severity-badge.severity-none {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+.severity-badge.severity-low {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.severity-badge.severity-medium {
+    background: #fed7aa;
+    color: #c2410c;
+}
+
+.severity-badge.severity-high {
+    background: #fecaca;
+    color: #991b1b;
+}
+
+.fact-statement {
+    font-size: 1rem;
+    font-weight: 500;
+    color: #1f2937;
+    line-height: 1.5;
+    margin-bottom: 1rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.fact-truth-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+}
+
+.truth-label {
+    font-size: 0.8rem;
+    color: #6b7280;
+}
+
+.truth-value {
+    font-size: 0.85rem;
+    font-weight: 600;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+}
+
+.truth-value.truth-true {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+.truth-value.truth-partially-true {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.truth-value.truth-false {
+    background: #fecaca;
+    color: #991b1b;
+}
+
+.truth-value.truth-unverifiable {
+    background: #e5e7eb;
+    color: #4b5563;
+}
+
+/* Manipulation details */
+.manipulation-types-row {
+    margin-bottom: 1rem;
+}
+
+.types-label {
+    font-size: 0.8rem;
+    color: #6b7280;
+    margin-bottom: 0.5rem;
+}
+
+.types-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.type-chip {
+    display: inline-block;
+    padding: 0.25rem 0.75rem;
+    background: #fef3c7;
+    color: #92400e;
+    border-radius: 9999px;
+    font-size: 0.8rem;
+    font-weight: 500;
+}
+
+.omitted-section,
+.agenda-section,
+.corrected-section {
+    background: #f9fafb;
+    border-radius: 8px;
+    padding: 1rem;
+    margin-top: 0.75rem;
+}
+
+.omitted-label,
+.agenda-label,
+.corrected-label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #374151;
+    margin-bottom: 0.5rem;
+}
+
+.omitted-list {
+    margin: 0;
+    padding-left: 1.25rem;
+    font-size: 0.9rem;
+    color: #4b5563;
+}
+
+.omitted-list li {
+    margin-bottom: 0.25rem;
+}
+
+.agenda-text,
+.corrected-text {
+    font-size: 0.9rem;
+    color: #4b5563;
+    line-height: 1.5;
+    margin: 0;
+}
+
+.corrected-section {
+    background: #ecfdf5;
+    border: 1px solid #a7f3d0;
+}
+
+.corrected-label {
+    color: #065f46;
+}
+
+/* Sources collapsible */
+.sources-section {
+    margin-top: 1rem;
+    font-size: 0.85rem;
+}
+
+.sources-section summary {
+    cursor: pointer;
+    color: #6b7280;
+    padding: 0.5rem 0;
+}
+
+.sources-section summary:hover {
+    color: #374151;
+}
+
+.sources-list {
+    margin: 0.5rem 0 0 0;
+    padding-left: 1.25rem;
+}
+
+.sources-list li {
+    margin-bottom: 0.25rem;
+}
+
+.sources-list a {
+    color: #2563eb;
+    text-decoration: none;
+    word-break: break-all;
+}
+
+.sources-list a:hover {
+    text-decoration: underline;
+}
+
+
+/* ============================================
+   WHAT GOT RIGHT / MISLEADING
+   ============================================ */
+
+.balanced-assessment {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+    margin-bottom: 1.5rem;
+}
+
+@media (max-width: 768px) {
+    .balanced-assessment {
+        grid-template-columns: 1fr;
+    }
+}
+
+.got-right-card,
+.misleading-card {
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 1.25rem;
+}
+
+.got-right-card {
+    border-top: 4px solid #22c55e;
+}
+
+.misleading-card {
+    border-top: 4px solid #ef4444;
+}
+
+.got-right-card h4,
+.misleading-card h4 {
+    font-size: 0.95rem;
+    font-weight: 600;
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.got-right-card h4 {
+    color: #065f46;
+}
+
+.misleading-card h4 {
+    color: #991b1b;
+}
+
+.got-right-list,
+.misleading-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.got-right-list li,
+.misleading-list li {
+    padding: 0.5rem 0;
+    border-bottom: 1px solid #f3f4f6;
+    font-size: 0.9rem;
+    color: #374151;
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+}
+
+.got-right-list li:last-child,
+.misleading-list li:last-child {
+    border-bottom: none;
+}
+
+.check-icon {
+    color: #22c55e;
+    font-weight: bold;
+}
+
+.warning-icon {
+    flex-shrink: 0;
+}
+
+.empty-list {
+    color: #9ca3af;
+    font-style: italic;
+    font-size: 0.9rem;
+}
+
+
+/* ============================================
+   RECOMMENDATION
+   ============================================ */
+
+.recommendation-card {
+    background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+    border: 1px solid #93c5fd;
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.recommendation-card h4 {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #1e40af;
+    margin-bottom: 0.75rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+#manipRecommendation {
+    font-size: 0.95rem;
+    color: #1e3a8a;
+    line-height: 1.6;
+}
+
+
+/* ============================================
+   SESSION INFO
+   ============================================ */
+
+.manipulation-session-info {
+    font-size: 0.8rem;
+    color: #6b7280;
+    padding-top: 1rem;
+    border-top: 1px solid #e5e7eb;
+}
+
+.manipulation-session-info code {
+    background: #f3f4f6;
+    padding: 0.125rem 0.375rem;
+    border-radius: 4px;
+    font-family: monospace;
+}
+
+.manipulation-session-info .separator {
+    margin: 0 0.5rem;
+    color: #d1d5db;
+}
+
+
+/* ============================================
+   GAUGE (optional)
+   ============================================ */
+
+.gauge-container {
+    width: 120px;
+    text-align: center;
+}
+
+.gauge-svg {
+    width: 100%;
+    height: auto;
+}
+
+.gauge-value {
+    transition: stroke-dasharray 0.5s ease;
+}
+
+.gauge-needle {
+    transition: transform 0.5s ease;
+    transform-origin: 50px 50px;
+}
+
+.gauge-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.7rem;
+    color: #9ca3af;
+    margin-top: -0.5rem;
+    padding: 0 0.5rem;
+}

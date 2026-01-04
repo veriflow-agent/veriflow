@@ -56,6 +56,18 @@ function initModalListeners() {
         }
     });
 
+    // Manipulation mode from modal
+    if (switchToManipulationMode) {
+        switchToManipulationMode.addEventListener('click', () => {
+            hidePlainTextModal();
+            switchMode('manipulation');
+            if (AppState.pendingContent) {
+                processContent(AppState.pendingContent, 'manipulation');
+                AppState.pendingContent = null;
+            }
+        });
+    }
+
     continueAnyway.addEventListener('click', () => {
         hidePlainTextModal();
         if (AppState.pendingContent) {
