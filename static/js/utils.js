@@ -75,6 +75,7 @@ function exportResults() {
         keyClaims: AppState.currentKeyClaimsResults,
         biasAnalysis: AppState.currentBiasResults,
         lieDetection: AppState.currentLieDetectionResults,
+        manipulation: AppState.currentManipulationResults, 
         timestamp: new Date().toISOString()
     };
 

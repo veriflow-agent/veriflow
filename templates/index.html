@@ -676,101 +676,6 @@
                         </div>
                     </div>
 
-                    <!-- Manipulation Detection Results -->
-                    <div id="manipulationResults" class="results-content" style="display: none;">
-
-                        <!-- Manipulation Score -->
-                        <div class="manipulation-score-container">
-                            <div class="score-display">
-                                <span id="manipulationScore" class="manipulation-score-value">0.0</span>
-                                <span class="manipulation-score-label">/ 10 Manipulation Score</span>
-                            </div>
-                            <div class="manipulation-score-details">
-                                <p id="manipScoreJustification"></p>
-                                <span id="manipConfidence"></span>
-                            </div>
-                        </div>
-
-                        <!-- Article Summary -->
-                        <div id="manipulationSummary" class="manipulation-summary-card">
-                            <h4>📰 Article Analysis</h4>
-
-                            <div class="summary-meta-row">
-                                <div class="meta-item">
-                                    <span class="meta-label">Political Lean:</span>
-                                    <span id="manipPoliticalLean" class="lean-badge">-</span>
-                                </div>
-                                <div class="meta-item">
-                                    <span class="meta-label">Content:</span>
-                                    <span id="manipOpinionRatio" class="ratio-value">-</span>
-                                </div>
-                                <div class="meta-item">
-                                    <span class="meta-label">Tone:</span>
-                                    <span id="manipEmotionalTone">-</span>
-                                </div>
-                            </div>
-
-                            <div class="summary-section">
-                                <div class="summary-section-label">Main Thesis</div>
-                                <div id="manipMainThesis" class="summary-section-content">-</div>
-                            </div>
-
-                            <div class="summary-section">
-                                <div class="summary-section-label">Detected Agenda</div>
-                                <div id="manipDetectedAgenda" class="summary-section-content">-</div>
-                            </div>
-
-                            <div class="summary-section">
-                                <div class="summary-section-label">Target Audience</div>
-                                <div id="manipTargetAudience" class="summary-section-content">-</div>
-                            </div>
-
-                            <div class="summary-section">
-                                <div class="summary-section-label">Rhetorical Strategies</div>
-                                <div id="manipRhetoricalStrategies" class="summary-section-content"></div>
-                            </div>
-                        </div>
-
-                        <!-- Manipulation Techniques -->
-                        <div class="techniques-section">
-                            <h4>⚠️ Manipulation Techniques Detected</h4>
-                            <div id="manipTechniquesUsed"></div>
-                        </div>
-
-                        <!-- Facts Analysis -->
-                        <div class="manipulation-facts-section">
-                            <h4>🔍 Fact-by-Fact Analysis</h4>
-                            <div id="manipFactsList"></div>
-                        </div>
-
-                        <!-- Balanced Assessment -->
-                        <div class="balanced-assessment">
-                            <div class="got-right-card">
-                                <h4>✅ What the Article Got Right</h4>
-                                <div id="manipWhatGotRight"></div>
-                            </div>
-                            <div class="misleading-card">
-                                <h4>⚠️ Key Misleading Elements</h4>
-                                <div id="manipMisleadingElements"></div>
-                            </div>
-                        </div>
-
-                        <!-- Recommendation -->
-                        <div class="recommendation-card">
-                            <h4>📋 Reader Recommendation</h4>
-                            <p id="manipRecommendation"></p>
-                        </div>
-
-                        <!-- Session Info -->
-                        <div class="session-info">
-                            Session ID: <code id="manipSessionId">-</code>
-                            <span class="separator">•</span>
-                            Processing Time: <span id="manipProcessingTime">0s</span>
-                            <span class="separator" id="manipR2Sep" style="display: none;">•</span>
-                            <a href="#" id="manipR2Link" target="_blank" style="display: none;">📄 View Full Report</a>
-                        </div>
-                    </div>
-
                     <div class="analysis-card">
                         <h3>📋 Overall Assessment</h3>
                         <p id="lieOverallAssessment" class="assessment-text">-</p>
@@ -802,6 +707,95 @@
                         Processing Time: <span id="lieProcessingTime">0s</span>
                         <span class="separator" id="lieR2Sep" style="display: none;">•</span>
                         <a href="#" id="lieR2Link" target="_blank" style="display: none;">📄 View Full Report</a>
+                    </div>
+                </div>
+
+                <!-- Manipulation Detection Results -->
+                <div id="manipulationResults" class="results-content" style="display: none;">
+                    <!-- Manipulation Score -->
+                    <div class="manipulation-score-container">
+                        <div class="score-display">
+                            <span id="manipulationScore" class="manipulation-score-value">0.0</span>
+                            <span class="manipulation-score-label">/ 10 Manipulation Score</span>
+                        </div>
+                        <div class="manipulation-score-details">
+                            <p id="manipScoreJustification"></p>
+                            <span id="manipConfidence"></span>
+                        </div>
+                    </div>
+
+                    <!-- Article Summary -->
+                    <div id="manipulationSummary" class="manipulation-summary-card">
+                        <h4>📰 Article Analysis</h4>
+                        <div class="summary-meta-row">
+                            <div class="meta-item">
+                                <span class="meta-label">Political Lean:</span>
+                                <span id="manipPoliticalLean" class="lean-badge">-</span>
+                            </div>
+                            <div class="meta-item">
+                                <span class="meta-label">Content:</span>
+                                <span id="manipOpinionRatio" class="ratio-value">-</span>
+                            </div>
+                            <div class="meta-item">
+                                <span class="meta-label">Tone:</span>
+                                <span id="manipEmotionalTone">-</span>
+                            </div>
+                        </div>
+                        <div class="summary-section">
+                            <div class="summary-section-label">Main Thesis</div>
+                            <div id="manipMainThesis" class="summary-section-content">-</div>
+                        </div>
+                        <div class="summary-section">
+                            <div class="summary-section-label">Detected Agenda</div>
+                            <div id="manipDetectedAgenda" class="summary-section-content">-</div>
+                        </div>
+                        <div class="summary-section">
+                            <div class="summary-section-label">Target Audience</div>
+                            <div id="manipTargetAudience" class="summary-section-content">-</div>
+                        </div>
+                        <div class="summary-section">
+                            <div class="summary-section-label">Rhetorical Strategies</div>
+                            <div id="manipRhetoricalStrategies" class="summary-section-content"></div>
+                        </div>
+                    </div>
+
+                    <!-- Manipulation Techniques -->
+                    <div class="techniques-section">
+                        <h4>⚠️ Manipulation Techniques Detected</h4>
+                        <div id="manipTechniquesUsed"></div>
+                    </div>
+
+                    <!-- Facts Analysis -->
+                    <div class="manipulation-facts-section">
+                        <h4>🔍 Fact-by-Fact Analysis</h4>
+                        <div id="manipFactsList"></div>
+                    </div>
+
+                    <!-- Balanced Assessment -->
+                    <div class="balanced-assessment">
+                        <div class="got-right-card">
+                            <h4>✅ What the Article Got Right</h4>
+                            <div id="manipWhatGotRight"></div>
+                        </div>
+                        <div class="misleading-card">
+                            <h4>⚠️ Key Misleading Elements</h4>
+                            <div id="manipMisleadingElements"></div>
+                        </div>
+                    </div>
+
+                    <!-- Recommendation -->
+                    <div class="recommendation-card">
+                        <h4>📋 Reader Recommendation</h4>
+                        <p id="manipRecommendation"></p>
+                    </div>
+
+                    <!-- Session Info -->
+                    <div class="session-info">
+                        Session ID: <code id="manipSessionId">-</code>
+                        <span class="separator">•</span>
+                        Processing Time: <span id="manipProcessingTime">0s</span>
+                        <span class="separator" id="manipR2Sep" style="display: none;">•</span>
+                        <a href="#" id="manipR2Link" target="_blank" style="display: none;">📄 View Full Report</a>
                     </div>
                 </div>
 
