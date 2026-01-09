@@ -131,9 +131,16 @@ class FactChecker:
         filtered_count = 0
 
         for url, url_excerpts in excerpts.items():
-            # Get credibility score
+            # Get credibility score - handle both object and dict formats
             if source_metadata and url in source_metadata:
-                score = source_metadata[url].credibility_score
+                meta = source_metadata[url]
+                # Support both SourceMetadata objects and plain dicts
+                if hasattr(meta, 'credibility_score'):
+                    score = meta.credibility_score
+                elif isinstance(meta, dict):
+                    score = meta.get('credibility_score', 0.75)
+                else:
+                    score = 0.75
             else:
                 score = 0.75  # Default to Tier 2 if unknown
 
