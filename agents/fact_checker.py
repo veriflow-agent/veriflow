@@ -13,7 +13,7 @@ from langchain_openai import ChatOpenAI
 from langchain.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
 from pydantic import BaseModel, Field
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Any
 import time
 
 from utils.logger import fact_logger
@@ -173,6 +173,16 @@ class FactChecker:
         # Return Tier 1 first, then Tier 2
         return tier1_excerpts + tier2_excerpts
 
+    def _get_metadata_value(self, metadata, key: str, default: Any = ''):
+        """Get value from metadata - handles both object and dict formats"""
+        if metadata is None:
+            return default
+        if hasattr(metadata, key):
+            return getattr(metadata, key)
+        elif isinstance(metadata, dict):
+            return metadata.get(key, default)
+        return default
+        
     def _format_excerpts(self, excerpts: list, source_metadata: Optional[Dict[str, SourceMetadata]] = None) -> str:
         """Format excerpts for the prompt, separated by tier"""
         if not excerpts:
@@ -194,9 +204,14 @@ class FactChecker:
                 metadata = source_metadata.get(url) if source_metadata else None
 
                 if metadata:
+                    name = self._get_metadata_value(metadata, 'name', url)
+                    source_type = self._get_metadata_value(metadata, 'source_type', 'unknown')
+                    tier = self._get_metadata_value(metadata, 'credibility_tier', 'Tier 1')
+                    score = self._get_metadata_value(metadata, 'credibility_score', 0.85)
+
                     formatted.append(
-                        f"\n[Source: {metadata.name} ({metadata.source_type})]\n"
-                        f"Credibility: {metadata.credibility_tier} (Score: {metadata.credibility_score:.2f})\n"
+                        f"\n[Source: {name} ({source_type})]\n"
+                        f"Credibility: {tier} (Score: {score:.2f})\n"
                         f"Relevance: {ex['relevance']}\n"
                         f"Quote: {ex['quote']}\n"
                         f"URL: {url}\n"
@@ -220,9 +235,14 @@ class FactChecker:
                 metadata = source_metadata.get(url) if source_metadata else None
 
                 if metadata:
+                    name = self._get_metadata_value(metadata, 'name', url)
+                    source_type = self._get_metadata_value(metadata, 'source_type', 'unknown')
+                    tier = self._get_metadata_value(metadata, 'credibility_tier', 'Tier 2')
+                    score = self._get_metadata_value(metadata, 'credibility_score', 0.75)
+
                     formatted.append(
-                        f"\n[Source: {metadata.name} ({metadata.source_type})]\n"
-                        f"Credibility: {metadata.credibility_tier} (Score: {metadata.credibility_score:.2f})\n"
+                        f"\n[Source: {name} ({source_type})]\n"
+                        f"Credibility: {tier} (Score: {score:.2f})\n"
                         f"Relevance: {ex['relevance']}\n"
                         f"Quote: {ex['quote']}\n"
                         f"URL: {url}\n"
