@@ -1,448 +1,638 @@
-# agents/key_claims_extractor.py
+# orchestrator/key_claims_orchestrator.py
 """
-Key Claims Extractor Agent - ENHANCED VERSION
-Extracts the 2-3 central thesis claims from text PLUS content analysis
+Key Claims Orchestrator - WITH PARALLEL PROCESSING
+Extracts and verifies ONLY the 2-3 central thesis claims from text
 
-ENHANCEMENTS:
-- Uses GPT-4o for more nuanced analysis
-- Extracts broad_context: content credibility assessment
-- Extracts media_sources: all sources mentioned in text
-- Generates query_instructions: strategic guidance for query generator
+✅ OPTIMIZED: Full parallel processing for all stages
+   - Parallel query generation
+   - Parallel web searches (paid Brave account)
+   - Parallel credibility filtering
+   - Parallel scraping
+   - Parallel verification
+   - ~60-70% faster than sequential processing
 
-These new fields help the query generator create more targeted, effective searches.
+Pipeline:
+1. Extract 2-3 key claims (central thesis statements)
+2. Generate search queries for each key claim (✅ PARALLEL)
+3. Execute web searches via Brave (✅ PARALLEL)
+4. Filter results by source credibility (✅ PARALLEL)
+5. Scrape credible sources (✅ PARALLEL)
+6. Verify each key claim against sources (✅ PARALLEL)
+7. Generate detailed verification report
+8. Save comprehensive search audit
 """
 
-from langchain.prompts import ChatPromptTemplate
-from langchain_openai import ChatOpenAI
-from langchain_core.output_parsers import JsonOutputParser
 from langsmith import traceable
-from pydantic import BaseModel, Field
-from typing import List, Optional, Dict, Any
 import time
+import asyncio
+from typing import List, Dict, Any, Optional, Tuple
 
-from prompts.key_claims_extractor_prompts import get_key_claims_prompts
 from utils.logger import fact_logger
 from utils.langsmith_config import langsmith_config
+from utils.file_manager import FileManager
+from utils.job_manager import job_manager
+from utils.browserless_scraper import BrowserlessScraper
+from utils.brave_searcher import BraveSearcher
+
+# Import key claims extractor
+from agents.key_claims_extractor import KeyClaimsExtractor, ContentLocation
+
+# Import existing agents
+from agents.fact_checker import FactChecker, FactCheckResult
+from agents.query_generator import QueryGenerator
+from agents.credibility_filter import CredibilityFilter
+from agents.highlighter import Highlighter
+
+# Import search audit utilities
+from utils.search_audit_builder import (
+    build_session_search_audit,
+    build_fact_search_audit,
+    build_query_audit,
+    save_search_audit,
+    upload_search_audit_to_r2
+)
 
 
-# ============================================================================
-# OUTPUT MODELS
-# ============================================================================
-
-class KeyClaim(BaseModel):
-    """A key claim (central thesis) from the text"""
-    id: str
-    statement: str
-    sources: List[str]  # Will be empty for plain text
-    original_text: str
-    confidence: float
-
-
-class ContentLocation(BaseModel):
-    """Geographic and language context for the content"""
-    country: str = Field(default="international", description="Primary country where events take place")
-    country_code: str = Field(default="", description="ISO 2-letter country code")
-    language: str = Field(default="english", description="Primary language for that country")
-    confidence: float = Field(default=0.5, description="Confidence in location detection")
-
-
-class BroadContext(BaseModel):
-    """Assessment of content's overall credibility indicators"""
-    content_type: str = Field(
-        default="unknown",
-        description="Type: news article | blog post | social media | press release | unknown"
-    )
-    credibility_assessment: str = Field(
-        default="unknown",
-        description="Assessment: appears legitimate | some concerns | significant red flags | likely hoax/satire"
-    )
-    reasoning: str = Field(
-        default="",
-        description="Brief explanation of the credibility assessment"
-    )
-    red_flags: List[str] = Field(
-        default_factory=list,
-        description="List of concerning indicators found"
-    )
-    positive_indicators: List[str] = Field(
-        default_factory=list,
-        description="List of credibility-boosting factors"
-    )
-
-
-class QueryInstructions(BaseModel):
-    """Strategic instructions for query generation"""
-    primary_strategy: str = Field(
-        default="standard verification",
-        description="Overall approach for searching"
-    )
-    suggested_modifiers: List[str] = Field(
-        default_factory=list,
-        description="Terms to add to queries (e.g., 'hoax', 'official', 'announcement')"
-    )
-    temporal_guidance: str = Field(
-        default="recent",
-        description="Time-based search guidance"
-    )
-    source_priority: List[str] = Field(
-        default_factory=list,
-        description="Types of sources to prioritize"
-    )
-    special_considerations: str = Field(
-        default="",
-        description="Any other relevant guidance"
-    )
-
-
-class KeyClaimsOutput(BaseModel):
-    """Complete output from key claims extraction"""
-    facts: List[dict] = Field(description="List of 2-3 key claims")
-    all_sources: List[str] = Field(description="All source URLs mentioned")
-    content_location: Optional[dict] = Field(default=None, description="Country and language info")
-    # NEW FIELDS
-    broad_context: Optional[dict] = Field(default=None, description="Content credibility assessment")
-    media_sources: List[str] = Field(default_factory=list, description="Media sources mentioned")
-    query_instructions: Optional[dict] = Field(default=None, description="Instructions for query generator")
-
-
-class KeyClaimsResult(BaseModel):
-    """Complete result from key claims extraction including all analysis"""
-    claims: List[KeyClaim]
-    all_sources: List[str]
-    content_location: ContentLocation
-    # NEW FIELDS
-    broad_context: BroadContext
-    media_sources: List[str]
-    query_instructions: QueryInstructions
-
-
-# ============================================================================
-# MAIN EXTRACTOR CLASS
-# ============================================================================
-
-class KeyClaimsExtractor:
+class KeyClaimsOrchestrator:
     """
-    Extract the 2-3 key claims (central thesis) from text
-    PLUS content analysis for smarter query generation
-    
-    Uses GPT-4o for more nuanced analysis.
+    Orchestrator for key claims extraction and verification
+
+    Extracts only 2-3 central thesis claims and verifies them thoroughly.
+
+    ✅ OPTIMIZED: Uses parallel processing for all claim operations
     """
 
     def __init__(self, config):
         self.config = config
 
-        # UPGRADED: Using GPT-4o for better analysis
-        self.llm = ChatOpenAI(
-            model="gpt-4o",
-            temperature=0
-        ).bind(response_format={"type": "json_object"})
+        # Initialize agents
+        self.extractor = KeyClaimsExtractor(config)
+        self.query_generator = QueryGenerator(config)
+        self.searcher = BraveSearcher(config, max_results=5)
+        self.credibility_filter = CredibilityFilter(config, min_credibility_score=0.70)
+        # NOTE: Don't create scraper here - it binds asyncio.Lock to wrong event loop
+        self.highlighter = Highlighter(config)
+        self.checker = FactChecker(config)
+        self.file_manager = FileManager()
 
-        self.parser = JsonOutputParser(pydantic_object=KeyClaimsOutput)
-        self.prompts = get_key_claims_prompts()
+        # Configuration
+        self.max_sources_per_claim = 15  # More sources per claim since fewer claims
 
-        # Large file support
-        self.max_input_chars = 100000  # ~25k tokens
+        # Initialize R2 uploader for audit upload
+        try:
+            from utils.r2_uploader import R2Uploader
+            self.r2_uploader = R2Uploader()
+            self.r2_enabled = True
+            fact_logger.logger.info("✅ R2 uploader initialized for search audits")
+        except Exception as e:
+            self.r2_enabled = False
+            self.r2_uploader = None
+            fact_logger.logger.warning(f"⚠️ R2 not available for audits: {e}")
 
         fact_logger.log_component_start(
-            "KeyClaimsExtractor",
-            model="gpt-4o",  # Updated
-            max_claims=3
+            "KeyClaimsOrchestrator",
+            max_sources_per_claim=self.max_sources_per_claim,
+            parallel_mode=True
         )
 
-    @traceable(name="key_claims_extraction")
-    async def extract(self, parsed_content: dict) -> tuple[List[KeyClaim], List[str], ContentLocation, BroadContext, List[str], QueryInstructions]:
+    def _get_credibility_label(self, avg_score: float) -> str:
+        """Convert average score to credibility label for frontend"""
+        if avg_score >= 0.9:
+            return "High"
+        elif avg_score >= 0.7:
+            return "Medium"
+        elif avg_score >= 0.5:
+            return "Low"
+        else:
+            return "Very Low"
+
+    def _check_cancellation(self, job_id: str):
+        """Check if job has been cancelled"""
+        if job_manager.is_cancelled(job_id):
+            raise Exception("Job cancelled by user")
+
+    @traceable(
+        name="key_claims_verification",
+        run_type="chain",
+        tags=["key-claims", "thesis-verification", "parallel"]
+    )
+    async def process_with_progress(self, text_content: str, job_id: str) -> dict:
         """
-        Extract 2-3 key claims from parsed content with full analysis
-        
-        Args:
-            parsed_content: Dict with 'text', 'links', 'format' keys
-            
-        Returns:
-            Tuple of (key_claims, all_sources, content_location, broad_context, media_sources, query_instructions)
+        Complete key claims verification pipeline with parallel processing
+
+        ✅ OPTIMIZED: All claim operations run in parallel
         """
+        session_id = self.file_manager.create_session()
         start_time = time.time()
 
-        text_length = len(parsed_content.get('text', ''))
-        fact_logger.logger.info(
-            f"🎯 Starting key claims extraction (enhanced)",
-            extra={
-                "text_length": text_length,
-                "num_links": len(parsed_content.get('links', []))
-            }
-        )
-
-        # Check if we need chunking (for very large files)
-        if text_length > self.max_input_chars:
-            fact_logger.logger.info(f"📄 Large content detected ({text_length} chars), using chunked extraction")
-            result = await self._extract_with_chunking(parsed_content)
-        else:
-            result = await self._extract_single_pass(parsed_content)
-
-        claims, sources, location, broad_context, media_sources, query_instructions = result
-
-        duration = time.time() - start_time
-        fact_logger.logger.info(
-            f"✅ Key claims extraction complete (enhanced)",
-            extra={
-                "num_claims": len(claims),
-                "duration_seconds": round(duration, 2),
-                "country": location.country,
-                "language": location.language,
-                "content_type": broad_context.content_type,
-                "credibility": broad_context.credibility_assessment,
-                "num_media_sources": len(media_sources)
-            }
-        )
-
-        return claims, sources, location, broad_context, media_sources, query_instructions
-
-    async def _extract_single_pass(self, parsed_content: dict) -> tuple:
-        """Extract key claims and analysis in a single LLM call"""
-
-        system_prompt = self.prompts["system"]
-        user_prompt = self.prompts["user"]
-
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", system_prompt + "\n\nIMPORTANT: Return ONLY valid JSON. No other text."),
-            ("user", user_prompt + "\n\n{format_instructions}\n\nReturn your response as valid JSON.")
-        ])
-
-        prompt_with_format = prompt.partial(
-            format_instructions=self.parser.get_format_instructions()
-        )
-
-        callbacks = langsmith_config.get_callbacks("key_claims_extractor")
-        chain = prompt_with_format | self.llm | self.parser
-
-        fact_logger.logger.debug("🔗 Invoking LangChain for key claims extraction (GPT-4o)")
+        # Initialize session search audit
+        session_audit = None
 
         try:
-            response = await chain.ainvoke(
-                {
-                    "text": parsed_content['text'],
-                    "sources": self._format_sources(parsed_content['links'])
-                },
-                config={"callbacks": callbacks.handlers}
-            )
+            # ================================================================
+            # STAGE 1: Extract Key Claims (Sequential - single LLM call)
+            # ================================================================
+            job_manager.add_progress(job_id, "📄 Extracting key claims from text...")
+            self._check_cancellation(job_id)
 
-            return self._process_response(response, parsed_content)
-
-        except Exception as e:
-            fact_logger.logger.error(f"❌ LLM invocation failed: {e}")
-            import traceback
-            fact_logger.logger.error(f"Traceback: {traceback.format_exc()}")
-            raise
-
-    async def _extract_with_chunking(self, parsed_content: dict) -> tuple:
-        """Extract key claims from large content by splitting into chunks"""
-
-        text = parsed_content['text']
-        chunk_size = self.max_input_chars - 10000  # Reserve space for prompts
-
-        chunks = self._split_into_chunks(text, chunk_size)
-
-        fact_logger.logger.info(
-            f"📄 Split content into {len(chunks)} chunks",
-            extra={"num_chunks": len(chunks)}
-        )
-
-        all_claims = []
-        all_location_votes = []
-        all_broad_contexts = []
-        all_media_sources = []
-        all_query_instructions = []
-
-        for i, chunk in enumerate(chunks, 1):
-            fact_logger.logger.debug(f"🔍 Analyzing chunk {i}/{len(chunks)}")
-
-            chunk_parsed = {
-                'text': chunk,
-                'links': parsed_content['links'],
-                'format': parsed_content.get('format', 'unknown')
+            # Prepare parsed content for extractor
+            parsed_content = {
+                'text': text_content,
+                'links': [],
+                'format': 'plain_text'
             }
 
-            chunk_result = await self._extract_single_pass(chunk_parsed)
-            chunk_claims, _, chunk_location, chunk_context, chunk_media, chunk_instructions = chunk_result
-            
-            all_claims.extend(chunk_claims)
-            all_location_votes.append(chunk_location)
-            all_broad_contexts.append(chunk_context)
-            all_media_sources.extend(chunk_media)
-            all_query_instructions.append(chunk_instructions)
+            claims, all_sources, content_location, broad_context, media_sources, query_instructions = await self.extractor.extract(parsed_content)
 
-        # Deduplicate and rank claims
-        unique_claims = self._deduplicate_and_rank_claims(all_claims)
+            fact_logger.logger.info(
+                "📊 Content Analysis:",
+                extra={
+                    "content_type": broad_context.content_type,
+                    "credibility": broad_context.credibility_assessment,
+                    "num_media_sources": len(media_sources),
+                    "primary_strategy": query_instructions.primary_strategy
+                }
+            )
 
-        # Get all sources from parsed content
-        all_sources = [link['url'] for link in parsed_content['links']]
+            if not claims:
+                job_manager.add_progress(job_id, "⚠️ No key claims found")
+                return {
+                    "success": True,
+                    "session_id": session_id,
+                    "claims": [],
+                    "summary": {"message": "No key claims identified"},
+                    "processing_time": time.time() - start_time
+                }
 
-        # Aggregate location votes
-        content_location = self._aggregate_location_votes(all_location_votes)
+            job_manager.add_progress(job_id, f"✅ Found {len(claims)} key claims")
 
-        # Aggregate broad context (use most concerning assessment)
-        broad_context = self._aggregate_broad_context(all_broad_contexts)
+            # Initialize session audit with content location
+            session_audit = build_session_search_audit(
+                session_id=session_id,
+                pipeline_type="key_claims",
+                content_country=content_location.country if content_location else "international",
+                content_language=content_location.language if content_location else "english"
+            )
 
-        # Deduplicate media sources
-        unique_media = list(set(all_media_sources))
+            # ================================================================
+            # STAGE 2: Generate Search Queries (✅ PARALLEL)
+            # ================================================================
+            job_manager.add_progress(job_id, "🔍 Generating search queries in parallel...")
+            self._check_cancellation(job_id)
 
-        # Merge query instructions
-        query_instructions = self._merge_query_instructions(all_query_instructions)
+            query_gen_start = time.time()
 
-        return unique_claims, all_sources, content_location, broad_context, unique_media, query_instructions
+            # ✅ Create query generation tasks for ALL claims
+            async def generate_queries_for_claim(claim):
+                """Generate queries for a single claim"""
+                fact_like = type('Fact', (), {
+                    'id': claim.id,
+                    'statement': claim.statement
+                })()
 
-    def _split_into_chunks(self, text: str, chunk_size: int) -> List[str]:
-        """Split text into chunks, trying to break at paragraph boundaries"""
-        if len(text) <= chunk_size:
-            return [text]
+                queries = await self.query_generator.generate_queries(
+                    fact=fact_like,
+                    context="",
+                    content_location=content_location,
+                    publication_date=None,
+                    broad_context=broad_context,
+                    media_sources=media_sources,
+                    query_instructions=query_instructions
+                )
+                return (claim.id, queries)
 
-        chunks = []
-        current_pos = 0
+            query_tasks = [generate_queries_for_claim(claim) for claim in claims]
+            query_results = await asyncio.gather(*query_tasks, return_exceptions=True)
 
-        while current_pos < len(text):
-            end_pos = min(current_pos + chunk_size, len(text))
+            # Process query results
+            all_queries_by_claim = {}
+            freshness_by_claim = {}
 
-            if end_pos < len(text):
-                # Try to find a paragraph break
-                para_break = text.rfind('\n\n', current_pos, end_pos)
-                if para_break > current_pos + chunk_size // 2:
-                    end_pos = para_break + 2
+            for result in query_results:
+                if isinstance(result, BaseException):
+                    fact_logger.logger.error(f"❌ Query generation error: {result}")
+                    continue
+                claim_id, queries = result
+                all_queries_by_claim[claim_id] = queries
+                freshness_by_claim[claim_id] = queries.recommended_freshness
 
-            chunks.append(text[current_pos:end_pos])
-            current_pos = end_pos
+            query_gen_duration = time.time() - query_gen_start
+            total_queries = sum(len(q.all_queries) for q in all_queries_by_claim.values())
+            job_manager.add_progress(
+                job_id, 
+                f"✅ Generated {total_queries} queries in {query_gen_duration:.1f}s"
+            )
 
-        return chunks
+            # ================================================================
+            # STAGE 3: Execute Web Searches (✅ PARALLEL)
+            # ================================================================
+            job_manager.add_progress(job_id, "🌐 Searching the web in parallel...")
+            self._check_cancellation(job_id)
 
-    def _process_response(self, response: dict, parsed_content: dict) -> tuple:
-        """Process LLM response into structured output"""
+            search_start = time.time()
 
-        # Extract claims
-        claims = []
-        for i, fact in enumerate(response.get('facts', []), 1):
-            claims.append(KeyClaim(
-                id=fact.get('id', f'KC{i}'),
-                statement=fact.get('statement', ''),
-                sources=fact.get('sources', []),
-                original_text=fact.get('original_text', ''),
-                confidence=fact.get('confidence', 0.5)
-            ))
+            # ✅ Create search tasks for ALL claims
+            async def search_for_claim(claim):
+                """Execute all searches for a single claim"""
+                queries = all_queries_by_claim.get(claim.id)
+                if not queries:
+                    return (claim.id, {}, [])
 
-        # Get all sources
-        all_sources = response.get('all_sources', [])
-        if not all_sources:
-            all_sources = [link['url'] for link in parsed_content.get('links', [])]
+                search_results = await self.searcher.search_multiple(
+                    queries=queries.all_queries,
+                    search_depth="advanced",
+                    max_concurrent=3,  # ✅ Aggressive with paid Brave
+                    freshness=None
+                )
 
-        # Parse content location
-        loc_data = response.get('content_location', {})
-        content_location = ContentLocation(
-            country=loc_data.get('country', 'international'),
-            country_code=loc_data.get('country_code', ''),
-            language=loc_data.get('language', 'english'),
-            confidence=loc_data.get('confidence', 0.5)
-        )
+                # Build query audits
+                query_audits = []
+                for query, brave_results in search_results.items():
+                    qa = build_query_audit(
+                        query=query,
+                        brave_results=brave_results,
+                        query_type="search",
+                        language=queries.local_language_used or "en"
+                    )
+                    query_audits.append(qa)
 
-        # Parse broad context (NEW)
-        ctx_data = response.get('broad_context', {})
-        broad_context = BroadContext(
-            content_type=ctx_data.get('content_type', 'unknown'),
-            credibility_assessment=ctx_data.get('credibility_assessment', 'unknown'),
-            reasoning=ctx_data.get('reasoning', ''),
-            red_flags=ctx_data.get('red_flags', []),
-            positive_indicators=ctx_data.get('positive_indicators', [])
-        )
+                return (claim.id, search_results, query_audits)
 
-        # Extract media sources (NEW)
-        media_sources = response.get('media_sources', [])
+            search_tasks = [search_for_claim(claim) for claim in claims]
+            search_results_list = await asyncio.gather(*search_tasks, return_exceptions=True)
 
-        # Parse query instructions (NEW)
-        qi_data = response.get('query_instructions', {})
-        query_instructions = QueryInstructions(
-            primary_strategy=qi_data.get('primary_strategy', 'standard verification'),
-            suggested_modifiers=qi_data.get('suggested_modifiers', []),
-            temporal_guidance=qi_data.get('temporal_guidance', 'recent'),
-            source_priority=qi_data.get('source_priority', []),
-            special_considerations=qi_data.get('special_considerations', '')
-        )
+            # Process search results
+            search_results_by_claim = {}
+            query_audits_by_claim = {}
+            total_results = 0
 
-        return claims, all_sources, content_location, broad_context, media_sources, query_instructions
+            for result in search_results_list:
+                if isinstance(result, BaseException):
+                    fact_logger.logger.error(f"❌ Search error: {result}")
+                    continue
+                claim_id, search_results, query_audits = result
+                search_results_by_claim[claim_id] = search_results
+                query_audits_by_claim[claim_id] = query_audits
+                for brave_results in search_results.values():
+                    total_results += len(brave_results.results)
 
-    def _format_sources(self, links: list) -> str:
-        """Format source links for the prompt"""
-        if not links:
-            return "No source links provided"
+            search_duration = time.time() - search_start
+            job_manager.add_progress(
+                job_id, 
+                f"📊 Found {total_results} potential sources in {search_duration:.1f}s"
+            )
 
-        formatted = []
-        for link in links:
-            if isinstance(link, dict):
-                url = link.get('url', '')
-                text = link.get('text', '')
-                formatted.append(f"- {text}: {url}" if text else f"- {url}")
-            else:
-                formatted.append(f"- {link}")
+            # ================================================================
+            # STAGE 4: Filter by Credibility (✅ PARALLEL)
+            # ================================================================
+            job_manager.add_progress(job_id, "🏆 Filtering sources by credibility in parallel...")
+            self._check_cancellation(job_id)
 
-        return "\n".join(formatted)
+            filter_start = time.time()
 
-    def _deduplicate_and_rank_claims(self, claims: List[KeyClaim]) -> List[KeyClaim]:
-        """Remove duplicate claims and keep top 2-3 by confidence"""
-        # Simple deduplication by statement similarity
-        seen = set()
-        unique = []
-        for claim in claims:
-            # Normalize for comparison
-            normalized = claim.statement.lower().strip()
-            if normalized not in seen:
-                seen.add(normalized)
-                unique.append(claim)
+            # ✅ Create credibility filter tasks for ALL claims
+            async def filter_sources_for_claim(claim):
+                """Filter sources for a single claim"""
+                search_results = search_results_by_claim.get(claim.id, {})
 
-        # Sort by confidence and keep top 3
-        unique.sort(key=lambda c: c.confidence, reverse=True)
-        return unique[:3]
+                all_results_for_claim = []
+                for query, results in search_results.items():
+                    all_results_for_claim.extend(results.results)
 
-    def _aggregate_location_votes(self, votes: List[ContentLocation]) -> ContentLocation:
-        """Combine location votes from multiple chunks"""
-        if not votes:
-            return ContentLocation()
+                if not all_results_for_claim:
+                    return (claim.id, [], {}, None)
 
-        # Simple: return highest confidence vote
-        return max(votes, key=lambda v: v.confidence)
+                fact_like = type('Fact', (), {
+                    'id': claim.id,
+                    'statement': claim.statement
+                })()
 
-    def _aggregate_broad_context(self, contexts: List[BroadContext]) -> BroadContext:
-        """Combine broad context assessments - use most concerning"""
-        if not contexts:
-            return BroadContext()
+                credibility_results = await self.credibility_filter.evaluate_sources(
+                    fact=fact_like,
+                    search_results=all_results_for_claim
+                )
 
-        # Priority order (most concerning first)
-        priority = {
-            'likely hoax/satire': 0,
-            'significant red flags': 1,
-            'some concerns': 2,
-            'appears legitimate': 3,
-            'unknown': 4
-        }
+                credible_sources = credibility_results.get_top_sources(self.max_sources_per_claim)
+                credible_urls = [s.url for s in credible_sources]
+                source_metadata = credibility_results.get_source_metadata_dict()
 
-        # Return most concerning assessment
-        return min(contexts, key=lambda c: priority.get(c.credibility_assessment, 4))
+                return (claim.id, credible_urls, source_metadata, credibility_results)
 
-    def _merge_query_instructions(self, instructions: List[QueryInstructions]) -> QueryInstructions:
-        """Merge query instructions from multiple chunks"""
-        if not instructions:
-            return QueryInstructions()
+            filter_tasks = [filter_sources_for_claim(claim) for claim in claims]
+            filter_results = await asyncio.gather(*filter_tasks, return_exceptions=True)
 
-        if len(instructions) == 1:
-            return instructions[0]
+            # Process filter results
+            credible_urls_by_claim = {}
+            source_metadata_by_claim = {}
+            credibility_results_by_claim = {}
 
-        # Merge all modifiers and source priorities
-        all_modifiers = []
-        all_priorities = []
-        
-        for inst in instructions:
-            all_modifiers.extend(inst.suggested_modifiers)
-            all_priorities.extend(inst.source_priority)
+            for result in filter_results:
+                if isinstance(result, BaseException):
+                    fact_logger.logger.error(f"❌ Credibility filter error: {result}")
+                    continue
+                claim_id, credible_urls, source_metadata, cred_results = result
+                credible_urls_by_claim[claim_id] = credible_urls
+                source_metadata_by_claim[claim_id] = source_metadata
+                credibility_results_by_claim[claim_id] = cred_results
 
-        # Use first strategy and temporal guidance
-        return QueryInstructions(
-            primary_strategy=instructions[0].primary_strategy,
-            suggested_modifiers=list(set(all_modifiers)),
-            temporal_guidance=instructions[0].temporal_guidance,
-            source_priority=list(set(all_priorities)),
-            special_considerations=instructions[0].special_considerations
-        )
+            filter_duration = time.time() - filter_start
+            total_credible = sum(len(urls) for urls in credible_urls_by_claim.values())
+            job_manager.add_progress(
+                job_id, 
+                f"✅ Found {total_credible} credible sources in {filter_duration:.1f}s"
+            )
+
+            # ================================================================
+            # STAGE 5: Scrape Sources (✅ PARALLEL)
+            # ================================================================
+            job_manager.add_progress(job_id, f"🌐 Scraping {total_credible} credible sources in parallel...")
+            self._check_cancellation(job_id)
+
+            scrape_start = time.time()
+
+            # ✅ Create scraper in async context (correct event loop)
+            scraper = BrowserlessScraper(self.config)
+
+            # ✅ Collect ALL URLs to scrape across all claims
+            all_urls_to_scrape = []
+            url_to_claim_map = {}  # Track which claim each URL belongs to
+
+            for claim in claims:
+                urls = credible_urls_by_claim.get(claim.id, [])
+                for url in urls:
+                    if url not in url_to_claim_map:
+                        all_urls_to_scrape.append(url)
+                        url_to_claim_map[url] = []
+                    url_to_claim_map[url].append(claim.id)
+
+            # ✅ Scrape all URLs at once (browser pool handles concurrency)
+            all_scraped_content = await scraper.scrape_urls_for_facts(all_urls_to_scrape)
+
+            # Organize scraped content by claim
+            scraped_content_by_claim = {}
+            scraped_urls_by_claim = {}
+            scrape_errors_by_claim = {}
+
+            for claim in claims:
+                claim_urls = credible_urls_by_claim.get(claim.id, [])
+                scraped_content_by_claim[claim.id] = {
+                    url: all_scraped_content.get(url)
+                    for url in claim_urls
+                    if url in all_scraped_content
+                }
+                scraped_urls_by_claim[claim.id] = [
+                    url for url in claim_urls
+                    if all_scraped_content.get(url)
+                ]
+                scrape_errors_by_claim[claim.id] = {
+                    url: "Scrape failed or empty content"
+                    for url in claim_urls
+                    if not all_scraped_content.get(url)
+                }
+
+            scrape_duration = time.time() - scrape_start
+            successful_scrapes = len([v for v in all_scraped_content.values() if v])
+            job_manager.add_progress(
+                job_id, 
+                f"✅ Scraped {successful_scrapes}/{len(all_urls_to_scrape)} sources in {scrape_duration:.1f}s"
+            )
+
+            # Build claim search audits
+            for claim in claims:
+                claim_audit = build_fact_search_audit(
+                    fact_id=claim.id,
+                    fact_statement=claim.statement,
+                    query_audits=query_audits_by_claim.get(claim.id, []),
+                    credibility_results=credibility_results_by_claim.get(claim.id),
+                    scraped_urls=scraped_urls_by_claim.get(claim.id, []),
+                    scrape_errors=scrape_errors_by_claim.get(claim.id, {})
+                )
+                session_audit.add_fact_audit(claim_audit)
+
+            # ================================================================
+            # STAGE 6: Verify Claims (✅ PARALLEL)
+            # ================================================================
+            job_manager.add_progress(job_id, f"⚖️ Verifying {len(claims)} key claims in parallel...")
+            self._check_cancellation(job_id)
+
+            verify_start = time.time()
+
+            # ✅ Create verification tasks for ALL claims
+            async def verify_single_claim(claim):
+                """Verify a single claim"""
+                try:
+                    scraped_content = scraped_content_by_claim.get(claim.id, {})
+                    source_metadata = source_metadata_by_claim.get(claim.id, {})
+
+                    if not scraped_content or not any(scraped_content.values()):
+                        return FactCheckResult(
+                            fact_id=claim.id,
+                            statement=claim.statement,
+                            match_score=0.0,
+                            confidence=0.0,
+                            report="Unable to verify - no credible sources found. Web search did not return any Tier 1 or Tier 2 sources for this key claim."
+                        )
+
+                    # Extract relevant excerpts
+                    fact_like = type('Fact', (), {
+                        'id': claim.id,
+                        'statement': claim.statement
+                    })()
+
+                    excerpts = await self.highlighter.highlight(
+                        fact=fact_like,
+                        scraped_content=scraped_content
+                    )
+
+                    # Check the claim
+                    result = await self.checker.check_fact(
+                        fact=fact_like,
+                        excerpts=excerpts,
+                        source_metadata=source_metadata
+                    )
+
+                    # Progress update
+                    score_emoji = "✅" if result.match_score >= 0.9 else "⚠️" if result.match_score >= 0.7 else "❌"
+                    job_manager.add_progress(
+                        job_id,
+                        f"{score_emoji} {claim.id}: {result.match_score:.0%} verified"
+                    )
+
+                    return result
+
+                except Exception as e:
+                    fact_logger.logger.error(f"❌ Verification error for {claim.id}: {e}")
+                    return FactCheckResult(
+                        fact_id=claim.id,
+                        statement=claim.statement,
+                        match_score=0.0,
+                        confidence=0.0,
+                        report=f"Verification error: {str(e)}"
+                    )
+
+            verify_tasks = [verify_single_claim(claim) for claim in claims]
+            results = await asyncio.gather(*verify_tasks, return_exceptions=True)
+
+            # Process verification results
+            final_results = []
+            for result in results:
+                if isinstance(result, BaseException):
+                    fact_logger.logger.error(f"❌ Verification exception: {result}")
+                    continue
+                final_results.append(result)
+
+            verify_duration = time.time() - verify_start
+            job_manager.add_progress(
+                job_id, 
+                f"✅ Verification complete in {verify_duration:.1f}s"
+            )
+
+            # Clean up scraper
+            try:
+                await scraper.close()
+            except Exception:
+                pass
+
+            # ================================================================
+            # STAGE 7: Generate Summary and Save Audit
+            # ================================================================
+            processing_time = time.time() - start_time
+
+            # Save search audit
+            job_manager.add_progress(job_id, "📋 Saving search audit...")
+
+            audit_file_path = save_search_audit(
+                session_audit=session_audit,
+                file_manager=self.file_manager,
+                session_id=session_id,
+                filename="search_audit.json"
+            )
+
+            # Upload audit to R2 if available
+            audit_r2_url = None
+            if self.r2_enabled and self.r2_uploader:
+                audit_r2_url = await upload_search_audit_to_r2(
+                    session_audit=session_audit,
+                    session_id=session_id,
+                    r2_uploader=self.r2_uploader,
+                    pipeline_type="key-claims"
+                )
+
+            job_manager.add_progress(job_id, f"✅ Complete in {processing_time:.1f}s")
+
+            # Build summary with keys that frontend expects
+            frontend_summary = {
+                "total_key_claims": len(claims),
+                "verified_count": len([r for r in final_results if r.match_score >= 0.9]),
+                "partial_count": len([r for r in final_results if 0.7 <= r.match_score < 0.9]),
+                "unverified_count": len([r for r in final_results if r.match_score < 0.7]),
+                "overall_credibility": self._get_credibility_label(
+                    sum(r.match_score for r in final_results) / len(final_results) if final_results else 0
+                ),
+                "average_score": sum(r.match_score for r in final_results) / len(final_results) if final_results else 0
+            }
+
+            # Log performance metrics
+            fact_logger.logger.info(
+                "⚡ Key Claims Pipeline Performance",
+                extra={
+                    "total_time": round(processing_time, 2),
+                    "query_gen_time": round(query_gen_duration, 2),
+                    "search_time": round(search_duration, 2),
+                    "filter_time": round(filter_duration, 2),
+                    "scrape_time": round(scrape_duration, 2),
+                    "verify_time": round(verify_duration, 2),
+                    "num_claims": len(claims),
+                    "parallel_mode": True
+                }
+            )
+
+            return {
+                "success": True,
+                "session_id": session_id,
+                "key_claims": [
+                    {
+                        "id": r.fact_id,
+                        "statement": r.statement,
+                        "match_score": r.match_score,
+                        "confidence": r.confidence,
+                        "report": r.report,
+                        "tier_breakdown": r.tier_breakdown if hasattr(r, 'tier_breakdown') else None
+                    }
+                    for r in final_results
+                ],
+                "summary": frontend_summary,
+                "processing_time": processing_time,
+                "methodology": "key_claims_verification",
+                "content_location": {
+                    "country": content_location.country,
+                    "language": content_location.language
+                } if content_location else None,
+                "statistics": {
+                    "claims_extracted": len(claims),
+                    "queries_generated": total_queries,
+                    "raw_results_found": total_results,
+                    "credible_sources": total_credible,
+                    "claims_verified": len(final_results)
+                },
+                "audit": {
+                    "local_path": audit_file_path,
+                    "r2_url": audit_r2_url,
+                    "summary": {
+                        "total_raw_results": session_audit.total_raw_results,
+                        "total_credible": session_audit.total_credible_sources,
+                        "total_filtered": session_audit.total_filtered_sources,
+                        "tier_breakdown": {
+                            "tier1": session_audit.total_tier1,
+                            "tier2": session_audit.total_tier2,
+                            "tier3_filtered": session_audit.total_tier3_filtered
+                        }
+                    }
+                },
+                "r2_upload": {
+                    "success": audit_r2_url is not None,
+                    "url": audit_r2_url
+                },
+                "performance": {
+                    "query_generation": round(query_gen_duration, 2),
+                    "web_search": round(search_duration, 2),
+                    "credibility_filter": round(filter_duration, 2),
+                    "scraping": round(scrape_duration, 2),
+                    "verification": round(verify_duration, 2)
+                }
+            }
+
+        except Exception as e:
+            error_msg = str(e)
+            if "cancelled" in error_msg.lower():
+                job_manager.add_progress(job_id, "🛑 Verification cancelled")
+                return {
+                    "success": False,
+                    "session_id": session_id,
+                    "error": "Cancelled by user",
+                    "processing_time": time.time() - start_time
+                }
+
+            fact_logger.logger.error(f"Key claims orchestrator error: {e}")
+            import traceback
+            fact_logger.logger.error(f"Traceback: {traceback.format_exc()}")
+            job_manager.add_progress(job_id, f"❌ Error: {error_msg}")
+
+            # Try to save partial audit even on error
+            if session_audit and session_audit.total_facts > 0:
+                try:
+                    save_search_audit(
+                        session_audit=session_audit,
+                        file_manager=self.file_manager,
+                        session_id=session_id,
+                        filename="search_audit_partial.json"
+                    )
+                except:
+                    pass
+
+            return {
+                "success": False,
+                "session_id": session_id,
+                "error": error_msg,
+                "processing_time": time.time() - start_time
+            }

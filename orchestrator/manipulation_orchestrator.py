@@ -627,11 +627,20 @@ class ManipulationOrchestrator:
             all_search_results: List[Dict[str, Any]] = []
             for query, brave_results in search_results.items():
                 for result in brave_results.results:
-                    # Convert BraveSearchResult to dict format expected by credibility filter
+                    # Handle both dict and object format (Brave API returns dicts)
+                    if isinstance(result, dict):
+                        url = result.get('url', '')
+                        title = result.get('title', '')
+                        content = result.get('content', result.get('description', ''))
+                    else:
+                        url = getattr(result, 'url', '')
+                        title = getattr(result, 'title', '')
+                        content = getattr(result, 'content', getattr(result, 'description', ''))
+
                     all_search_results.append({
-                        'url': result.url,
-                        'title': result.title,
-                        'content': result.content if hasattr(result, 'content') else result.description if hasattr(result, 'description') else ''
+                        'url': url,
+                        'title': title,
+                        'content': content
                     })
 
             if not all_search_results:
