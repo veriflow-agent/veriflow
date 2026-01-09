@@ -277,10 +277,12 @@ class ManipulationDetector:
         run_type="chain",
         tags=["manipulation-detection", "agenda-analysis", "gpt-4o"]
     )
+    
     async def analyze_article(
         self, 
         text: str, 
-        source_info: str = "Unknown source"
+        source_info: str = "Unknown source",
+        credibility_context: Optional[str] = None  # NEW PARAMETER
     ) -> ArticleSummary:
         """
         Stage 1: Analyze article for agenda, political lean, and summary
@@ -321,9 +323,14 @@ class ManipulationDetector:
         chain = prompt_with_format | self.llm | self.article_parser
         
         try:
+            # NEW: Append credibility context to text if provided
+            analysis_text = text
+            if credibility_context:
+                analysis_text = f"{text}\n\n{credibility_context}"
+
             response = await chain.ainvoke(
                 {
-                    "text": text,
+                    "text": analysis_text,
                     "source_info": source_info
                 },
                 config={"callbacks": callbacks.handlers}
