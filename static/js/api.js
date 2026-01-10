@@ -80,26 +80,97 @@ function streamJobProgress(jobId, emoji = '•', reconnectAttempts = 0) {
 }
 
 // ============================================
-// URL FETCHING
+// URL FETCHING (JOB-BASED - uses /api/scrape-url)
 // ============================================
 
-async function fetchArticleFromUrl(url) {
-    const response = await fetch('/api/fetch-url', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ url })
-    });
+async function fetchArticleFromUrl(url, options = {}) {
+    const {
+        extractMetadata = true,
+        checkCredibility = true,
+        runMbfcIfMissing = true
+    } = options;
 
-    if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to fetch article');
+    try {
+        // Step 1: Start the scrape job
+        const startResponse = await fetch('/api/scrape-url', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                url: url,
+                extract_metadata: extractMetadata,
+                check_credibility: checkCredibility,
+                run_mbfc_if_missing: runMbfcIfMissing
+            })
+        });
+
+        if (!startResponse.ok) {
+            const error = await startResponse.json();
+            throw new Error(error.error || 'Failed to start URL fetch');
+        }
+
+        const startData = await startResponse.json();
+        const jobId = startData.job_id;
+
+        if (!jobId) {
+            throw new Error('No job ID returned from server');
+        }
+
+        // Step 2: Poll for job completion
+        const result = await pollJobCompletion(jobId, 60000, 1000);
+        
+        // Store for later use
+        setLastFetchedArticle(result);
+        
+        return result;
+
+    } catch (error) {
+        console.error('URL fetch error:', error);
+        throw error;
+    }
+}
+
+/**
+ * Poll job status until completion
+ */
+async function pollJobCompletion(jobId, timeout = 60000, pollInterval = 1000) {
+    const startTime = Date.now();
+
+    while (Date.now() - startTime < timeout) {
+        try {
+            const response = await fetch(`/api/job/${jobId}`);
+            
+            if (!response.ok) {
+                throw new Error('Job not found');
+            }
+
+            const job = await response.json();
+
+            if (job.status === 'completed') {
+                return job.result;
+            }
+
+            if (job.status === 'failed') {
+                throw new Error(job.error || 'Job failed');
+            }
+
+            if (job.status === 'cancelled') {
+                throw new Error('Job was cancelled');
+            }
+
+            // Wait before next poll
+            await new Promise(resolve => setTimeout(resolve, pollInterval));
+
+        } catch (error) {
+            if (error.message.includes('Job not found')) {
+                throw new Error('Job expired or not found');
+            }
+            throw error;
+        }
     }
 
-    const data = await response.json();
-    setLastFetchedArticle(data);
-    return data;
+    throw new Error('Timeout waiting for job completion');
 }
 
 // ============================================
