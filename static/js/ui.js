@@ -1,14 +1,15 @@
 // static/js/ui.js - UI State Management
+// VeriFlow Redesign - Minimalist Theme
 
 // ============================================
 // LOADING STATE
 // ============================================
 
 function setLoadingState(isLoading) {
-    checkBtn.disabled = isLoading;
-    clearBtn.disabled = isLoading;
-    htmlInput.disabled = isLoading;
-    stopBtn.style.display = isLoading ? 'inline-flex' : 'none';
+    if (checkBtn) checkBtn.disabled = isLoading;
+    if (clearBtn) clearBtn.disabled = isLoading;
+    if (htmlInput) htmlInput.disabled = isLoading;
+    if (stopBtn) stopBtn.style.display = isLoading ? 'inline-flex' : 'none';
 }
 
 // ============================================
@@ -16,19 +17,20 @@ function setLoadingState(isLoading) {
 // ============================================
 
 function hideAllSections() {
-    statusSection.style.display = 'none';
-    resultsSection.style.display = 'none';
-    errorSection.style.display = 'none';
+    if (statusSection) statusSection.style.display = 'none';
+    if (resultsSection) resultsSection.style.display = 'none';
+    if (errorSection) errorSection.style.display = 'none';
 }
 
 function showSection(section) {
-    section.style.display = 'block';
+    if (section) section.style.display = 'block';
 }
 
 function showError(message) {
     hideAllSections();
     showSection(errorSection);
-    document.getElementById('errorMessage').textContent = message;
+    const errorMsg = document.getElementById('errorMessage');
+    if (errorMsg) errorMsg.textContent = message;
 }
 
 // ============================================
@@ -36,13 +38,18 @@ function showError(message) {
 // ============================================
 
 function clearProgressLog() {
-    progressLog.innerHTML = '';
+    if (progressLog) progressLog.innerHTML = '';
 }
 
 function addProgress(message, type = 'info') {
+    if (!progressLog) return;
+    
     const entry = document.createElement('div');
-    entry.className = `progress-entry ${type}`;
+    entry.className = `progress-item ${type}`;
+    
+    // Remove emoji prefixes for cleaner look (optional - keep for now for clarity)
     entry.textContent = message;
+    
     progressLog.appendChild(entry);
     progressLog.scrollTop = progressLog.scrollHeight;
 }
@@ -52,25 +59,28 @@ function addProgress(message, type = 'info') {
 // ============================================
 
 function showContentFormatIndicator(hasLinks, linkCount) {
-    const indicator = contentFormatIndicator;
-    const icon = document.getElementById('formatIcon');
-    const message = document.getElementById('formatMessage');
+    if (!contentFormatIndicator) return;
+    
+    const formatIcon = contentFormatIndicator.querySelector('.format-icon');
+    const formatText = contentFormatIndicator.querySelector('.format-text');
 
     if (hasLinks) {
-        icon.textContent = '✅';
-        message.textContent = `Detected ${linkCount} source link${linkCount !== 1 ? 's' : ''} - ready for verification`;
-        indicator.className = 'content-format-indicator valid';
+        if (formatIcon) formatIcon.textContent = '✓';
+        if (formatText) formatText.textContent = `Detected ${linkCount} source link${linkCount !== 1 ? 's' : ''}`;
+        contentFormatIndicator.className = 'content-format-indicator valid';
     } else {
-        icon.textContent = '⚠️';
-        message.textContent = 'No source links detected in this content';
-        indicator.className = 'content-format-indicator warning';
+        if (formatIcon) formatIcon.textContent = '!';
+        if (formatText) formatText.textContent = 'No source links detected';
+        contentFormatIndicator.className = 'content-format-indicator warning';
     }
 
-    indicator.style.display = 'flex';
+    contentFormatIndicator.style.display = 'flex';
 }
 
 function hideContentFormatIndicator() {
-    contentFormatIndicator.style.display = 'none';
+    if (contentFormatIndicator) {
+        contentFormatIndicator.style.display = 'none';
+    }
 }
 
 // ============================================
@@ -80,86 +90,214 @@ function hideContentFormatIndicator() {
 function switchMode(mode) {
     AppState.currentMode = mode;
 
-    // Update tab styling
-    modeTabs.forEach(tab => {
-        tab.classList.toggle('active', tab.dataset.mode === mode);
+    // Update card styling
+    modeCards.forEach(card => {
+        card.classList.toggle('active', card.dataset.mode === mode);
     });
 
-    // Update instructions visibility
-    llmOutputInstructions.style.display = mode === 'llm-output' ? 'block' : 'none';
-    textFactcheckInstructions.style.display = mode === 'text-factcheck' ? 'block' : 'none';
-    if (keyClaimsInstructions) {
-        keyClaimsInstructions.style.display = mode === 'key-claims' ? 'block' : 'none';
-    }
-    biasAnalysisInstructions.style.display = mode === 'bias-analysis' ? 'block' : 'none';
-    lieDetectionInstructions.style.display = mode === 'lie-detection' ? 'block' : 'none';
-
-    // Manipulation mode
-    if (manipulationInstructions) {
-        manipulationInstructions.style.display = mode === 'manipulation' ? 'block' : 'none';
-    }
-
-    // Update input section labels
-    if (mode === 'llm-output') {
-        inputSectionTitle.textContent = 'Paste LLM Output with Sources';
-        inputHelpText.textContent = 'Paste ChatGPT, Perplexity, or any LLM output with source links';
-        publicationField.style.display = 'none';
-    } else if (mode === 'text-factcheck') {
-        inputSectionTitle.textContent = 'Paste Text to Fact-Check';
-        inputHelpText.textContent = 'Paste any text - we\'ll search the web to verify all claims';
-        publicationField.style.display = 'none';
-    } else if (mode === 'key-claims') {
-        inputSectionTitle.textContent = 'Paste Text for Key Claims Analysis';
-        inputHelpText.textContent = 'Paste any text - we\'ll identify and verify the 2-3 main arguments';
-        publicationField.style.display = 'none';
-    } else if (mode === 'bias-analysis') {
-        inputSectionTitle.textContent = 'Paste Text to Analyze for Bias';
-        inputHelpText.textContent = 'Paste news articles, op-eds, or any content to analyze';
-        publicationField.style.display = 'block';
-    } else if (mode === 'lie-detection') {
-        inputSectionTitle.textContent = 'Paste Article or Text to Analyze';
-        inputHelpText.textContent = 'Paste any article or text to analyze for deception markers';
-        publicationField.style.display = 'none';
-    } else if (mode === 'manipulation') {
-        inputSectionTitle.textContent = 'Paste Article for Manipulation Analysis';
-        inputHelpText.textContent = 'Paste any article - we\'ll detect agenda-driven fact manipulation';
-        publicationField.style.display = 'none';
-    }
-    // Clear format indicator when switching modes
+    // Update placeholder text
+    updatePlaceholder(mode);
+    
+    // Hide content format indicator when switching modes
     hideContentFormatIndicator();
+    
+    console.log('Mode switched to:', mode);
+}
+
+function updatePlaceholder(mode) {
+    if (!htmlInput) return;
+    
+    const placeholders = {
+        'key-claims': 'Paste the article or text you want to analyze...',
+        'bias-analysis': 'Paste the article or text to analyze for bias...',
+        'lie-detection': 'Paste the text to analyze for deception markers...',
+        'manipulation': 'Paste the article to check for manipulation...',
+        'text-factcheck': 'Paste the article or text you want to fact-check...',
+        'llm-output': 'Paste AI-generated content with source links (from ChatGPT, Perplexity, etc.)...'
+    };
+    
+    htmlInput.placeholder = placeholders[mode] || 'Paste the article or text you want to analyze...';
 }
 
 // ============================================
-// RESULT TABS
+// RESULTS TAB SWITCHING
 // ============================================
 
-function switchResultTab(tab) {
-    // Update tab button styling
-    const tabButtons = document.querySelectorAll('.results-tab');
-    tabButtons.forEach(btn => {
-        const isActive = 
-            (tab === 'fact-check' && btn.id === 'factCheckTab') ||
-            (tab === 'key-claims' && btn.id === 'keyClaimsTab') ||
-            (tab === 'bias-analysis' && btn.id === 'biasAnalysisTab') ||
-            (tab === 'lie-detection' && btn.id === 'lieDetectionTab') ||
-            (tab === 'manipulation' && btn.id === 'manipulationTab');
-        btn.classList.toggle('active', isActive);
+function switchResultTab(tabName) {
+    // Define tab mappings
+    const tabMappings = {
+        'fact-check': { tab: factCheckTab, panel: factCheckResults },
+        'key-claims': { tab: keyClaimsTab, panel: keyClaimsResults },
+        'bias-analysis': { tab: biasAnalysisTab, panel: biasAnalysisResults },
+        'lie-detection': { tab: lieDetectionTab, panel: lieDetectionResults },
+        'manipulation': { tab: manipulationTab, panel: manipulationResults }
+    };
+
+    // Hide all panels and deactivate all tabs
+    Object.values(tabMappings).forEach(({ tab, panel }) => {
+        if (tab) tab.classList.remove('active');
+        if (panel) {
+            panel.style.display = 'none';
+            panel.classList.remove('active');
+        }
     });
 
-    // Show/hide result panels
-    if (factCheckResults) {
-        factCheckResults.style.display = tab === 'fact-check' ? 'block' : 'none';
+    // Show selected tab and panel
+    const selected = tabMappings[tabName];
+    if (selected) {
+        if (selected.tab) selected.tab.classList.add('active');
+        if (selected.panel) {
+            selected.panel.style.display = 'block';
+            selected.panel.classList.add('active');
+        }
     }
-    if (keyClaimsResults) {
-        keyClaimsResults.style.display = tab === 'key-claims' ? 'block' : 'none';
+}
+
+// ============================================
+// URL INPUT HANDLING
+// ============================================
+
+function showUrlInput() {
+    if (urlInputContainer) urlInputContainer.style.display = 'block';
+    if (textInputContainer) textInputContainer.style.display = 'none';
+    updateToggleButton(true);
+}
+
+function showTextInput() {
+    if (urlInputContainer) urlInputContainer.style.display = 'none';
+    if (textInputContainer) textInputContainer.style.display = 'block';
+    updateToggleButton(false);
+}
+
+function updateToggleButton(isUrlMode) {
+    if (!toggleUrlBtn) return;
+    
+    if (isUrlMode) {
+        toggleUrlBtn.innerHTML = `
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <polyline points="14,2 14,8 20,8"/>
+                <line x1="16" y1="13" x2="8" y2="13"/>
+                <line x1="16" y1="17" x2="8" y2="17"/>
+            </svg>
+            Paste text instead
+        `;
+    } else {
+        toggleUrlBtn.innerHTML = `
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+            </svg>
+            Paste URL instead
+        `;
     }
-    if (biasAnalysisResults) {
-        biasAnalysisResults.style.display = tab === 'bias-analysis' ? 'block' : 'none';
+}
+
+function showUrlStatus(type, message, details = null) {
+    if (!urlFetchStatus) return;
+    
+    urlFetchStatus.style.display = 'flex';
+    urlFetchStatus.className = `url-fetch-status ${type}`;
+
+    let html = `
+        <span class="status-icon">${getStatusIcon(type)}</span>
+        <span class="status-text">${message}</span>
+    `;
+
+    // Add credibility badge if available
+    if (details && details.credibility) {
+        const tierColor = getTierColor(details.credibility.tier);
+        html += `
+            <span class="credibility-badge" style="background: ${tierColor}">
+                Tier ${details.credibility.tier}
+            </span>
+        `;
     }
-    if (lieDetectionResults) {
-        lieDetectionResults.style.display = tab === 'lie-detection' ? 'block' : 'none';
+
+    urlFetchStatus.innerHTML = html;
+}
+
+function hideUrlStatus() {
+    if (urlFetchStatus) {
+        urlFetchStatus.style.display = 'none';
     }
-    if (manipulationResults) {
-        manipulationResults.style.display = tab === 'manipulation' ? 'block' : 'none';
-    }
+}
+
+function getStatusIcon(type) {
+    const icons = {
+        loading: '⏳',
+        success: '✓',
+        error: '✕',
+        info: 'i'
+    };
+    return icons[type] || '•';
+}
+
+function getTierColor(tier) {
+    const colors = {
+        1: '#6B9B6B',  // Green
+        2: '#8AAF6B',  // Light green
+        3: '#E8B84A',  // Yellow
+        4: '#E89B4A',  // Orange
+        5: '#F06449'   // Red
+    };
+    return colors[tier] || '#9A9A9A';
+}
+
+function clearUrlInput() {
+    if (articleUrl) articleUrl.value = '';
+    hideUrlStatus();
+    setLastFetchedArticle(null);
+}
+
+// ============================================
+// BIAS MODEL TABS
+// ============================================
+
+function initBiasModelTabs() {
+    if (!modelTabs) return;
+    
+    modelTabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            const model = tab.dataset.model;
+            
+            // Update tab styling
+            modelTabs.forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+            
+            // Show/hide analysis panels
+            const gptAnalysis = document.getElementById('gptAnalysis');
+            const claudeAnalysis = document.getElementById('claudeAnalysis');
+            const consensusAnalysis = document.getElementById('consensusAnalysis');
+            
+            if (gptAnalysis) gptAnalysis.style.display = model === 'gpt' ? 'block' : 'none';
+            if (claudeAnalysis) claudeAnalysis.style.display = model === 'claude' ? 'block' : 'none';
+            if (consensusAnalysis) consensusAnalysis.style.display = model === 'consensus' ? 'block' : 'none';
+        });
+    });
+}
+
+// ============================================
+// MANIPULATION INNER TABS
+// ============================================
+
+function initManipulationTabs() {
+    const manipInnerTabs = document.querySelectorAll('.manip-inner-tab');
+    
+    manipInnerTabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            const tabName = tab.dataset.manipTab;
+            
+            // Update tab styling
+            manipInnerTabs.forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+            
+            // Show/hide content
+            const summaryTab = document.getElementById('manipSummaryTab');
+            const factsTab = document.getElementById('manipFactsTab');
+            
+            if (summaryTab) summaryTab.style.display = tabName === 'summary' ? 'block' : 'none';
+            if (factsTab) factsTab.style.display = tabName === 'facts' ? 'block' : 'none';
+        });
+    });
 }

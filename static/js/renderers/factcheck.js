@@ -1,4 +1,5 @@
 // static/js/renderers/factcheck.js - Fact Check & LLM Verification Rendering
+// VeriFlow Redesign - Minimalist Theme
 
 // ============================================
 // DISPLAY VERIFICATION RESULTS (Unified)
@@ -8,7 +9,7 @@ function displayVerificationResults() {
     let data, facts, sessionId, duration, pipelineType, auditUrl;
 
     if (AppState.currentLLMVerificationResults) {
-        console.log('📦 Displaying LLM Verification Results');
+        console.log('Displaying LLM Verification Results');
 
         if (AppState.currentLLMVerificationResults.factCheck) {
             data = AppState.currentLLMVerificationResults.factCheck;
@@ -23,7 +24,7 @@ function displayVerificationResults() {
         auditUrl = data.audit_url || AppState.currentLLMVerificationResults.audit_url;
 
     } else if (AppState.currentFactCheckResults) {
-        console.log('📦 Displaying Web Search Fact-Check Results');
+        console.log('Displaying Web Search Fact-Check Results');
 
         data = AppState.currentFactCheckResults;
         facts = data.facts || data.claims || [];
@@ -37,7 +38,7 @@ function displayVerificationResults() {
         return;
     }
 
-    console.log(`📊 Processing ${facts.length} facts from ${pipelineType}`);
+    console.log(`Processing ${facts.length} facts from ${pipelineType}`);
 
     if (data.success === false) {
         console.error('Verification marked as failed');
@@ -45,50 +46,60 @@ function displayVerificationResults() {
         return;
     }
 
+    // Calculate statistics
     const totalFacts = facts.length;
-
-    const accurateFacts = facts.filter(f => 
+    const verifiedFacts = facts.filter(f => 
         (f.verification_score || f.match_score || 0) >= 0.9
     ).length;
-
-    const goodFacts = facts.filter(f => {
+    const partialFacts = facts.filter(f => {
         const score = f.verification_score || f.match_score || 0;
         return score >= 0.7 && score < 0.9;
     }).length;
-
-    const questionableFacts = facts.filter(f => 
+    const unverifiedFacts = facts.filter(f => 
         (f.verification_score || f.match_score || 0) < 0.7
     ).length;
 
-    const avgScore = totalFacts > 0 
-        ? (facts.reduce((sum, f) => 
-            sum + (f.verification_score || f.match_score || 0), 0
-          ) / totalFacts * 100).toFixed(0)
-        : 0;
+    // Update summary stats
+    const verifiedCount = document.getElementById('verifiedCount');
+    const issuesCount = document.getElementById('issuesCount');
+    const unverifiedCount = document.getElementById('unverifiedCount');
 
-    document.getElementById('totalFacts').textContent = totalFacts;
-    document.getElementById('verifiedCount').textContent = accurateFacts;
-    document.getElementById('partialCount').textContent = goodFacts;
-    document.getElementById('unverifiedCount').textContent = questionableFacts;
+    if (verifiedCount) verifiedCount.textContent = verifiedFacts;
+    if (issuesCount) issuesCount.textContent = partialFacts;
+    if (unverifiedCount) unverifiedCount.textContent = unverifiedFacts;
 
-    document.getElementById('sessionId').textContent = sessionId;
-    document.getElementById('processingTime').textContent = Math.round(duration) + 's';
+    // Update session info
+    const sessionIdEl = document.getElementById('sessionId');
+    const processingTimeEl = document.getElementById('processingTime');
 
+    if (sessionIdEl) sessionIdEl.textContent = sessionId;
+    if (processingTimeEl) processingTimeEl.textContent = Math.round(duration) + 's';
+
+    // Handle R2 link
     const r2Link = document.getElementById('r2Link');
     const r2Sep = document.getElementById('r2Sep');
-    if (auditUrl && r2Link) {
+
+    if (r2Link && r2Sep && auditUrl) {
         r2Link.href = auditUrl;
         r2Link.style.display = 'inline';
-        if (r2Sep) r2Sep.style.display = 'inline';
-    } else {
-        if (r2Link) r2Link.style.display = 'none';
-        if (r2Sep) r2Sep.style.display = 'none';
+        r2Sep.style.display = 'inline';
+    } else if (r2Link && r2Sep) {
+        r2Link.style.display = 'none';
+        r2Sep.style.display = 'none';
     }
 
-    factsList.innerHTML = '';
-    facts.forEach((fact, index) => {
-        factsList.appendChild(createFactCard(fact, index + 1));
-    });
+    // Render facts
+    if (factsContainer) {
+        factsContainer.innerHTML = '';
+        facts.forEach((fact, index) => {
+            factsContainer.appendChild(createFactCard(fact, index + 1));
+        });
+    }
+}
+
+// Alias for compatibility
+function displayFactCheckResults() {
+    displayVerificationResults();
 }
 
 // ============================================
@@ -97,33 +108,20 @@ function displayVerificationResults() {
 
 function createFactCard(fact, number) {
     const card = document.createElement('div');
-    card.className = 'fact-card';
-
     const score = fact.verification_score || fact.match_score || 0;
-
-    // Add 'debunked' class for scores <= 0.1
-    let scoreClass;
-    if (score <= 0.1) {
-        scoreClass = 'debunked';
-    } else if (score >= 0.9) {
-        scoreClass = 'accurate';
-    } else if (score >= 0.7) {
-        scoreClass = 'good';
-    } else {
-        scoreClass = 'questionable';
-    }
+    const scoreClass = getScoreClass(score);
+    
+    card.className = `fact-card ${scoreClass}`;
 
     const statementText = fact.claim_text || fact.statement || 'No statement available';
-
-    // Use 'report' field with fallback to old fields for backwards compatibility
     const reportText = fact.report || fact.assessment || 'No report available';
 
-    // Handle LLM verification specific fields (interpretation_issues)
+    // Handle interpretation issues (LLM verification specific)
     let issuesHtml = '';
     if (fact.interpretation_issues && fact.interpretation_issues.length > 0) {
         issuesHtml = `
-            <div class="fact-discrepancies">
-                <strong>⚠️ Interpretation Issues:</strong>
+            <div class="fact-issues">
+                <strong>Issues found:</strong>
                 <ul>
                     ${fact.interpretation_issues.map(issue => `<li>${escapeHtml(issue)}</li>`).join('')}
                 </ul>
@@ -131,57 +129,28 @@ function createFactCard(fact, number) {
         `;
     }
 
-    // Sources HTML (supports both LLM verification and web search)
+    // Handle sources
     let sourcesHtml = '';
     if (fact.cited_source_urls && fact.cited_source_urls.length > 0) {
-        if (fact.cited_source_urls.length === 1) {
-            sourcesHtml = `
-                <div class="fact-sources">
-                    <strong>📎 Source Cited:</strong> 
-                    <a href="${escapeHtml(fact.cited_source_urls[0])}" target="_blank" class="source-tag">
-                        ${new URL(fact.cited_source_urls[0]).hostname}
-                    </a>
-                </div>
-            `;
-        } else {
-            const sourceLinks = fact.cited_source_urls.map(url => 
-                `<a href="${escapeHtml(url)}" target="_blank" class="source-tag">
-                    ${new URL(url).hostname}
-                </a>`
-            ).join(' ');
-
-            sourcesHtml = `
-                <div class="fact-sources">
-                    <strong>📎 Sources Cited (${fact.cited_source_urls.length}):</strong> 
-                    ${sourceLinks}
-                </div>
-            `;
-        }
+        const sourceLinks = fact.cited_source_urls.map(url => 
+            `<a href="${escapeHtml(url)}" target="_blank" class="source-link">${getDomainFromUrl(url)}</a>`
+        ).join(' ');
+        sourcesHtml = `<div class="fact-sources">Sources: ${sourceLinks}</div>`;
     } else if (fact.sources_used && fact.sources_used.length > 0) {
-        sourcesHtml = `
-            <div class="fact-sources">
-                <strong>🔍 Sources Found:</strong> 
-                ${fact.sources_used.map(url => 
-                    `<a href="${escapeHtml(url)}" target="_blank" class="source-tag">
-                        ${new URL(url).hostname}
-                    </a>`
-                ).join(' ')}
-            </div>
-        `;
+        const sourceLinks = fact.sources_used.map(url => 
+            `<a href="${escapeHtml(url)}" target="_blank" class="source-link">${getDomainFromUrl(url)}</a>`
+        ).join(' ');
+        sourcesHtml = `<div class="fact-sources">Sources: ${sourceLinks}</div>`;
     }
 
-    // Check if this is a debunked/hoax claim (score <= 0.1)
-    const isDebunked = score <= 0.1 && score > 0;
-    const debunkedBadge = isDebunked ? '<span class="debunked-badge">🚫 DEBUNKED</span>' : '';
-
+    // Build card HTML
     card.innerHTML = `
-        <div class="fact-header ${scoreClass}">
+        <div class="fact-header">
             <span class="fact-number">#${number}</span>
-            ${debunkedBadge}
-            <span class="fact-score ${scoreClass}">${Math.round(score * 100)}%</span>
+            <span class="fact-verdict ${scoreClass}">${getScoreLabel(score)}</span>
         </div>
-        <div class="fact-statement">${escapeHtml(statementText)}</div>
-        <div class="fact-report">${escapeHtml(reportText)}</div>
+        <div class="fact-claim">${escapeHtml(statementText)}</div>
+        <div class="fact-explanation">${escapeHtml(reportText)}</div>
         ${issuesHtml}
         ${sourcesHtml}
     `;

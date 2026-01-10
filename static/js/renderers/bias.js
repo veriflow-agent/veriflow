@@ -1,111 +1,5 @@
 // static/js/renderers/bias.js - Bias Analysis Rendering
-
-// ============================================
-// DISPLAY PUBLICATION PROFILE (MBFC DATA)
-// ============================================
-
-function displayPublicationProfile(analysis) {
-    const profile = analysis.publication_profile;
-    const card = document.getElementById('publicationProfileCard');
-
-    if (!profile) {
-        // No publication profile - hide the card
-        if (card) card.style.display = 'none';
-        return;
-    }
-
-    // Show the card
-    card.style.display = 'block';
-
-    // Publication name
-    document.getElementById('profilePublicationName').textContent = profile.name || 'Unknown';
-
-    // Source badge (MBFC vs Local)
-    const sourceBadge = document.getElementById('profileSourceBadge');
-    if (profile.source === 'mbfc') {
-        sourceBadge.textContent = 'MBFC';
-        sourceBadge.className = 'profile-source-badge mbfc';
-    } else {
-        sourceBadge.textContent = 'Local DB';
-        sourceBadge.className = 'profile-source-badge local';
-    }
-
-    // Political leaning with color
-    const leaningEl = document.getElementById('profilePoliticalLeaning');
-    const leaning = profile.political_leaning || 'Unknown';
-    leaningEl.textContent = capitalizeWords(leaning.replace(/-/g, ' '));
-    leaningEl.className = 'profile-value ' + getLeaningClass(leaning);
-
-    // Bias rating
-    const biasRating = profile.bias_rating;
-    document.getElementById('profileBiasRating').textContent = 
-        biasRating !== null && biasRating !== undefined ? `${biasRating.toFixed(1)}/10` : '-';
-
-    // Factual reporting
-    document.getElementById('profileFactualReporting').textContent = 
-        profile.factual_reporting || '-';
-
-    // Credibility
-    document.getElementById('profileCredibility').textContent = 
-        profile.credibility_rating || '-';
-
-    // Optional details
-    const detailsSection = document.getElementById('profileDetails');
-    let hasDetails = false;
-
-    // Ownership
-    if (profile.ownership) {
-        document.getElementById('profileOwnership').textContent = profile.ownership;
-        document.getElementById('profileOwnershipRow').style.display = 'flex';
-        hasDetails = true;
-    } else {
-        document.getElementById('profileOwnershipRow').style.display = 'none';
-    }
-
-    // Known biases
-    if (profile.known_biases && profile.known_biases.length > 0) {
-        document.getElementById('profileKnownBiases').textContent = profile.known_biases.join(', ');
-        document.getElementById('profileKnownBiasesRow').style.display = 'flex';
-        hasDetails = true;
-    } else {
-        document.getElementById('profileKnownBiasesRow').style.display = 'none';
-    }
-
-    // Failed fact checks
-    if (profile.failed_fact_checks && profile.failed_fact_checks.length > 0) {
-        document.getElementById('profileFailedFactChecks').textContent = 
-            `${profile.failed_fact_checks.length} on record`;
-        document.getElementById('profileFailedFactChecksRow').style.display = 'flex';
-        hasDetails = true;
-    } else {
-        document.getElementById('profileFailedFactChecksRow').style.display = 'none';
-    }
-
-    detailsSection.style.display = hasDetails ? 'block' : 'none';
-
-    // MBFC link
-    const footer = document.getElementById('profileFooter');
-    const mbfcLink = document.getElementById('profileMbfcLink');
-    if (profile.mbfc_url) {
-        mbfcLink.href = profile.mbfc_url;
-        footer.style.display = 'block';
-    } else {
-        footer.style.display = 'none';
-    }
-}
-
-function getLeaningClass(leaning) {
-    if (!leaning) return '';
-    leaning = leaning.toLowerCase();
-    if (leaning.includes('left')) return 'bias-left';
-    if (leaning.includes('right')) return 'bias-right';
-    if (leaning.includes('center')) return 'bias-center';
-    return '';
-}
-
-function capitalizeWords(str) {
-    return str.replace(/\b\w/g, char => char.toUpperCase());
-}
+// VeriFlow Redesign - Minimalist Theme
 
 // ============================================
 // DISPLAY BIAS RESULTS
@@ -113,118 +7,245 @@ function capitalizeWords(str) {
 
 function displayBiasResults() {
     if (!AppState.currentBiasResults || !AppState.currentBiasResults.success) {
+        console.error('No bias results available');
         return;
     }
 
-    const analysis = AppState.currentBiasResults.analysis;
+    console.log('Displaying Bias Results:', AppState.currentBiasResults);
 
-    // ✅ NEW: Display publication profile from MBFC
-    displayPublicationProfile(analysis);
+    const data = AppState.currentBiasResults;
 
-    const score = analysis.consensus_bias_score || 0;
-    const direction = analysis.consensus_direction || 'Unknown';
-    const confidence = analysis.confidence || 0;
+    // Display GPT analysis
+    if (data.gpt_analysis) {
+        displayModelAnalysis('gpt', data.gpt_analysis);
+    }
 
-    document.getElementById('consensusBiasScore').textContent = score.toFixed(1) + '/10';
-    document.getElementById('consensusBiasDirection').textContent = direction;
-    document.getElementById('biasConfidence').textContent = Math.round(confidence * 100) + '%';
+    // Display Claude analysis
+    if (data.claude_analysis) {
+        displayModelAnalysis('claude', data.claude_analysis);
+    }
 
-    document.getElementById('biasSessionId').textContent = AppState.currentBiasResults.session_id || '-';
-    document.getElementById('biasProcessingTime').textContent = Math.round(AppState.currentBiasResults.processing_time || 0) + 's';
+    // Display Consensus analysis
+    if (data.consensus) {
+        displayConsensusAnalysis(data.consensus);
+    }
 
-    displayModelAnalysis('gpt', analysis.gpt_analysis);
-    displayModelAnalysis('claude', analysis.claude_analysis);
-    displayConsensusAnalysis(analysis);
+    // Session info
+    const sessionId = document.getElementById('biasSessionId');
+    const processingTime = document.getElementById('biasProcessingTime');
+
+    if (sessionId) sessionId.textContent = data.session_id || '-';
+    if (processingTime) processingTime.textContent = Math.round(data.processing_time || 0) + 's';
+
+    // R2 link
+    const r2Link = document.getElementById('biasR2Link');
+    const r2Sep = document.getElementById('biasR2Sep');
+
+    if (r2Link && r2Sep) {
+        if (data.r2_upload && data.r2_upload.combined_url) {
+            r2Link.href = data.r2_upload.combined_url;
+            r2Link.style.display = 'inline';
+            r2Sep.style.display = 'inline';
+        } else {
+            r2Link.style.display = 'none';
+            r2Sep.style.display = 'none';
+        }
+    }
 }
 
 // ============================================
 // DISPLAY MODEL ANALYSIS
 // ============================================
 
-function displayModelAnalysis(model, data) {
-    if (!data) return;
-
+function displayModelAnalysis(model, analysis) {
     const prefix = model === 'gpt' ? 'gpt' : 'claude';
 
-    document.getElementById(`${prefix}OverallAssessment`).textContent = data.reasoning || '-';
-
-    const indicatorsList = document.getElementById(`${prefix}BiasIndicators`);
-    indicatorsList.innerHTML = '';
-
-    if (data.biases_detected && data.biases_detected.length > 0) {
-        data.biases_detected.forEach(bias => {
-            const li = document.createElement('li');
-            li.innerHTML = `<strong>${bias.type}</strong> (${bias.severity}/10): ${bias.evidence}`;
-            indicatorsList.appendChild(li);
-        });
-    } else {
-        indicatorsList.innerHTML = '<li>No significant bias indicators detected</li>';
+    // Score
+    const scoreEl = document.getElementById(`${prefix}BiasScore`);
+    if (scoreEl) {
+        const score = analysis.bias_score || 0;
+        scoreEl.textContent = score.toFixed(1);
+        scoreEl.className = `bias-score-value ${getBiasScoreClass(score)}`;
     }
 
-    const languageText = data.balanced_aspects ? data.balanced_aspects.join(' • ') : 'Analysis complete';
-    document.getElementById(`${prefix}LanguageAnalysis`).textContent = languageText;
+    // Direction
+    const directionEl = document.getElementById(`${prefix}BiasDirection`);
+    if (directionEl) {
+        directionEl.textContent = analysis.bias_direction || 'Unknown';
+    }
+
+    // Justification
+    const justificationEl = document.getElementById(`${prefix}BiasJustification`);
+    if (justificationEl) {
+        justificationEl.textContent = analysis.summary || analysis.justification || '';
+    }
+
+    // Details container
+    const detailsEl = document.getElementById(`${prefix}BiasDetails`);
+    if (detailsEl) {
+        detailsEl.innerHTML = '';
+
+        // Add bias indicators
+        if (analysis.bias_indicators && analysis.bias_indicators.length > 0) {
+            const indicatorsSection = createBiasSection('Bias Indicators', analysis.bias_indicators);
+            detailsEl.appendChild(indicatorsSection);
+        }
+
+        // Add language analysis
+        if (analysis.language_analysis) {
+            const langSection = createLanguageSection(analysis.language_analysis);
+            detailsEl.appendChild(langSection);
+        }
+
+        // Add framing analysis
+        if (analysis.framing_analysis) {
+            const framingSection = createFramingSection(analysis.framing_analysis);
+            detailsEl.appendChild(framingSection);
+        }
+    }
 }
 
 // ============================================
 // DISPLAY CONSENSUS ANALYSIS
 // ============================================
 
-function displayConsensusAnalysis(analysis) {
-    const agreementList = document.getElementById('areasOfAgreement');
-    agreementList.innerHTML = '';
-    (analysis.areas_of_agreement || []).forEach(item => {
-        const li = document.createElement('li');
-        li.textContent = item;
-        agreementList.appendChild(li);
-    });
+function displayConsensusAnalysis(consensus) {
+    // Score
+    const scoreEl = document.getElementById('consensusBiasScore');
+    if (scoreEl) {
+        const score = consensus.average_score || 0;
+        scoreEl.textContent = score.toFixed(1);
+        scoreEl.className = `bias-score-value ${getBiasScoreClass(score)}`;
+    }
 
-    const disagreementList = document.getElementById('areasOfDisagreement');
-    disagreementList.innerHTML = '';
-    (analysis.areas_of_disagreement || []).forEach(item => {
-        const li = document.createElement('li');
-        li.textContent = item;
-        disagreementList.appendChild(li);
-    });
+    // Direction
+    const directionEl = document.getElementById('consensusBiasDirection');
+    if (directionEl) {
+        directionEl.textContent = consensus.consensus_direction || 'Unknown';
+    }
 
-    document.getElementById('finalAssessment').textContent = analysis.final_assessment || '-';
+    // Justification
+    const justificationEl = document.getElementById('consensusBiasJustification');
+    if (justificationEl) {
+        justificationEl.textContent = consensus.summary || '';
+    }
 
-    const recommendationsList = document.getElementById('recommendations');
-    recommendationsList.innerHTML = '';
-    (analysis.recommendations || []).forEach(rec => {
-        const li = document.createElement('li');
-        li.textContent = rec;
-        recommendationsList.appendChild(li);
-    });
+    // Agreement status
+    const detailsEl = document.getElementById('consensusBiasDetails');
+    if (detailsEl) {
+        detailsEl.innerHTML = '';
+
+        // Agreement indicator
+        const agreementDiv = document.createElement('div');
+        agreementDiv.className = 'consensus-agreement';
+        
+        const agreementLevel = consensus.agreement_level || 'Unknown';
+        const agreementClass = getAgreementClass(agreementLevel);
+        
+        agreementDiv.innerHTML = `
+            <span class="agreement-label">Model Agreement:</span>
+            <span class="agreement-value ${agreementClass}">${agreementLevel}</span>
+        `;
+        detailsEl.appendChild(agreementDiv);
+
+        // Key findings
+        if (consensus.key_findings && consensus.key_findings.length > 0) {
+            const findingsSection = createBiasSection('Key Findings', consensus.key_findings);
+            detailsEl.appendChild(findingsSection);
+        }
+    }
 }
 
 // ============================================
-// MODEL TAB SWITCHING FOR BIAS ANALYSIS
+// HELPER FUNCTIONS
 // ============================================
 
-function initBiasModelTabs() {
-    modelTabs.forEach(tab => {
-        tab.addEventListener('click', () => {
-            // Update active tab styling
-            modelTabs.forEach(t => t.classList.remove('active'));
-            tab.classList.add('active');
+function getBiasScoreClass(score) {
+    const absScore = Math.abs(score);
+    if (absScore <= 2) return 'score-low';
+    if (absScore <= 5) return 'score-medium';
+    return 'score-high';
+}
 
-            // Get selected model
-            const model = tab.dataset.model;
+function getAgreementClass(level) {
+    switch (level.toLowerCase()) {
+        case 'high':
+        case 'strong':
+            return 'agreement-high';
+        case 'medium':
+        case 'moderate':
+            return 'agreement-medium';
+        default:
+            return 'agreement-low';
+    }
+}
 
-            // Show/hide the correct analysis panel
-            const gptAnalysis = document.getElementById('gptAnalysis');
-            const claudeAnalysis = document.getElementById('claudeAnalysis');
-            const consensusAnalysis = document.getElementById('consensusAnalysis');
+function createBiasSection(title, items) {
+    const section = document.createElement('div');
+    section.className = 'bias-section';
+    
+    section.innerHTML = `
+        <h4 class="bias-section-title">${title}</h4>
+        <ul class="bias-list">
+            ${items.map(item => `<li>${escapeHtml(typeof item === 'string' ? item : item.description || item.text || JSON.stringify(item))}</li>`).join('')}
+        </ul>
+    `;
+    
+    return section;
+}
 
-            if (gptAnalysis) {
-                gptAnalysis.style.display = model === 'gpt' ? 'block' : 'none';
-            }
-            if (claudeAnalysis) {
-                claudeAnalysis.style.display = model === 'claude' ? 'block' : 'none';
-            }
-            if (consensusAnalysis) {
-                consensusAnalysis.style.display = model === 'consensus' ? 'block' : 'none';
-            }
-        });
-    });
+function createLanguageSection(langAnalysis) {
+    const section = document.createElement('div');
+    section.className = 'bias-section';
+    
+    let content = '<h4 class="bias-section-title">Language Analysis</h4>';
+    
+    if (langAnalysis.loaded_terms && langAnalysis.loaded_terms.length > 0) {
+        content += `
+            <div class="lang-subsection">
+                <span class="lang-label">Loaded Terms:</span>
+                <span class="lang-value">${langAnalysis.loaded_terms.join(', ')}</span>
+            </div>
+        `;
+    }
+    
+    if (langAnalysis.tone) {
+        content += `
+            <div class="lang-subsection">
+                <span class="lang-label">Tone:</span>
+                <span class="lang-value">${langAnalysis.tone}</span>
+            </div>
+        `;
+    }
+    
+    section.innerHTML = content;
+    return section;
+}
+
+function createFramingSection(framingAnalysis) {
+    const section = document.createElement('div');
+    section.className = 'bias-section';
+    
+    let content = '<h4 class="bias-section-title">Framing Analysis</h4>';
+    
+    if (framingAnalysis.narrative_frame) {
+        content += `
+            <div class="framing-subsection">
+                <span class="framing-label">Narrative Frame:</span>
+                <span class="framing-value">${escapeHtml(framingAnalysis.narrative_frame)}</span>
+            </div>
+        `;
+    }
+    
+    if (framingAnalysis.perspective) {
+        content += `
+            <div class="framing-subsection">
+                <span class="framing-label">Perspective:</span>
+                <span class="framing-value">${escapeHtml(framingAnalysis.perspective)}</span>
+            </div>
+        `;
+    }
+    
+    section.innerHTML = content;
+    return section;
 }

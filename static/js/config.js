@@ -1,9 +1,11 @@
 // static/js/config.js - DOM Elements and State
+// VeriFlow Redesign - Minimalist Theme
 
 // ============================================
 // DOM ELEMENTS
 // ============================================
 
+// Main input elements
 const htmlInput = document.getElementById('htmlInput');
 const checkBtn = document.getElementById('checkBtn');
 const clearBtn = document.getElementById('clearBtn');
@@ -11,72 +13,78 @@ const stopBtn = document.getElementById('stopBtn');
 const publicationField = document.getElementById('publicationField');
 const publicationUrl = document.getElementById('publicationUrl');
 
+// URL input elements
+const articleUrl = document.getElementById('articleUrl');
+const fetchUrlBtn = document.getElementById('fetchUrlBtn');
+const urlFetchStatus = document.getElementById('urlFetchStatus');
+const toggleUrlBtn = document.getElementById('toggleUrlInput');
+const urlInputContainer = document.getElementById('urlInputContainer');
+const textInputContainer = document.getElementById('textInputContainer');
+
+// Sections
 const statusSection = document.getElementById('statusSection');
 const resultsSection = document.getElementById('resultsSection');
 const errorSection = document.getElementById('errorSection');
 const progressLog = document.getElementById('progressLog');
 
-// Mode selection elements
-const modeTabs = document.querySelectorAll('.mode-tab');
-const llmOutputInstructions = document.getElementById('llmOutputInstructions');
-const textFactcheckInstructions = document.getElementById('textFactcheckInstructions');
-const keyClaimsInstructions = document.getElementById('keyClaimsInstructions');
-const biasAnalysisInstructions = document.getElementById('biasAnalysisInstructions');
-const lieDetectionInstructions = document.getElementById('lieDetectionInstructions');
-const inputSectionTitle = document.getElementById('inputSectionTitle');
-const inputHelpText = document.getElementById('inputHelpText');
+// Mode selection elements (updated for new design)
+const modeCards = document.querySelectorAll('.mode-card');
 const contentFormatIndicator = document.getElementById('contentFormatIndicator');
 
 // Modal elements
 const plainTextModal = document.getElementById('plainTextModal');
-const switchToTextMode = document.getElementById('switchToTextMode');
 const switchToKeyClaimsMode = document.getElementById('switchToKeyClaimsMode');
 const switchToBiasMode = document.getElementById('switchToBiasMode');
 const switchToLieMode = document.getElementById('switchToLieMode');
 const continueAnyway = document.getElementById('continueAnyway');
 const closeModal = document.getElementById('closeModal');
 
-// Tab elements
+// Results tab elements
 const factCheckTab = document.getElementById('factCheckTab');
 const keyClaimsTab = document.getElementById('keyClaimsTab');
 const biasAnalysisTab = document.getElementById('biasAnalysisTab');
 const lieDetectionTab = document.getElementById('lieDetectionTab');
+const manipulationTab = document.getElementById('manipulationTab');
+
+// Results panel elements
 const factCheckResults = document.getElementById('factCheckResults');
 const keyClaimsResults = document.getElementById('keyClaimsResults');
 const biasAnalysisResults = document.getElementById('biasAnalysisResults');
 const lieDetectionResults = document.getElementById('lieDetectionResults');
+const manipulationResults = document.getElementById('manipulationResults');
 
 // Model tabs for bias analysis
 const modelTabs = document.querySelectorAll('.model-tab');
 
-const factsList = document.getElementById('factsList');
-const keyClaimsList = document.getElementById('keyClaimsList');
+// Container elements
+const factsContainer = document.getElementById('factsContainer');
+const keyClaimsContainer = document.getElementById('keyClaimsContainer');
+
+// Action buttons
 const exportBtn = document.getElementById('exportBtn');
 const newCheckBtn = document.getElementById('newCheckBtn');
 const retryBtn = document.getElementById('retryBtn');
 
-// Manipulation mode elements
-const manipulationInstructions = document.getElementById('manipulationInstructions');
-const manipulationTab = document.getElementById('manipulationTab');
-const manipulationResults = document.getElementById('manipulationResults');
-
-// Modal element for manipulation
-const switchToManipulationMode = document.getElementById('switchToManipulationMode');
-
-
 // ============================================
-// STATE
+// APPLICATION STATE
 // ============================================
 
 const AppState = {
-    currentMode: 'llm-output', // 'llm-output', 'text-factcheck', 'key-claims', 'bias-analysis', 'lie-detection', 'manipulation'
+    // Current mode: 'key-claims', 'bias-analysis', 'lie-detection', 'manipulation', 'text-factcheck', 'llm-output'
+    currentMode: 'key-claims',
+    
+    // Results storage
     currentLLMVerificationResults: null,
     currentFactCheckResults: null,
     currentKeyClaimsResults: null,
     currentBiasResults: null,
     currentLieDetectionResults: null,
     currentManipulationResults: null,
+    
+    // Active streams
     activeEventSources: [],
+    
+    // Job IDs
     currentJobIds: {
         llmVerification: null,
         factCheck: null,
@@ -85,7 +93,12 @@ const AppState = {
         lieDetection: null,
         manipulation: null
     },
+    
+    // Pending content for modal flow
     pendingContent: null,
+    
+    // Last fetched article data
+    lastFetchedArticle: null,
 
     // Helper methods
     clearResults() {
@@ -94,13 +107,15 @@ const AppState = {
         this.currentKeyClaimsResults = null;
         this.currentBiasResults = null;
         this.currentLieDetectionResults = null;
-        this.currentJobIds.llmVerification = null;
-        this.currentJobIds.factCheck = null;
-        this.currentJobIds.keyClaims = null;
-        this.currentJobIds.biasCheck = null;
-        this.currentJobIds.lieDetection = null;
         this.currentManipulationResults = null;
-        this.currentJobIds.manipulation = null;
+        this.currentJobIds = {
+            llmVerification: null,
+            factCheck: null,
+            keyClaims: null,
+            biasCheck: null,
+            lieDetection: null,
+            manipulation: null
+        };
     },
 
     closeAllStreams() {
@@ -114,3 +129,15 @@ const AppState = {
         this.activeEventSources = [];
     }
 };
+
+// ============================================
+// HELPER GETTERS
+// ============================================
+
+function getLastFetchedArticle() {
+    return AppState.lastFetchedArticle;
+}
+
+function setLastFetchedArticle(data) {
+    AppState.lastFetchedArticle = data;
+}

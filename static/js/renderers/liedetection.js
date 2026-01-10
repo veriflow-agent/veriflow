@@ -1,4 +1,5 @@
 // static/js/renderers/liedetection.js - Lie Detection Rendering
+// VeriFlow Redesign - Minimalist Theme
 
 // ============================================
 // DISPLAY LIE DETECTION RESULTS
@@ -6,72 +7,77 @@
 
 function displayLieDetectionResults() {
     if (!AppState.currentLieDetectionResults || !AppState.currentLieDetectionResults.success) {
+        console.error('No lie detection results available');
         return;
     }
 
-    const analysis = AppState.currentLieDetectionResults.analysis;
+    console.log('Displaying Lie Detection Results:', AppState.currentLieDetectionResults);
 
-    // Risk level
-    const riskElement = document.getElementById('lieRiskLevel');
-    riskElement.textContent = analysis.risk_level;
-    riskElement.className = `risk-value risk-${analysis.risk_level.toLowerCase()}`;
+    const data = AppState.currentLieDetectionResults;
+    const analysis = data.analysis || data;
 
-    // Credibility score
-    const scoreElement = document.getElementById('lieCredibilityScore');
-    scoreElement.textContent = `${analysis.credibility_score}/100`;
-    const credClass = analysis.credibility_score >= 80 ? 'high' : analysis.credibility_score >= 60 ? 'medium' : 'low';
-    scoreElement.className = `credibility-value credibility-${credClass}`;
+    // Score display
+    const scoreElement = document.getElementById('lieScore');
+    if (scoreElement) {
+        const score = analysis.credibility_score || 0;
+        scoreElement.textContent = score;
+        scoreElement.className = `lie-score-value ${getLieScoreClass(score)}`;
+    }
 
-    // Overall assessment
-    document.getElementById('lieOverallAssessment').textContent = analysis.overall_assessment;
+    // Verdict/Risk level
+    const verdictElement = document.getElementById('lieVerdict');
+    if (verdictElement) {
+        const riskLevel = analysis.risk_level || 'Unknown';
+        verdictElement.textContent = `${riskLevel} Risk`;
+        verdictElement.className = `lie-verdict risk-${riskLevel.toLowerCase()}`;
+    }
+
+    // Justification/Assessment
+    const justificationElement = document.getElementById('lieJustification');
+    if (justificationElement) {
+        justificationElement.textContent = analysis.overall_assessment || '';
+    }
 
     // Markers detected
-    const markersContainer = document.getElementById('lieMarkersContainer');
-    markersContainer.innerHTML = '';
+    const markersContainer = document.getElementById('lieIndicators');
+    if (markersContainer) {
+        markersContainer.innerHTML = '';
 
-    if (analysis.markers_detected && analysis.markers_detected.length > 0) {
-        analysis.markers_detected.forEach(marker => {
-            const markerCard = createMarkerCard(marker);
-            markersContainer.appendChild(markerCard);
-        });
-    } else {
-        markersContainer.innerHTML = '<p class="no-markers">✅ No significant deception markers detected.</p>';
+        if (analysis.markers_detected && analysis.markers_detected.length > 0) {
+            analysis.markers_detected.forEach(marker => {
+                markersContainer.appendChild(createMarkerCard(marker));
+            });
+        } else {
+            markersContainer.innerHTML = '<p class="no-markers">No significant deception markers detected.</p>';
+        }
+
+        // Add positive indicators section
+        if (analysis.positive_indicators && analysis.positive_indicators.length > 0) {
+            const positiveSection = createPositiveIndicatorsSection(analysis.positive_indicators);
+            markersContainer.appendChild(positiveSection);
+        }
     }
-
-    // Positive indicators
-    const positiveContainer = document.getElementById('liePositiveIndicators');
-    positiveContainer.innerHTML = '';
-
-    if (analysis.positive_indicators && analysis.positive_indicators.length > 0) {
-        const list = document.createElement('ul');
-        list.className = 'positive-list';
-        analysis.positive_indicators.forEach(indicator => {
-            const li = document.createElement('li');
-            li.textContent = indicator;
-            list.appendChild(li);
-        });
-        positiveContainer.appendChild(list);
-    } else {
-        positiveContainer.innerHTML = '<p>No positive indicators documented.</p>';
-    }
-
-    // Conclusion and reasoning
-    document.getElementById('lieConclusion').textContent = analysis.conclusion;
-    document.getElementById('lieDetailedReasoning').textContent = analysis.reasoning;
 
     // Session info
-    document.getElementById('lieSessionId').textContent = AppState.currentLieDetectionResults.session_id || '-';
-    document.getElementById('lieProcessingTime').textContent = Math.round(AppState.currentLieDetectionResults.processing_time || 0) + 's';
+    const sessionId = document.getElementById('lieSessionId');
+    const processingTime = document.getElementById('lieProcessingTime');
+
+    if (sessionId) sessionId.textContent = data.session_id || '-';
+    if (processingTime) processingTime.textContent = Math.round(data.processing_time || 0) + 's';
 
     // R2 link
-    if (AppState.currentLieDetectionResults.r2_url) {
-        const link = document.getElementById('lieR2Link');
-        link.href = AppState.currentLieDetectionResults.r2_url;
-        link.style.display = 'inline';
-        document.getElementById('lieR2Sep').style.display = 'inline';
-    } else {
-        document.getElementById('lieR2Link').style.display = 'none';
-        document.getElementById('lieR2Sep').style.display = 'none';
+    const r2Link = document.getElementById('lieR2Link');
+    const r2Sep = document.getElementById('lieR2Sep');
+
+    if (r2Link && r2Sep) {
+        if (data.r2_url || data.audit_url) {
+            r2Link.href = data.r2_url || data.audit_url;
+            r2Link.style.display = 'inline';
+            r2Sep.style.display = 'inline';
+        } else {
+            r2Link.style.display = 'none';
+            r2Sep.style.display = 'none';
+        }
     }
 }
 
@@ -81,21 +87,65 @@ function displayLieDetectionResults() {
 
 function createMarkerCard(marker) {
     const card = document.createElement('div');
-    card.className = `marker-card severity-${marker.severity.toLowerCase()}`;
+    card.className = 'marker-card';
 
-    const examplesList = marker.examples.map(ex => `<li>${escapeHtml(ex)}</li>`).join('');
+    const severity = marker.severity || marker.weight || 'medium';
+    const severityClass = getSeverityClass(severity);
 
     card.innerHTML = `
         <div class="marker-header">
-            <h4>${escapeHtml(marker.category)}</h4>
-            <span class="severity-badge">${marker.severity}</span>
+            <span class="marker-type">${escapeHtml(marker.type || marker.category || 'Marker')}</span>
+            <span class="marker-severity ${severityClass}">${capitalizeFirst(severity)}</span>
         </div>
-        <div class="marker-explanation">${escapeHtml(marker.explanation)}</div>
-        <div class="marker-examples">
-            <strong>Examples from text:</strong>
-            <ul>${examplesList}</ul>
-        </div>
+        <div class="marker-description">${escapeHtml(marker.description || marker.text || '')}</div>
+        ${marker.example ? `<div class="marker-example">"${escapeHtml(marker.example)}"</div>` : ''}
     `;
 
     return card;
+}
+
+// ============================================
+// CREATE POSITIVE INDICATORS SECTION
+// ============================================
+
+function createPositiveIndicatorsSection(indicators) {
+    const section = document.createElement('div');
+    section.className = 'positive-indicators-section';
+
+    section.innerHTML = `
+        <h4 class="section-title positive">Credibility Indicators</h4>
+        <ul class="positive-list">
+            ${indicators.map(indicator => `<li>${escapeHtml(typeof indicator === 'string' ? indicator : indicator.description || indicator.text)}</li>`).join('')}
+        </ul>
+    `;
+
+    return section;
+}
+
+// ============================================
+// HELPER FUNCTIONS
+// ============================================
+
+function getLieScoreClass(score) {
+    if (score >= 80) return 'score-high';
+    if (score >= 60) return 'score-medium';
+    return 'score-low';
+}
+
+function getSeverityClass(severity) {
+    switch (severity.toLowerCase()) {
+        case 'high':
+        case 'critical':
+            return 'severity-high';
+        case 'medium':
+        case 'moderate':
+            return 'severity-medium';
+        default:
+            return 'severity-low';
+    }
+}
+
+function capitalizeFirst(str) {
+    if (!str) return '';
+    return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
 }
