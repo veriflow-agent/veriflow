@@ -581,7 +581,8 @@ class KeyClaimsOrchestrator:
                 }
             )
 
-            return {
+            # ✅ BUILD RESULT DICT
+            result = {
                 "success": True,
                 "session_id": session_id,
                 "key_claims": [
@@ -639,10 +640,16 @@ class KeyClaimsOrchestrator:
                 }
             }
 
+            # ✅ CRITICAL: Mark job complete so SSE stream sends result to frontend!
+            job_manager.complete_job(job_id, result)
+
+            return result
+
         except Exception as e:
             error_msg = str(e)
             if "cancelled" in error_msg.lower():
                 job_manager.add_progress(job_id, "🛑 Verification cancelled")
+                job_manager.fail_job(job_id, "Cancelled by user") 
                 return {
                     "success": False,
                     "session_id": session_id,
@@ -664,9 +671,11 @@ class KeyClaimsOrchestrator:
                         session_id=session_id,
                         filename="search_audit_partial.json"
                     )
-                except:
+                except Exception:
                     pass
 
+            job_manager.fail_job(job_id, error_msg)
+                    
             return {
                 "success": False,
                 "session_id": session_id,
