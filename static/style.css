@@ -30,7 +30,7 @@
     --color-error-light: #FEE2E2;
     
     /* Neutral Colors */
-    --color-bg: #EDE6E3;
+    --color-bg: #F7F2ED;
     --color-surface: #FFFFFF;
     --color-surface-hover: #F8F6F5;
     --color-border: #DADAD9;
@@ -131,8 +131,7 @@ body {
 
 .logo-icon {
     width: 40px;
-    height: 40px;
-    border-radius: var(--radius-md);
+    height: 128px;
 }
 
 .logo-text {
