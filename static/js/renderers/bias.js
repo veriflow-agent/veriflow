@@ -122,18 +122,18 @@ function displayModelAnalysis(model, modelAnalysis) {
 
     const prefix = model === 'gpt' ? 'gpt' : 'claude';
 
-    // Score
+    // Score - FIX: Backend uses "overall_bias_score" not "bias_score"
     const scoreEl = document.getElementById(`${prefix}BiasScore`);
     if (scoreEl) {
-        const score = modelAnalysis.bias_score || modelAnalysis.score || 0;
+        const score = modelAnalysis.overall_bias_score || modelAnalysis.bias_score || modelAnalysis.score || 0;
         scoreEl.textContent = score.toFixed ? score.toFixed(1) : score;
         scoreEl.className = `bias-score-value ${getBiasScoreClass(score)}`;
     }
 
-    // Direction
+    // Direction - FIX: Backend uses "primary_bias_direction" not "bias_direction"
     const directionEl = document.getElementById(`${prefix}BiasDirection`);
     if (directionEl) {
-        directionEl.textContent = modelAnalysis.bias_direction || modelAnalysis.direction || 'Unknown';
+        directionEl.textContent = modelAnalysis.primary_bias_direction || modelAnalysis.bias_direction || modelAnalysis.direction || 'Unknown';
     }
 
     // Justification - check multiple possible field names
