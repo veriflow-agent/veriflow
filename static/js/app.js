@@ -357,6 +357,9 @@ function initUrlInputListeners() {
 
                 showUrlStatus('success', `Fetched: ${result.title || result.domain}`, result);
 
+                // ADD THIS LINE - Show the metadata panel
+                showArticleMetadata(result);
+
                 // Switch to text view to show content
                 showTextInput();
 
