@@ -325,12 +325,12 @@ def run_key_claims_task(
             }
         )
 
-        result = run_async_in_thread(
+        _ = run_async_in_thread(
             key_claims_orchestrator.process_with_progress(
                 text_content=content,
                 job_id=job_id,
-                source_context=source_context,        # NEW
-                source_credibility=source_credibility  # NEW
+                source_context=source_context,
+                source_credibility=source_credibility
             )
         )
 
@@ -343,17 +343,30 @@ def run_key_claims_task(
     finally:
         cleanup_thread_loop()
 
-@app.route('/api/check-bias', methods=['POST'])
+@app.route('/api/bias', methods=['POST'])
 def check_bias():
     '''Check text for political and other biases using multiple LLMs'''
     try:
-        # Get content from request
         request_json = request.get_json()
         if not request_json:
             return jsonify({"error": "Invalid request format"}), 400
 
         text = request_json.get('text') or request_json.get('content')
-        publication_url = request_json.get('publication_url')  # NEW: changed from publication_name
+        publication_url = request_json.get('publication_url')
+
+        # NEW: Accept source_context from new frontend
+        source_context = request_json.get('source_context')
+
+        # Convert source_context to source_credibility format if provided
+        source_credibility = None
+        if source_context:
+            source_credibility = {
+                'publication_name': source_context.get('publication'),
+                'tier': source_context.get('credibility_tier'),
+                'bias_rating': source_context.get('bias_rating'),
+                'factual_reporting': source_context.get('factual_reporting'),
+                'source': 'frontend_prefetched'
+            }
 
         if not text:
             return jsonify({"error": "No text provided"}), 400
@@ -379,7 +392,7 @@ def check_bias():
         # Start background processing
         threading.Thread(
             target=run_bias_task,
-            args=(job_id, text, publication_url),  # NEW: pass URL instead of name
+            args=(job_id, text, publication_url, source_credibility), 
             daemon=True
         ).start()
 
@@ -396,21 +409,62 @@ def check_bias():
             "message": "An error occurred during bias analysis"
         }), 500
 
-@app.route('/api/check-lie-detection', methods=['POST'])
+@app.route('/api/lie-detection', methods=['POST'])
 def check_lie_detection():
-    """Analyze text for linguistic markers of deception/fake news"""
+    """
+    Analyze text for linguistic markers of deception/fake news.
+
+    NEW API endpoint (replaces /api/check-lie-detection).
+    Accepts source_context from new frontend for credibility calibration.
+
+    Request body:
+        {
+            "content": "Text to analyze...",
+            "text": "Text to analyze...",           // Alternative field name
+            "article_source": "Publication name",   // Optional
+            "article_date": "2024-01-15",          // Optional
+            "source_context": {                     // NEW - from frontend
+                "publication": "Fox News",
+                "credibility_tier": 3,
+                "bias_rating": "RIGHT",
+                "factual_reporting": "MIXED"
+            },
+            "source_credibility": {...}            // Legacy - direct pass-through
+        }
+
+    Returns:
+        {"job_id": "...", "status": "processing", "message": "..."}
+    """
     try:
         # Get content from request
         request_json = request.get_json()
         if not request_json:
             return jsonify({"error": "Invalid request format"}), 400
 
+        # Accept both 'text' and 'content' field names
         text = request_json.get('text') or request_json.get('content')
-        article_source = request_json.get('article_source')  # Optional: publication name
-        article_date = request_json.get('article_date')      # Optional: publication date
+        article_source = request_json.get('article_source')
+        article_date = request_json.get('article_date')
 
-        # NEW: Accept pre-fetched credibility data
+        # Handle source credibility - two possible formats:
+        # 1. Direct source_credibility (legacy/internal)
+        # 2. source_context from new frontend (needs conversion)
         source_credibility = request_json.get('source_credibility')
+        source_context = request_json.get('source_context')
+
+        # Convert source_context to source_credibility format if provided
+        if source_context and not source_credibility:
+            source_credibility = {
+                'publication_name': source_context.get('publication'),
+                'tier': source_context.get('credibility_tier'),
+                'credibility_tier': source_context.get('credibility_tier'),  # Some functions expect this key
+                'bias_rating': source_context.get('bias_rating'),
+                'factual_reporting': source_context.get('factual_reporting'),
+                'source': 'frontend_prefetched'
+            }
+            # Use publication as article_source if not provided
+            if not article_source and source_context.get('publication'):
+                article_source = source_context.get('publication')
 
         if not text:
             return jsonify({"error": "No text provided"}), 400
@@ -427,7 +481,8 @@ def check_lie_detection():
                 "text_length": len(text),
                 "has_source": bool(article_source),
                 "has_date": bool(article_date),
-                "has_prefetched_credibility": source_credibility is not None  # NEW
+                "has_source_credibility": source_credibility is not None,
+                "credibility_source": source_credibility.get('source') if source_credibility else None
             }
         )
 
@@ -438,7 +493,7 @@ def check_lie_detection():
         # Start background processing
         threading.Thread(
             target=run_lie_detection_task,
-            args=(job_id, text, article_source, article_date, source_credibility),  # UPDATED
+            args=(job_id, text, article_source, article_date, source_credibility),
             daemon=True
         ).start()
 
@@ -560,13 +615,13 @@ def run_lie_detection_task(
             }
         )
 
-        result = run_async_in_thread(
+        _ = run_async_in_thread(
             lie_detector_orchestrator.process_with_progress(
                 text=text,
                 job_id=job_id,
                 article_source=article_source,
                 publication_date=article_date,
-                source_credibility=source_credibility  # NEW: Pass through
+                source_credibility=source_credibility
             )
         )
 
@@ -607,12 +662,12 @@ def run_manipulation_task(
             }
         )
 
-        result = run_async_in_thread(
+        _ = run_async_in_thread(
             manipulation_orchestrator.process_with_progress(
                 content=content,
                 job_id=job_id,
                 source_info=source_info,
-                source_credibility=source_credibility  # NEW: Pass through
+                source_credibility=source_credibility
             )
         )
 
@@ -665,27 +720,38 @@ def run_async_task(job_id: str, content: str, input_format: str):
     finally:
         cleanup_thread_loop()
 
-def run_bias_task(job_id: str, text: str, publication_url: Optional[str] = None):
-    """Background task for bias checking with MBFC lookup"""
+def run_bias_task(
+    job_id: str, 
+    text: str, 
+    publication_url: Optional[str],
+    source_credibility: Optional[Dict] = None
+):
+    """Background task runner for bias analysis."""
     try:
         if bias_orchestrator is None:
             raise ValueError("Bias orchestrator not initialized")
 
-        fact_logger.logger.info(f"🔄 Starting bias check job: {job_id}")
+        fact_logger.logger.info(
+            f"📊 Job {job_id}: Starting bias analysis",
+            extra={
+                "has_publication_url": bool(publication_url),
+                "has_credibility": source_credibility is not None
+            }
+        )
 
-        result = run_async_in_thread(
-            bias_orchestrator.process_with_progress(
+        _ = run_async_in_thread(
+            bias_orchestrator.process(
                 text=text,
-                publication_url=publication_url,  # NEW: pass URL for MBFC lookup
-                job_id=job_id
+                publication_url=publication_url,
+                source_credibility=source_credibility
             )
         )
 
-        job_manager.complete_job(job_id, result)
+        job_manager.complete_job(job_id, _)
         fact_logger.logger.info(f"✅ Bias check job {job_id} completed successfully")
 
     except Exception as e:
-        fact_logger.logger.error(f"❌ Bias check failed: {e}")
+        fact_logger.log_component_error(f"Bias Job {job_id}", e)
         job_manager.fail_job(job_id, str(e))
     finally:
         cleanup_thread_loop()
