@@ -1,0 +1,400 @@
+How it works · HTML
+Copy
+
+<!-- templates/how-it-works.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How It Works - VeriFlow</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        .how-it-works-container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 2rem;
+            line-height: 1.7;
+        }
+
+        .page-hero {
+            margin-bottom: 3rem;
+        }
+
+        .page-hero h1 {
+            font-size: 2rem;
+            font-weight: 600;
+            color: #1a1a2e;
+            margin-bottom: 1rem;
+        }
+
+        .page-hero .lead {
+            font-size: 1.125rem;
+            color: #4a5568;
+        }
+
+        .section {
+            margin-bottom: 3rem;
+        }
+
+        .section-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: #1a1a2e;
+            margin-bottom: 1.5rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        .subsection-title {
+            font-size: 1.125rem;
+            font-weight: 600;
+            color: #1a1a2e;
+            margin: 2rem 0 1rem;
+        }
+
+        p {
+            color: #4a5568;
+            margin-bottom: 1rem;
+        }
+
+        ul {
+            color: #4a5568;
+            margin: 1rem 0 1.5rem 1.5rem;
+        }
+
+        li {
+            margin-bottom: 0.5rem;
+        }
+
+        .comparison-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1.5rem 0;
+            font-size: 0.9375rem;
+        }
+
+        .comparison-table th,
+        .comparison-table td {
+            padding: 0.75rem 1rem;
+            text-align: left;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        .comparison-table th {
+            font-weight: 600;
+            color: #1a1a2e;
+        }
+
+        .comparison-table td {
+            color: #4a5568;
+        }
+
+        .mode-block {
+            margin-bottom: 2rem;
+        }
+
+        .mode-block h3 {
+            font-size: 1.125rem;
+            font-weight: 600;
+            color: #1a1a2e;
+            margin-bottom: 0.5rem;
+        }
+
+        .mode-block .best-for {
+            font-size: 0.875rem;
+            color: #64748b;
+            margin-bottom: 0.75rem;
+        }
+
+        .tier-block {
+            margin-bottom: 1.5rem;
+        }
+
+        .tier-block h4 {
+            font-size: 1rem;
+            font-weight: 600;
+            color: #1a1a2e;
+            margin-bottom: 0.5rem;
+        }
+
+        .steps-list {
+            counter-reset: step;
+            list-style: none;
+            margin-left: 0;
+            padding-left: 0;
+        }
+
+        .steps-list li {
+            counter-increment: step;
+            padding-left: 2rem;
+            position: relative;
+        }
+
+        .steps-list li::before {
+            content: counter(step) ".";
+            position: absolute;
+            left: 0;
+            font-weight: 600;
+            color: #1a1a2e;
+        }
+
+        .cta-section {
+            text-align: center;
+            padding: 2rem;
+            margin-top: 2rem;
+            border-top: 1px solid #e2e8f0;
+        }
+
+        .cta-section h3 {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: #1a1a2e;
+            margin-bottom: 0.5rem;
+        }
+
+        .cta-section p {
+            margin-bottom: 1.5rem;
+        }
+
+        .cta-button {
+            display: inline-block;
+            background: #1a1a2e;
+            color: #fff;
+            padding: 0.75rem 2rem;
+            border-radius: 6px;
+            font-weight: 500;
+            text-decoration: none;
+        }
+
+        .cta-button:hover {
+            background: #2d2d44;
+        }
+
+        .tagline {
+            text-align: center;
+            font-style: italic;
+            color: #64748b;
+            margin-top: 3rem;
+            padding-top: 2rem;
+            border-top: 1px solid #e2e8f0;
+        }
+
+        .powered-list {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 2rem;
+        }
+
+        .powered-list li {
+            margin: 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <header class="app-header">
+            <div class="header-logo">
+                <img src="{{ url_for('static', filename='icons/logo.png') }}" alt="VeriFlow" class="logo-icon">
+                <span class="logo-text">VeriFlow</span>
+            </div>
+            <nav class="header-nav">
+                <a href="/" class="nav-link">Analyze</a>
+                <a href="/how-it-works" class="nav-link active">How it works</a>
+                <a href="#about" class="nav-link">About</a>
+            </nav>
+        </header>
+
+        <main class="how-it-works-container">
+            <section class="page-hero">
+                <h1>How VeriFlow Works</h1>
+                <p class="lead">Propaganda, fact distortion, and public opinion manipulation aren't new — but they've never spread faster. From state-sponsored disinformation to politically motivated news coverage, human actors with agendas work daily to shape what you believe. VeriFlow fights back with surgical, non-emotional analysis that cuts through the noise.</p>
+            </section>
+
+            <section class="section">
+                <h2 class="section-title">Why AI for Fact-Checking?</h2>
+                <p>You might wonder: can we trust AI to analyze bias when AI itself can be biased? It's a fair question — and the answer lies in <em>how</em> VeriFlow uses AI.</p>
+
+                <h3 class="subsection-title">The Problem with Consumer AI Products</h3>
+                <p>When you use ChatGPT, Grok, or DeepSeek as consumer products, you're interacting with AI that has been shaped by its creators' values and business interests through hidden system prompts. These prompts tell the AI how to behave, what to avoid, and sometimes what narratives to favor.</p>
+                <p>This isn't theoretical. Documented examples include:</p>
+                <ul>
+                    <li>Grok being explicitly instructed to "assume subjective viewpoints sourced from the media are biased" and "not shy away from politically incorrect" content — instructions that led to well-publicized incidents of extreme content</li>
+                    <li>DeepSeek systematically refusing to discuss topics sensitive to Chinese government interests (Tiananmen Square, Tibet, Taiwan) and displaying pro-China bias in geopolitical responses</li>
+                </ul>
+                <p>These aren't bugs — they're features. Consumer AI products reflect their creators' ideologies, whether that's a tech billionaire's political views or a government's censorship requirements.</p>
+
+                <h3 class="subsection-title">How VeriFlow Is Different</h3>
+                <p>VeriFlow accesses AI models directly through APIs, bypassing the pre-packaged system prompts of consumer products. This gives us complete control over how the AI behaves.</p>
+                <table class="comparison-table">
+                    <thead>
+                        <tr>
+                            <th>Consumer Products</th>
+                            <th>VeriFlow's API Approach</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Hidden system prompts set by company</td>
+                            <td>Custom prompts designed for objective analysis</td>
+                        </tr>
+                        <tr>
+                            <td>Reflects creator's ideology</td>
+                            <td>Prompts focused purely on verification tasks</td>
+                        </tr>
+                        <tr>
+                            <td>"Personality" and opinions baked in</td>
+                            <td>Strict, clinical instructions with no editorializing</td>
+                        </tr>
+                        <tr>
+                            <td>High temperature = creative, unpredictable</td>
+                            <td>Low temperature = deterministic, fact-focused</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h3 class="subsection-title">Verification vs. Opinion</h3>
+                <p>LLMs are most prone to hallucination when asked to generate opinions, make predictions, or create content from scratch. But VeriFlow doesn't ask AI to <em>evaluate</em> what's true — we ask it to <em>verify</em> claims against evidence.</p>
+                <p>The difference is crucial:</p>
+                <ul>
+                    <li><strong>Opinion task:</strong> "Is this article biased?" — the AI must form a judgment</li>
+                    <li><strong>Verification task:</strong> "Does Source A support Claim B? Quote the relevant text." — the AI compares and reports</li>
+                </ul>
+                <p>By constraining AI to structured verification tasks — extracting claims, finding sources, comparing text, identifying discrepancies — we minimize the space for hallucination or bias. The AI isn't deciding what's true; it's showing you what the evidence says.</p>
+
+                <h3 class="subsection-title">Built-In Transparency</h3>
+                <p>Every VeriFlow analysis includes the exact sources consulted, relevant quotes from those sources, confidence scores based on evidence strength, and full audit trails you can verify yourself.</p>
+                <p>We don't ask you to trust the AI. We give you the receipts.</p>
+            </section>
+
+            <section class="section">
+                <h2 class="section-title">Six Analysis Modes</h2>
+
+                <div class="mode-block">
+                    <h3>Key Claims Analysis</h3>
+                    <p class="best-for">Best for: Quick verification of main arguments</p>
+                    <p>When you need fast answers, Key Claims mode extracts the 2-3 most important factual claims from any text and verifies each one against trusted web sources. Perfect for headlines, social media posts, or when you just want the bottom line.</p>
+                </div>
+
+                <div class="mode-block">
+                    <h3>Full Fact-Check</h3>
+                    <p class="best-for">Best for: Comprehensive verification of articles</p>
+                    <p>Full Fact-Check mode extracts all verifiable facts from your text — dates, statistics, names, events — and checks each one against multiple credible sources. Ideal for research, journalism, or when accuracy matters.</p>
+                </div>
+
+                <div class="mode-block">
+                    <h3>LLM Output Verification</h3>
+                    <p class="best-for">Best for: Checking if AI tools interpreted sources correctly</p>
+                    <p>AI assistants cite sources, but did they read them accurately? This mode scrapes the actual sources an LLM cited and compares what the AI said against what the sources actually state. Catches misinterpretations, cherry-picking, and hallucinations.</p>
+                </div>
+
+                <div class="mode-block">
+                    <h3>Bias Analysis</h3>
+                    <p class="best-for">Best for: Understanding political and ideological slant</p>
+                    <p>Every outlet has a perspective. Bias Analysis reveals it. This mode detects political lean, loaded language, framing choices, and story selection patterns. Enter the publication name for additional context from our credibility database.</p>
+                </div>
+
+                <div class="mode-block">
+                    <h3>Manipulation Detection</h3>
+                    <p class="best-for">Best for: Uncovering deliberate distortion in content</p>
+                    <p>Beyond bias lies deliberate manipulation. This mode catches selective omission, context stripping, false equivalence, and other techniques used to mislead readers. Essential for evaluating op-eds, political content, and advocacy pieces.</p>
+                </div>
+
+                <div class="mode-block">
+                    <h3>Lie Detection</h3>
+                    <p class="best-for">Best for: Analyzing linguistic markers of deception</p>
+                    <p>This mode examines text for patterns commonly associated with deceptive communication: hedging language, distancing phrases, excessive qualifiers, and inconsistencies. Useful for evaluating statements, interviews, and official communications.</p>
+                </div>
+            </section>
+
+            <section class="section">
+                <h2 class="section-title">Technology</h2>
+
+                <h3 class="subsection-title">Multi-Agent Architecture</h3>
+                <p>VeriFlow uses a multi-agent system where specialized AI agents handle different tasks: the Fact Extractor identifies verifiable claims, the Query Generator creates search queries in multiple languages, the Credibility Filter evaluates source reliability, the Highlighter extracts relevant excerpts, the Fact Checker compares claims against evidence, the Bias Analyzer detects ideological lean, and the Manipulation Detector identifies distortion techniques.</p>
+
+                <h3 class="subsection-title">Source Credibility System</h3>
+                <p>VeriFlow uses a three-tier credibility system. When sources conflict, Tier 1 always takes precedence.</p>
+
+                <div class="tier-block">
+                    <h4>Tier 1 — Primary Authority</h4>
+                    <p>Official websites of entities mentioned, government sources, major news organizations (Reuters, AP, BBC, NYT), academic institutions, Wikipedia, verified social media accounts.</p>
+                </div>
+
+                <div class="tier-block">
+                    <h4>Tier 2 — Credible Secondary</h4>
+                    <p>Established publications with editorial standards, industry publications, trade journals, professional review sites, reputable blogs with author credentials.</p>
+                </div>
+
+                <div class="tier-block">
+                    <h4>Tier 3 — Filtered Out</h4>
+                    <p>Personal blogs without credentials, user-generated content, clickbait sites, sources with poor factual track records.</p>
+                </div>
+
+                <h3 class="subsection-title">Real-Time Verification</h3>
+                <p>Unlike cached solutions, VeriFlow scrapes content fresh for every analysis. Sources reflect what's published now, not stale cached data.</p>
+
+                <h3 class="subsection-title">Parallel Processing</h3>
+                <p>Complex fact-checks can involve dozens of claims and hundreds of sources. VeriFlow processes everything in parallel — facts verified simultaneously, searches running concurrently, scraping in batches — resulting in 60-70% faster processing than sequential methods.</p>
+            </section>
+
+            <section class="section">
+                <h2 class="section-title">What You Get</h2>
+                <p>Every analysis includes:</p>
+                <ul>
+                    <li>Confidence scores showing how well each claim is supported</li>
+                    <li>Source citations with links to the actual sources used</li>
+                    <li>Detailed reasoning explaining the assessment</li>
+                    <li>Session reports with downloadable audit trails</li>
+                </ul>
+
+                <h3 class="subsection-title">Verification Categories</h3>
+                <ul>
+                    <li><strong>Verified (85-100%)</strong> — Strongly supported by credible sources</li>
+                    <li><strong>Partially Verified (50-84%)</strong> — Some support, but with caveats or missing context</li>
+                    <li><strong>Unverified (0-49%)</strong> — Contradicted by evidence or no credible support found</li>
+                </ul>
+            </section>
+
+            <section class="section">
+                <h2 class="section-title">Getting Started</h2>
+                <ol class="steps-list">
+                    <li>Choose your mode — select the analysis type that fits your needs</li>
+                    <li>Paste your content — article text, LLM output with links, or enter a URL</li>
+                    <li>Click Analyze — VeriFlow does the rest</li>
+                    <li>Review results — explore detailed findings with source links</li>
+                </ol>
+                <p>Analysis typically takes 1-3 minutes depending on content complexity.</p>
+            </section>
+
+            <section class="section">
+                <h2 class="section-title">Powered By</h2>
+                <ul class="powered-list">
+                    <li>GPT-4o</li>
+                    <li>LangChain</li>
+                    <li>Brave Search</li>
+                    <li>Browserless</li>
+                </ul>
+            </section>
+
+            <section class="cta-section">
+                <h3>Ready to verify?</h3>
+                <p>Start fact-checking in seconds.</p>
+                <a href="/" class="cta-button">Try VeriFlow</a>
+            </section>
+
+            <p class="tagline">VeriFlow: Because the truth shouldn't be hard to find.</p>
+        </main>
+
+        <footer class="app-footer">
+            <p>Powered by LangChain + GPT-4</p>
+        </footer>
+    </div>
+</body>
+</html>

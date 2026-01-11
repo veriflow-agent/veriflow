@@ -152,6 +152,10 @@ def index():
     """Serve the main HTML interface"""
     return render_template('index.html')
 
+@app.route('/how-it-works')
+def how_it_works():
+    return render_template('how-it-works.html')
+
 
 @app.route('/api/check', methods=['POST'])
 def check_facts():
