@@ -27,7 +27,6 @@
             <!-- Hero Section -->
             <section class="hero-section">
                 <h1 class="hero-title">AI Content Analyzer</h1>
-                <p class="hero-subtitle">Verify facts, analyze bias, and detect manipulation in media articles</p>
             </section>
 
             <!-- Mode Selection Section -->
@@ -55,7 +54,7 @@
                         <img src="{{ url_for('static', filename='icons/lie_detector.png') }}" alt="" class="mode-icon">
                         <div class="mode-content">
                             <span class="mode-label">Deception Detection</span>
-                            <span class="mode-desc">Find deception markers</span>
+                            <span class="mode-desc">Find linguistic markers of deception and disinformation</span>
                         </div>
                     </button>
 
@@ -72,7 +71,7 @@
                         <img src="{{ url_for('static', filename='icons/fact_check.png') }}" alt="" class="mode-icon">
                         <div class="mode-content">
                             <span class="mode-label">Full Fact-Check</span>
-                            <span class="mode-desc">Comprehensive analysis</span>
+                            <span class="mode-desc">(NOT READY YET) Comprehensive analysis</span>
                         </div>
                     </button>
 
@@ -144,21 +143,30 @@
             <!-- Mode Instructions (hidden by default, shown contextually) -->
             <section class="mode-instructions" style="display: none;">
                 <!-- LLM Output Instructions -->
-                <div id="llmOutputInstructions" class="instructions-card" style="display: none;">
-                    <h3>LLM Output Verification</h3>
-                    <p>Verify that AI-generated content accurately interprets its cited sources.</p>
-                    <div class="instructions-steps">
-                        <div class="step">
-                            <span class="step-number">1</span>
-                            <span class="step-text">Copy output from <strong>ChatGPT</strong>, <strong>Perplexity</strong>, or other AI</span>
+                <div id="llmOutputInstructions" class="mode-instructions">
+                    <div class="instructions-card">
+                        <h3>📋 How to Verify LLM Output</h3>
+                        <div class="instructions-steps">
+                            <div class="step">
+                                <span class="step-number">1</span>
+                                <span class="step-text">Go to <strong>ChatGPT</strong>, <strong>Perplexity</strong>, or any LLM chat</span>
+                            </div>
+                            <div class="step">
+                                <span class="step-number">2</span>
+                                <span class="step-text">Ask a question and get a response with <strong>source citations/links</strong></span>
+                            </div>
+                            <div class="step">
+                                <span class="step-number">3</span>
+                                <span class="step-text">Click the <strong>📋 Copy button</strong> on the AI response (every chat has one)</span>
+                            </div>
+                            <div class="step">
+                                <span class="step-number">4</span>
+                                <span class="step-text">Paste it below and click <strong>Analyze</strong></span>
+                            </div>
                         </div>
-                        <div class="step">
-                            <span class="step-number">2</span>
-                            <span class="step-text">Paste below (include all source links)</span>
-                        </div>
-                        <div class="step">
-                            <span class="step-number">3</span>
-                            <span class="step-text">We'll check if claims match the cited sources</span>
+                        <div class="instructions-note">
+                            <span class="note-icon">💡</span>
+                            <span>The copy button preserves source links in the correct format for verification</span>
                         </div>
                     </div>
                 </div>

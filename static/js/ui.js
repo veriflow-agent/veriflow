@@ -97,10 +97,18 @@ function switchMode(mode) {
 
     // Update placeholder text
     updatePlaceholder(mode);
-    
+
     // Hide content format indicator when switching modes
     hideContentFormatIndicator();
-    
+
+    // Hide URL toggle button for LLM output mode (copy-paste only)
+    if (toggleUrlBtn) {
+        toggleUrlBtn.style.display = mode === 'llm-output' ? 'none' : '';
+    }
+
+    // Ensure text input is shown when switching modes (reset to default)
+    showTextInput();
+
     console.log('Mode switched to:', mode);
 }
 
