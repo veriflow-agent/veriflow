@@ -20,8 +20,8 @@
     /* Primary Colors */
     --color-primary: #5BC3EB;
     --color-primary-hover: #4AB3DB;
-    --color-active: #8B9A7D;
-    --color-active-light: #A8B89E;
+    --color-active: #5c5d5e;
+    --color-active-light: #5c5d5e;
     
     /* Status Colors */
     --color-success: #6B9B6B;
@@ -167,8 +167,9 @@ body {
 }
 
 .hero-title {
+    font-family: 'Bodoni Moda', serif;
     font-size: var(--font-size-3xl);
-    font-weight: 700;
+    font-weight: 500;
     color: var(--color-text);
     margin-bottom: var(--space-3);
     letter-spacing: -0.02em;
@@ -207,6 +208,7 @@ body {
 .mode-card {
     display: flex;
     align-items: center;
+    justify-content: left;
     gap: var(--space-4);
     padding: var(--space-5);
     background: var(--color-surface);
@@ -257,8 +259,9 @@ body {
 }
 
 .mode-label {
+    font-family: 'Bodoni Moda', serif;
     font-size: var(--font-size-base);
-    font-weight: 600;
+    font-weight: 700;
     color: var(--color-text);
 }
 

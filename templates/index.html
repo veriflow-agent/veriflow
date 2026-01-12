@@ -9,6 +9,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
     <div class="app-container">
@@ -36,7 +37,6 @@
                 <div class="mode-grid">
                     <!-- Row 1: 3 cards -->
                     <button class="mode-card active" data-mode="key-claims">
-                        <img src="{{ url_for('static', filename='icons/key_claims.png') }}" alt="" class="mode-icon">
                         <div class="mode-content">
                             <span class="mode-label">Key Claims</span>
                             <span class="mode-desc">Verify 2-3 main arguments</span>
@@ -44,7 +44,6 @@
                     </button>
 
                     <button class="mode-card" data-mode="bias-analysis">
-                        <img src="{{ url_for('static', filename='icons/bias.png') }}" alt="" class="mode-icon">
                         <div class="mode-content">
                             <span class="mode-label">Bias Analysis</span>
                             <span class="mode-desc">Detect political or ideological bias</span>
@@ -52,7 +51,6 @@
                     </button>
 
                     <button class="mode-card" data-mode="lie-detection">
-                        <img src="{{ url_for('static', filename='icons/lie_detector.png') }}" alt="" class="mode-icon">
                         <div class="mode-content">
                             <span class="mode-label">Deception Detection</span>
                             <span class="mode-desc">Find linguistic markers of deception and disinformation</span>
@@ -61,7 +59,6 @@
 
                     <!-- Row 2: 3 cards -->
                     <button class="mode-card" data-mode="manipulation">
-                        <img src="{{ url_for('static', filename='icons/manipulation.png') }}" alt="" class="mode-icon">
                         <div class="mode-content">
                             <span class="mode-label">Manipulation Check</span>
                             <span class="mode-desc">Detect agenda & fact distortion</span>
@@ -69,7 +66,6 @@
                     </button>
 
                     <button class="mode-card" data-mode="text-factcheck">
-                        <img src="{{ url_for('static', filename='icons/fact_check.png') }}" alt="" class="mode-icon">
                         <div class="mode-content">
                             <span class="mode-label">Full Fact-Check</span>
                             <span class="mode-desc">(NOT READY YET) Comprehensive analysis</span>
@@ -77,7 +73,6 @@
                     </button>
 
                     <button class="mode-card" data-mode="llm-output">
-                        <img src="{{ url_for('static', filename='icons/llm_output.png') }}" alt="" class="mode-icon">
                         <div class="mode-content">
                             <span class="mode-label">LLM Output</span>
                             <span class="mode-desc">Verify AI-generated content</span>
@@ -212,21 +207,18 @@
                         <p class="modal-subtitle">Choose a better analysis mode:</p>
                         <div class="modal-options">
                             <button id="switchToKeyClaimsMode" class="option-card option-keyclaims">
-                                <img src="{{ url_for('static', filename='icons/key_claims.png') }}" alt="" class="option-card-icon">
                                 <div class="option-card-content">
                                     <h4>Key Claims</h4>
                                     <p>Verify main arguments</p>
                                 </div>
                             </button>
                             <button id="switchToBiasMode" class="option-card option-bias">
-                                <img src="{{ url_for('static', filename='icons/bias.png') }}" alt="" class="option-card-icon">
                                 <div class="option-card-content">
                                     <h4>Bias Analysis</h4>
                                     <p>Detect ideological slant</p>
                                 </div>
                             </button>
                             <button id="switchToLieMode" class="option-card option-lie">
-                                <img src="{{ url_for('static', filename='icons/lie_detector.png') }}" alt="" class="option-card-icon">
                                 <div class="option-card-content">
                                     <h4>Deception Detection</h4>
                                     <p>Analyze deception markers</p>
