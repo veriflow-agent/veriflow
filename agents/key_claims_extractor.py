@@ -6,7 +6,7 @@ Extracts the 2-3 central thesis claims from text PLUS content analysis
 ENHANCEMENTS:
 - Uses GPT-4o for more nuanced analysis
 - Extracts broad_context: content credibility assessment
-- Extracts media_sources: all sources mentioned in text
+- Extracts me_process_responsedia_sources: all sources mentioned in text
 - Generates query_instructions: strategic guidance for query generator
 
 These new fields help the query generator create more targeted, effective searches.
@@ -199,6 +199,15 @@ class KeyClaimsExtractor:
     async def _extract_single_pass(self, parsed_content: dict) -> tuple:
         """Extract key claims and analysis in a single LLM call"""
 
+        # ✅ FIX: Check for minimum content first
+        text = parsed_content.get('text', '')
+        if not text or len(text.strip()) < 50:
+            fact_logger.logger.warning(f"⚠️ Insufficient text content ({len(text)} chars)")
+            return self._get_empty_result(
+                parsed_content, 
+                f"Content too short for analysis ({len(text)} characters). Please provide more text."
+            )
+
         system_prompt = self.prompts["system"]
         user_prompt = self.prompts["user"]
 
@@ -228,7 +237,18 @@ class KeyClaimsExtractor:
             return self._process_response(response, parsed_content)
 
         except Exception as e:
-            fact_logger.logger.error(f"❌ LLM invocation failed: {e}")
+            error_msg = str(e)
+            fact_logger.logger.error(f"❌ LLM invocation failed: {error_msg}")
+
+            # ✅ FIX: Return graceful result instead of raising
+            if "'NoneType'" in error_msg or "has no attribute" in error_msg:
+                fact_logger.logger.warning("⚠️ LLM returned malformed response, using defaults")
+                return self._get_empty_result(
+                    parsed_content,
+                    "The content could not be analyzed. It may not contain verifiable factual claims."
+                )
+
+            # For other errors, log traceback and re-raise
             import traceback
             fact_logger.logger.error(f"Traceback: {traceback.format_exc()}")
             raise
@@ -313,26 +333,50 @@ class KeyClaimsExtractor:
         return chunks
 
     def _process_response(self, response: dict, parsed_content: dict) -> tuple:
-        """Process LLM response into structured output"""
+        """Process LLM response into structured output with defensive None handling"""
+
+        # ✅ FIX: Handle case where response is None or empty
+        if not response:
+            fact_logger.logger.warning("⚠️ Empty or None response from LLM, returning defaults")
+            return self._get_empty_result(parsed_content, "Insufficient content for analysis")
+
+        # ✅ FIX: Check if response indicates no verifiable claims
+        facts_list = response.get('facts')
+        if facts_list is None or (isinstance(facts_list, list) and len(facts_list) == 0):
+            # Check if the LLM explicitly said there are no claims
+            reasoning = ""
+            ctx = response.get('broad_context')
+            if ctx and isinstance(ctx, dict):
+                reasoning = ctx.get('reasoning', '')
+
+            if not reasoning:
+                reasoning = "No verifiable factual claims found in this content."
+
+            fact_logger.logger.info(f"ℹ️ No verifiable claims found: {reasoning}")
+            # Still process what we can, but return empty claims list
 
         # Extract claims
         claims = []
-        for i, fact in enumerate(response.get('facts', []), 1):
-            claims.append(KeyClaim(
-                id=fact.get('id', f'KC{i}'),
-                statement=fact.get('statement', ''),
-                sources=fact.get('sources', []),
-                original_text=fact.get('original_text', ''),
-                confidence=fact.get('confidence', 0.5)
-            ))
+        facts_list = response.get('facts') or []  # ✅ FIX: Use 'or []' for None
+        for i, fact in enumerate(facts_list, 1):
+            if fact:  # Skip None entries
+                claims.append(KeyClaim(
+                    id=fact.get('id', f'KC{i}'),
+                    statement=fact.get('statement', ''),
+                    sources=fact.get('sources') or [],  # ✅ FIX
+                    original_text=fact.get('original_text', ''),
+                    confidence=fact.get('confidence', 0.5)
+                ))
 
         # Get all sources
-        all_sources = response.get('all_sources', [])
+        all_sources = response.get('all_sources') or []  # ✅ FIX
         if not all_sources:
             all_sources = [link['url'] for link in parsed_content.get('links', [])]
 
-        # Parse content location
-        loc_data = response.get('content_location', {})
+        # ✅ FIX: Parse content location with defensive None handling
+        loc_data = response.get('content_location')
+        if loc_data is None:
+            loc_data = {}
         content_location = ContentLocation(
             country=loc_data.get('country', 'international'),
             country_code=loc_data.get('country_code', ''),
@@ -340,30 +384,52 @@ class KeyClaimsExtractor:
             confidence=loc_data.get('confidence', 0.5)
         )
 
-        # Parse broad context (NEW)
-        ctx_data = response.get('broad_context', {})
+        # ✅ FIX: Parse broad context with defensive None handling
+        ctx_data = response.get('broad_context')
+        if ctx_data is None:
+            ctx_data = {}
         broad_context = BroadContext(
             content_type=ctx_data.get('content_type', 'unknown'),
             credibility_assessment=ctx_data.get('credibility_assessment', 'unknown'),
             reasoning=ctx_data.get('reasoning', ''),
-            red_flags=ctx_data.get('red_flags', []),
-            positive_indicators=ctx_data.get('positive_indicators', [])
+            red_flags=ctx_data.get('red_flags') or [],  # ✅ FIX
+            positive_indicators=ctx_data.get('positive_indicators') or []  # ✅ FIX
         )
 
-        # Extract media sources (NEW)
-        media_sources = response.get('media_sources', [])
+        # ✅ FIX: Extract media sources with None handling
+        media_sources = response.get('media_sources') or []
 
-        # Parse query instructions (NEW)
-        qi_data = response.get('query_instructions', {})
+        # ✅ FIX: Parse query instructions with defensive None handling
+        qi_data = response.get('query_instructions')
+        if qi_data is None:
+            qi_data = {}
         query_instructions = QueryInstructions(
             primary_strategy=qi_data.get('primary_strategy', 'standard verification'),
-            suggested_modifiers=qi_data.get('suggested_modifiers', []),
+            suggested_modifiers=qi_data.get('suggested_modifiers') or [],  # ✅ FIX
             temporal_guidance=qi_data.get('temporal_guidance', 'recent'),
-            source_priority=qi_data.get('source_priority', []),
+            source_priority=qi_data.get('source_priority') or [],  # ✅ FIX
             special_considerations=qi_data.get('special_considerations', '')
         )
 
         return claims, all_sources, content_location, broad_context, media_sources, query_instructions
+
+    def _get_empty_result(self, parsed_content: dict, reason: str = "") -> tuple:
+        """Return a valid empty result tuple with defaults"""
+        all_sources = [link['url'] for link in parsed_content.get('links', [])]
+
+        return (
+            [],  # claims - empty list
+            all_sources,
+            ContentLocation(),  # defaults
+            BroadContext(
+                content_type='unknown',
+                credibility_assessment='unknown',
+                reasoning=reason or 'No verifiable claims could be extracted from this content.'
+            ),
+            [],  # media_sources
+            QueryInstructions(primary_strategy='standard verification')
+        )
+
 
     def _format_sources(self, links: list) -> str:
         """Format source links for the prompt"""

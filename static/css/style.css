@@ -1940,3 +1940,101 @@ body {
     text-decoration: underline;
 }
 
+/* ============================================
+   NO CLAIMS STATE STYLES
+   Add these to your main CSS file (e.g., styles.css)
+   ============================================ */
+
+.no-claims-state {
+    text-align: center;
+    padding: 48px 24px;
+    background: var(--bg-secondary, #f8f9fa);
+    border-radius: 12px;
+    margin: 20px 0;
+}
+
+.no-claims-icon {
+    font-size: 56px;
+    margin-bottom: 16px;
+    opacity: 0.8;
+}
+
+.no-claims-title {
+    font-size: 20px;
+    font-weight: 600;
+    margin: 0 0 12px 0;
+    color: var(--text-primary, #1a1a1a);
+}
+
+.no-claims-message {
+    color: var(--text-secondary, #666);
+    max-width: 500px;
+    margin: 0 auto 24px;
+    line-height: 1.6;
+    font-size: 15px;
+}
+
+.no-claims-reasons {
+    font-size: 14px;
+    color: var(--text-tertiary, #888);
+    text-align: left;
+    display: inline-block;
+    background: var(--bg-tertiary, #fff);
+    padding: 16px 24px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+}
+
+.no-claims-reasons p {
+    margin: 0 0 8px 0;
+}
+
+.no-claims-reasons ul {
+    margin: 0;
+    padding-left: 20px;
+}
+
+.no-claims-reasons li {
+    margin: 6px 0;
+    line-height: 1.4;
+}
+
+.no-claims-suggestion {
+    font-size: 14px;
+    color: var(--text-secondary, #666);
+    background: var(--accent-light, #e8f4fd);
+    padding: 12px 20px;
+    border-radius: 8px;
+    display: inline-block;
+    max-width: 500px;
+}
+
+.no-claims-suggestion p {
+    margin: 0;
+    line-height: 1.5;
+}
+
+/* Dark mode support (if applicable) */
+@media (prefers-color-scheme: dark) {
+    .no-claims-state {
+        background: var(--bg-secondary-dark, #2a2a2a);
+    }
+
+    .no-claims-title {
+        color: var(--text-primary-dark, #f0f0f0);
+    }
+
+    .no-claims-message {
+        color: var(--text-secondary-dark, #aaa);
+    }
+
+    .no-claims-reasons {
+        background: var(--bg-tertiary-dark, #333);
+        color: var(--text-tertiary-dark, #999);
+    }
+
+    .no-claims-suggestion {
+        background: var(--accent-dark, #1a3a4a);
+        color: var(--text-secondary-dark, #aaa);
+    }
+}

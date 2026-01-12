@@ -178,6 +178,45 @@ class KeyClaimsOrchestrator:
 
             claims, all_sources, content_location, broad_context, media_sources, query_instructions = await self.extractor.extract(parsed_content)
 
+            # ✅ NEW: Check if no claims were extracted
+            if not claims or len(claims) == 0:
+                processing_time = time.time() - start_time
+
+                # Get the reasoning from broad_context if available
+                reason = "No verifiable factual claims found in this content."
+                if broad_context and hasattr(broad_context, 'reasoning') and broad_context.reasoning:
+                    reason = broad_context.reasoning
+
+                job_manager.add_progress(job_id, f"ℹ️ {reason}")
+
+                result = {
+                    "success": True,  # Not an error, just no claims
+                    "session_id": session_id,
+                    "key_claims": [],
+                    "summary": {
+                        "total_claims": 0,
+                        "verified": 0,
+                        "partially_verified": 0,
+                        "unverified": 0,
+                        "overall_credibility": "N/A",
+                        "average_score": 0,
+                        "message": reason
+                    },
+                    "processing_time": processing_time,
+                    "methodology": "key_claims_verification",
+                    "source_context": source_context,
+                    "source_credibility": source_credibility,
+                    "content_location": {
+                        "country": content_location.country if content_location else "international",
+                        "language": content_location.language if content_location else "english"
+                    },
+                    "no_claims_found": True  # ✅ Flag for frontend
+                }
+
+                job_manager.complete_job(job_id, result)
+                return result
+
+            # Log content analysis results
             fact_logger.logger.info(
                 "📊 Content Analysis:",
                 extra={

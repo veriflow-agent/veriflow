@@ -17,6 +17,12 @@ function displayKeyClaimsResults() {
     const claims = data.key_claims || [];
     const summary = data.summary || {};
 
+    // ✅ Check for no claims found scenario FIRST
+    if (data.no_claims_found || claims.length === 0) {
+        displayNoClaimsMessage(data);
+        return;
+    }
+
     // Update summary stats if elements exist
     const kcTotalClaims = document.getElementById('kcTotalClaims');
     const kcVerifiedCount = document.getElementById('kcVerifiedCount');
@@ -55,15 +61,71 @@ function displayKeyClaimsResults() {
     // Render key claims list
     if (keyClaimsContainer) {
         keyClaimsContainer.innerHTML = '';
-        
-        if (claims.length === 0) {
-            keyClaimsContainer.innerHTML = '<p class="no-results">No key claims were identified in this content.</p>';
-            return;
-        }
 
         claims.forEach((claim, index) => {
             keyClaimsContainer.appendChild(createKeyClaimCard(claim, index + 1));
         });
+    }
+}
+
+// ============================================
+// DISPLAY NO CLAIMS MESSAGE
+// ============================================
+
+function displayNoClaimsMessage(data) {
+    const summary = data.summary || {};
+
+    // Get the message from backend, or use default
+    const message = summary.message || 
+                   'No verifiable factual claims were found in this content.';
+
+    // Update summary stats to show zeros
+    const kcTotalClaims = document.getElementById('kcTotalClaims');
+    const kcVerifiedCount = document.getElementById('kcVerifiedCount');
+    const kcPartialCount = document.getElementById('kcPartialCount');
+    const kcUnverifiedCount = document.getElementById('kcUnverifiedCount');
+    const kcOverallCredibility = document.getElementById('kcOverallCredibility');
+
+    if (kcTotalClaims) kcTotalClaims.textContent = '0';
+    if (kcVerifiedCount) kcVerifiedCount.textContent = '0';
+    if (kcPartialCount) kcPartialCount.textContent = '0';
+    if (kcUnverifiedCount) kcUnverifiedCount.textContent = '0';
+    if (kcOverallCredibility) kcOverallCredibility.textContent = 'N/A';
+
+    // Session info
+    const kcSessionId = document.getElementById('kcSessionId');
+    const kcProcessingTime = document.getElementById('kcProcessingTime');
+
+    if (kcSessionId) kcSessionId.textContent = data.session_id || '-';
+    if (kcProcessingTime) kcProcessingTime.textContent = Math.round(data.processing_time || 0) + 's';
+
+    // Hide R2 link
+    const r2Link = document.getElementById('kcR2Link');
+    const r2Sep = document.getElementById('kcR2Sep');
+    if (r2Link) r2Link.style.display = 'none';
+    if (r2Sep) r2Sep.style.display = 'none';
+
+    // Render the no claims message
+    if (keyClaimsContainer) {
+        keyClaimsContainer.innerHTML = `
+            <div class="no-claims-state">
+                <div class="no-claims-icon">📋</div>
+                <h3 class="no-claims-title">No Verifiable Claims Found</h3>
+                <p class="no-claims-message">${escapeHtml(message)}</p>
+                <div class="no-claims-reasons">
+                    <p><strong>This could mean:</strong></p>
+                    <ul>
+                        <li>The content is primarily opinion or commentary</li>
+                        <li>The content lacks specific factual claims that can be verified</li>
+                        <li>The source URL couldn't be accessed or returned insufficient content</li>
+                        <li>The text is too short for meaningful analysis</li>
+                    </ul>
+                </div>
+                <div class="no-claims-suggestion">
+                    <p>💡 <strong>Tip:</strong> Try providing content that contains specific facts, statistics, quotes, or claims about events.</p>
+                </div>
+            </div>
+        `;
     }
 }
 
