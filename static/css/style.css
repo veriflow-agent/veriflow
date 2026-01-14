@@ -2042,3 +2042,15 @@ body {
         color: var(--text-secondary-dark, #aaa);
     }
 }
+
+/* Disabled mode card */
+.mode-card.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
+.mode-card.disabled:hover {
+    transform: none;
+    border-color: inherit;
+}
