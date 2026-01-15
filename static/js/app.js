@@ -320,6 +320,10 @@ function initEventListeners() {
 
 function initUrlInputListeners() {
 
+    // DEBUG: Check if elements exist
+    console.log('fetchUrlBtn:', fetchUrlBtn);
+    console.log('articleUrl:', articleUrl);
+    
     // Fetch URL button
     if (fetchUrlBtn && articleUrl) {
         fetchUrlBtn.addEventListener('click', async () => {
