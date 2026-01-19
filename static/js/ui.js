@@ -548,3 +548,30 @@ function initManipulationTabs() {
         });
     });
 }
+
+// ============================================
+// EXPORT TO GLOBAL SCOPE
+// ============================================
+
+if (typeof window !== 'undefined') {
+    window.showUrlStatus = showUrlStatus;
+    window.hideUrlStatus = hideUrlStatus;
+    window.showArticleMetadata = showArticleMetadata;
+    window.hideArticleMetadata = hideArticleMetadata;
+    window.updatePlaceholder = updatePlaceholder;
+    window.showError = showError;
+    window.switchMode = switchMode;
+    window.switchResultTab = switchResultTab;
+    window.setLoadingState = setLoadingState;
+    window.hideAllSections = hideAllSections;
+    window.showSection = showSection;
+    window.clearProgressLog = clearProgressLog;
+    window.addProgress = addProgress;
+    window.showContentFormatIndicator = showContentFormatIndicator;
+    window.hideContentFormatIndicator = hideContentFormatIndicator;
+    window.clearUrlInput = clearUrlInput;
+    window.initBiasModelTabs = initBiasModelTabs;
+    window.initManipulationTabs = initManipulationTabs;
+
+    console.log('✅ ui.js: Functions exported to global scope');
+}
