@@ -14,11 +14,15 @@ STAGE 2: Parallel Mode Execution
 - Collect reports from each mode
 - Stream progress updates
 
-STAGE 3: Synthesis
-- Analyze all reports together
-- Generate unified credibility assessment
-- Flag contradictions and concerns
-- Create final comprehensive report
+STAGE 3: AI-Powered Synthesis (NEW - Full Implementation)
+- Uses ReportSynthesizer agent with GPT-4o
+- Analyzes all reports together
+- Generates unified credibility score (0-100) and rating
+- Detects cross-mode contradictions
+- Categorizes flags by type (credibility, bias, manipulation, factual accuracy)
+- Extracts key findings prioritized by importance
+- Provides actionable recommendations
+- Creates human-readable narrative summary
 
 ✅ OPTIMIZED: All modes run in parallel for maximum speed
 """
@@ -44,6 +48,9 @@ from orchestrator.bias_check_orchestrator import BiasCheckOrchestrator
 from orchestrator.manipulation_orchestrator import ManipulationOrchestrator
 from orchestrator.lie_detector_orchestrator import LieDetectorOrchestrator
 
+# Stage 3: Report Synthesizer (NEW)
+from agents.report_synthesizer import ReportSynthesizer
+
 
 class CancelledException(Exception):
     """Raised when job is cancelled"""
@@ -57,7 +64,7 @@ class ComprehensiveOrchestrator:
     Coordinates:
     - Stage 1: Content classification, source verification, mode routing
     - Stage 2: Parallel execution of selected analysis modes
-    - Stage 3: Synthesis of all findings (future)
+    - Stage 3: AI-powered synthesis of all findings (NEW)
     """
 
     def __init__(self, config):
@@ -75,6 +82,9 @@ class ComprehensiveOrchestrator:
         self._manipulation_orchestrator: Optional[ManipulationOrchestrator] = None
         self._lie_detection_orchestrator: Optional[LieDetectorOrchestrator] = None
 
+        # Stage 3: Report Synthesizer (NEW)
+        self._report_synthesizer: Optional[ReportSynthesizer] = None
+
         # R2 uploader for audit storage
         try:
             from utils.r2_uploader import R2Uploader
@@ -85,7 +95,7 @@ class ComprehensiveOrchestrator:
             self.r2_uploader = None
             fact_logger.logger.warning(f"⚠️ R2 not available: {e}")
 
-        fact_logger.logger.info("✅ ComprehensiveOrchestrator initialized")
+        fact_logger.logger.info("✅ ComprehensiveOrchestrator initialized (with Stage 3 Synthesis)")
 
     # =========================================================================
     # LAZY INITIALIZATION OF MODE ORCHESTRATORS
@@ -115,23 +125,24 @@ class ComprehensiveOrchestrator:
             self._lie_detection_orchestrator = LieDetectorOrchestrator(self.config)
         return self._lie_detection_orchestrator
 
+    def _get_report_synthesizer(self) -> ReportSynthesizer:
+        """Lazy init for report synthesizer (Stage 3)"""
+        if self._report_synthesizer is None:
+            self._report_synthesizer = ReportSynthesizer()
+        return self._report_synthesizer
+
     # =========================================================================
-    # HELPER METHODS
+    # UTILITY METHODS
     # =========================================================================
 
-    def _check_cancellation(self, job_id: str) -> None:
-        """Check if job has been cancelled"""
+    def _check_cancellation(self, job_id: str):
+        """Check if job was cancelled and raise exception if so"""
         if job_manager.is_cancelled(job_id):
             raise CancelledException("Job cancelled by user")
 
-    def _send_stage_update(self, job_id: str, stage: str, message: Optional[str] = None) -> None:
-        """Send a stage-specific progress update"""
-        # job_manager.add_progress uses 'details' not 'extra'
-        job_manager.add_progress(
-            job_id, 
-            message or f"Stage: {stage}", 
-            details={"stage": stage}
-        )
+    def _send_stage_update(self, job_id: str, stage: str, message: str):
+        """Send a stage update progress message"""
+        job_manager.add_progress(job_id, message, details={"stage": stage})
 
     # =========================================================================
     # STAGE 1: PRE-ANALYSIS
@@ -147,9 +158,10 @@ class ComprehensiveOrchestrator:
         """
         Stage 1: Pre-Analysis
 
-        1. Classify content (type, realm, LLM detection)
-        2. Verify source credibility
-        3. Route to appropriate modes
+        Steps:
+        1a. Content Classification
+        1b. Source Verification (if URL provided)
+        1c. Mode Routing
         """
         stage1_results: Dict[str, Any] = {
             "content_classification": None,
@@ -160,51 +172,40 @@ class ComprehensiveOrchestrator:
 
         try:
             # Step 1a: Content Classification
-            self._send_stage_update(job_id, "content_classification", "📝 Classifying content type...")
+            self._send_stage_update(job_id, "content_classification", "📋 Analyzing content type...")
             self._check_cancellation(job_id)
 
-            classification_result = await self.content_classifier.classify(content, source_url)
+            classification_result = await self.content_classifier.classify(content)
 
             if classification_result.success:
-                stage1_results["content_classification"] = classification_result.classification.model_dump()
+                stage1_results["content_classification"] = {
+                    "content_type": classification_result.classification.content_type,
+                    "realm": classification_result.classification.realm,
+                    "sub_realm": classification_result.classification.sub_realm,
+                    "purpose": classification_result.classification.purpose,
+                    "contains_references": classification_result.classification.contains_references,
+                    "reference_style": classification_result.classification.reference_style,
+                    "llm_characteristics": classification_result.classification.llm_characteristics.model_dump() if classification_result.classification.llm_characteristics else {}
+                }
                 job_manager.add_progress(
                     job_id,
-                    f"✅ Content classified as {classification_result.classification.content_type} ({classification_result.classification.realm})"
+                    f"✅ Content classified: {classification_result.classification.content_type} ({classification_result.classification.realm})"
                 )
             else:
-                # Use default classification on error
-                stage1_results["content_classification"] = {
-                    "content_type": "other",
-                    "realm": "other",
-                    "is_likely_llm_output": False,
-                    "reference_count": 0
-                }
-                job_manager.add_progress(job_id, "⚠️ Classification error, using defaults")
+                stage1_results["content_classification"] = {"error": classification_result.error}
 
-            # Send partial result for progressive UI
-            job_manager.add_progress(job_id, "Classification complete", details={
+            # Send partial result
+            job_manager.add_progress(job_id, "Content classification complete", details={
                 "partial_result": {"content_classification": stage1_results["content_classification"]}
             })
 
             # Step 1b: Source Verification
-            self._send_stage_update(job_id, "source_verification", "📰 Verifying source credibility...")
+            self._send_stage_update(job_id, "source_verification", "🔍 Verifying source credibility...")
             self._check_cancellation(job_id)
 
-            # Determine URL for verification
-            verify_url = source_url
-            if not verify_url and classification_result.success and classification_result.classification:
-                ref_urls = classification_result.classification.reference_urls
-                if ref_urls:
-                    verify_url = ref_urls[0]
+            if source_url:
+                verification_result = await self.source_verifier.verify(source_url)
 
-            if verify_url:
-                # verify_source takes content and run_mbfc_if_missing as main params
-                verification_result = await self.source_verifier.verify_source(
-                    content=content,
-                    run_mbfc_if_missing=True
-                )
-
-                # Check verification_successful on the report (not success on result)
                 if verification_result.report.verification_successful:
                     stage1_results["source_verification"] = {
                         "domain": verification_result.report.domain,
@@ -301,7 +302,6 @@ class ComprehensiveOrchestrator:
 
             if mode_id == "key_claims_analysis":
                 orchestrator = self._get_key_claims_orchestrator()
-                # Use main job_id - modes share progress through main job
                 result = await orchestrator.process_with_progress(
                     text_content=content,
                     job_id=job_id,
@@ -312,10 +312,8 @@ class ComprehensiveOrchestrator:
 
             elif mode_id == "bias_analysis":
                 orchestrator = self._get_bias_orchestrator()
-                # Extract publication info if available
                 publication_name = source_credibility.get("domain", "")
 
-                # BiasCheckOrchestrator.process_with_progress takes: text, publication_url, publication_name, source_credibility, job_id
                 result = await orchestrator.process_with_progress(
                     text=content,
                     publication_name=publication_name,
@@ -338,7 +336,6 @@ class ComprehensiveOrchestrator:
             elif mode_id == "lie_detection":
                 orchestrator = self._get_lie_detection_orchestrator()
 
-                # LieDetectorOrchestrator.process_with_progress takes: text, job_id, url, publication_date, article_source, source_credibility
                 result = await orchestrator.process_with_progress(
                     text=content,
                     job_id=job_id,
@@ -347,7 +344,6 @@ class ComprehensiveOrchestrator:
                 return (mode_id, result, None)
 
             elif mode_id == "llm_output_verification":
-                # LLM output verification uses a different pipeline
                 from orchestrator.llm_output_orchestrator import LLMInterpretationOrchestrator
                 orchestrator = LLMInterpretationOrchestrator(self.config)
 
@@ -435,7 +431,7 @@ class ComprehensiveOrchestrator:
         }
 
     # =========================================================================
-    # STAGE 3: SYNTHESIS (Placeholder for future implementation)
+    # STAGE 3: AI-POWERED SYNTHESIS (NEW FULL IMPLEMENTATION)
     # =========================================================================
 
     @traceable(name="comprehensive_stage3_synthesis", run_type="chain", tags=["comprehensive", "stage3"])
@@ -446,103 +442,258 @@ class ComprehensiveOrchestrator:
         stage2_results: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
-        Stage 3: Synthesis
+        Stage 3: AI-Powered Synthesis
 
-        Analyze all reports together and generate unified assessment
+        Uses the ReportSynthesizer agent to analyze all reports from Stage 1 and 
+        Stage 2 together and produce a unified credibility assessment.
 
-        TODO: Implement full synthesis with:
-        - Cross-mode consistency checking
-        - Contradiction detection
-        - Overall credibility score
-        - Key findings summary
-        - Recommendations
+        Output includes:
+        - Overall credibility score (0-100) and rating
+        - Confidence in assessment
+        - Categorized flags (credibility, bias, manipulation, factual accuracy)
+        - Cross-mode contradiction detection
+        - Key findings prioritized by importance
+        - Actionable recommendations
+        - Human-readable narrative summary
+
+        Args:
+            job_id: Job ID for progress tracking
+            stage1_results: Results from Stage 1 (classification, verification, routing)
+            stage2_results: Results from Stage 2 (mode_reports, mode_errors)
+
+        Returns:
+            Complete synthesis report as dictionary
         """
+        start_time = time.time()
+
         self._send_stage_update(job_id, "synthesis", "🔬 Synthesizing final report...")
+        job_manager.add_progress(job_id, "🤖 Running AI-powered report synthesis...")
+
+        try:
+            # Get the synthesizer
+            synthesizer = self._get_report_synthesizer()
+
+            # Run AI synthesis
+            synthesis_report = await synthesizer.synthesize(
+                stage1_results=stage1_results,
+                stage2_results=stage2_results
+            )
+
+            # Convert Pydantic model to dict for JSON serialization
+            synthesis_dict = synthesis_report.model_dump()
+
+            # Add processing metadata
+            synthesis_dict["synthesis_time_seconds"] = round(time.time() - start_time, 2)
+
+            # Count total flags for progress message
+            total_flags = (
+                len(synthesis_report.credibility_flags) +
+                len(synthesis_report.bias_flags) +
+                len(synthesis_report.manipulation_flags) +
+                len(synthesis_report.factual_accuracy_flags)
+            )
+
+            job_manager.add_progress(
+                job_id, 
+                f"✅ Synthesis complete: Score {synthesis_report.overall_credibility_score:.0f}/100 "
+                f"({synthesis_report.overall_credibility_rating}), "
+                f"{total_flags} flags, {len(synthesis_report.key_findings)} key findings"
+            )
+
+            fact_logger.logger.info(
+                "✅ Stage 3 synthesis complete",
+                extra={
+                    "overall_score": synthesis_report.overall_credibility_score,
+                    "rating": synthesis_report.overall_credibility_rating,
+                    "confidence": synthesis_report.confidence_in_assessment,
+                    "flags_count": total_flags,
+                    "contradictions_count": len(synthesis_report.contradictions),
+                    "key_findings_count": len(synthesis_report.key_findings),
+                    "synthesis_time": synthesis_dict["synthesis_time_seconds"]
+                }
+            )
+
+            return synthesis_dict
+
+        except Exception as e:
+            fact_logger.logger.error(f"❌ Stage 3 synthesis failed: {e}")
+            import traceback
+            fact_logger.logger.error(f"Traceback: {traceback.format_exc()}")
+
+            # Fallback to basic synthesis on error
+            job_manager.add_progress(job_id, f"⚠️ AI synthesis failed, using basic synthesis: {str(e)[:100]}")
+
+            return await self._run_stage3_fallback(job_id, stage1_results, stage2_results)
+
+    async def _run_stage3_fallback(
+        self,
+        job_id: str,
+        stage1_results: Dict[str, Any],
+        stage2_results: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Fallback Stage 3: Basic synthesis when AI synthesis fails
+
+        Extracts key metrics from available reports and creates a basic
+        synthesis without AI processing.
+        """
+        self._send_stage_update(job_id, "synthesis", "🔬 Running basic synthesis (fallback)...")
 
         mode_reports = stage2_results.get("mode_reports", {})
+        mode_errors = stage2_results.get("mode_errors", {})
 
-        # Extract key metrics from each mode
+        # Initialize synthesis structure matching the new schema
         synthesis: Dict[str, Any] = {
-            "overall_assessment": "pending_full_implementation",
-            "credibility_indicators": [],
+            "overall_credibility_score": 50.0,
+            "overall_credibility_rating": "Mixed",
+            "confidence_in_assessment": 40.0,
+            "score_breakdown": {"method": "fallback_calculation"},
+            "credibility_flags": [],
+            "bias_flags": [],
+            "manipulation_flags": [],
+            "factual_accuracy_flags": [],
+            "contradictions": [],
             "key_findings": [],
-            "flags": [],
-            "recommendations": [],
-            "mode_summaries": {}
+            "recommendations": [
+                "Review individual mode reports for detailed findings",
+                "Consider re-running analysis for full AI synthesis"
+            ],
+            "narrative_summary": "",
+            "modes_analyzed": list(mode_reports.keys()),
+            "modes_failed": list(mode_errors.keys()),
+            "limitations": ["AI synthesis unavailable - using basic metric extraction"]
         }
 
-        # Summarize key claims results
+        score = 50.0
+
+        # Process key claims results
         if "key_claims_analysis" in mode_reports:
             kc = mode_reports["key_claims_analysis"]
             summary = kc.get("summary", {})
-            synthesis["mode_summaries"]["key_claims"] = {
-                "claims_verified": summary.get("claims_verified", 0),
-                "average_confidence": summary.get("average_confidence", 0),
-                "claims_with_concerns": summary.get("claims_with_concerns", 0)
-            }
+            avg_conf = summary.get("average_confidence", 0.5)
 
-            # Add to credibility indicators
-            avg_conf = summary.get("average_confidence", 0)
-            if avg_conf < 0.4:
-                synthesis["flags"].append({
+            synthesis["score_breakdown"]["key_claims_confidence"] = avg_conf
+
+            if avg_conf >= 0.7:
+                score += 15
+            elif avg_conf < 0.4:
+                score -= 20
+                synthesis["factual_accuracy_flags"].append({
                     "severity": "high",
-                    "source": "key_claims_analysis",
-                    "message": f"Low fact verification confidence ({avg_conf:.0%})"
+                    "description": f"Low fact verification confidence ({avg_conf:.0%})",
+                    "source_mode": "key_claims_analysis"
                 })
 
-        # Summarize bias results
+        # Process bias results
         if "bias_analysis" in mode_reports:
             bias = mode_reports["bias_analysis"]
             analysis = bias.get("analysis", {})
-            synthesis["mode_summaries"]["bias_analysis"] = {
-                "consensus_score": analysis.get("consensus_bias_score", 0),
-                "direction": analysis.get("consensus_direction", "Unknown"),
-                "confidence": analysis.get("confidence", 0)
-            }
+            bias_score = abs(analysis.get("consensus_bias_score", 0))
+            direction = analysis.get("consensus_direction", "Unknown")
 
-            # Flag significant bias
-            score = analysis.get("consensus_bias_score", 0)
-            if abs(score) > 0.6:
-                direction = analysis.get("consensus_direction", "Unknown")
-                synthesis["flags"].append({
-                    "severity": "medium",
-                    "source": "bias_analysis",
-                    "message": f"Significant {direction} bias detected (score: {score:.2f})"
+            synthesis["score_breakdown"]["bias_score"] = bias_score
+
+            if bias_score > 6:
+                score -= 15
+                synthesis["bias_flags"].append({
+                    "severity": "medium" if bias_score <= 7 else "high",
+                    "description": f"Significant {direction} bias detected (score: {bias_score:.1f}/10)",
+                    "source_mode": "bias_analysis"
                 })
+            elif bias_score <= 3:
+                score += 10
 
-        # Summarize manipulation results
+        # Process manipulation results
         if "manipulation_detection" in mode_reports:
             manip = mode_reports["manipulation_detection"]
-            score = manip.get("manipulation_score", 0)
-            synthesis["mode_summaries"]["manipulation_detection"] = {
-                "score": score,
-                "techniques_used": manip.get("report", {}).get("techniques_used", [])[:3]
-            }
+            manip_score = manip.get("manipulation_score", 0)
 
-            if score > 0.6:
-                synthesis["flags"].append({
+            synthesis["score_breakdown"]["manipulation_score"] = manip_score
+
+            if manip_score > 6:
+                score -= 20
+                synthesis["manipulation_flags"].append({
                     "severity": "high",
-                    "source": "manipulation_detection",
-                    "message": f"High manipulation score ({score:.0%})"
+                    "description": f"High manipulation score ({manip_score:.1f}/10)",
+                    "source_mode": "manipulation_detection"
                 })
 
-        # Summarize lie detection results
+        # Process lie detection results
         if "lie_detection" in mode_reports:
             lie = mode_reports["lie_detection"]
-            synthesis["mode_summaries"]["lie_detection"] = {
-                "deception_score": lie.get("deception_score", 0),
-                "markers_found": lie.get("markers_found", 0)
-            }
+            deception_score = lie.get("deception_likelihood_score", lie.get("overall_score", 0))
 
-        # Generate overall assessment based on flags
-        if not synthesis["flags"]:
-            synthesis["overall_assessment"] = "No significant concerns detected"
-        elif any(f["severity"] == "high" for f in synthesis["flags"]):
-            synthesis["overall_assessment"] = "Multiple significant concerns require attention"
+            synthesis["score_breakdown"]["deception_score"] = deception_score
+
+            if deception_score > 6:
+                score -= 10
+                synthesis["manipulation_flags"].append({
+                    "severity": "medium",
+                    "description": f"Elevated deception indicators ({deception_score}/10)",
+                    "source_mode": "lie_detection"
+                })
+
+        # Check source verification
+        source_verification = stage1_results.get("source_verification", {})
+        if source_verification and not source_verification.get("error"):
+            tier = source_verification.get("credibility_tier", 3)
+            if tier == 1:
+                score += 15
+            elif tier >= 4:
+                score -= 15
+                synthesis["credibility_flags"].append({
+                    "severity": "high",
+                    "description": f"Source has low credibility tier ({tier})",
+                    "source_mode": "source_verification"
+                })
+
+        # Clamp and determine rating
+        score = max(0, min(100, score))
+        synthesis["overall_credibility_score"] = score
+
+        if score >= 80:
+            synthesis["overall_credibility_rating"] = "Highly Credible"
+        elif score >= 65:
+            synthesis["overall_credibility_rating"] = "Credible"
+        elif score >= 45:
+            synthesis["overall_credibility_rating"] = "Mixed"
+        elif score >= 25:
+            synthesis["overall_credibility_rating"] = "Low Credibility"
         else:
-            synthesis["overall_assessment"] = "Minor concerns detected, exercise caution"
+            synthesis["overall_credibility_rating"] = "Unreliable"
 
-        job_manager.add_progress(job_id, f"✅ Synthesis complete: {len(synthesis['flags'])} flags raised")
+        # Generate basic narrative
+        total_flags = (
+            len(synthesis["credibility_flags"]) +
+            len(synthesis["bias_flags"]) +
+            len(synthesis["manipulation_flags"]) +
+            len(synthesis["factual_accuracy_flags"])
+        )
+
+        if total_flags == 0:
+            synthesis["narrative_summary"] = (
+                f"Based on automated analysis, this content appears to have {synthesis['overall_credibility_rating'].lower()} "
+                f"credibility. No major concerns were flagged, though detailed AI synthesis was unavailable."
+            )
+        else:
+            synthesis["narrative_summary"] = (
+                f"Our analysis raised {total_flags} concern(s) about this content, resulting in a "
+                f"{synthesis['overall_credibility_rating'].lower()} credibility rating. "
+                f"Please review the individual findings below for details."
+            )
+
+        # Add a key finding summarizing the analysis
+        synthesis["key_findings"].append({
+            "finding": f"Content analyzed with {len(mode_reports)} modes completed and {len(mode_errors)} failed",
+            "importance": "medium",
+            "source_modes": list(mode_reports.keys())
+        })
+
+        job_manager.add_progress(
+            job_id, 
+            f"✅ Basic synthesis complete: {synthesis['overall_credibility_score']:.0f}/100 "
+            f"({synthesis['overall_credibility_rating']}), {total_flags} flags"
+        )
 
         return synthesis
 
@@ -607,7 +758,7 @@ class ComprehensiveOrchestrator:
             job_manager.add_progress(job_id, "✅ Stage 2 complete")
 
             # ================================================================
-            # STAGE 3: Synthesis
+            # STAGE 3: AI-Powered Synthesis (NEW)
             # ================================================================
             job_manager.add_progress(job_id, "🔬 Stage 3: Synthesizing results...")
             stage3_results = await self._run_stage3(job_id, stage1_results, stage2_results)
@@ -635,12 +786,12 @@ class ComprehensiveOrchestrator:
                 "mode_errors": stage2_results.get("mode_errors", {}),
                 "mode_execution_time": stage2_results.get("execution_time_seconds"),
 
-                # Stage 3 results
+                # Stage 3 results (NEW - Full synthesis)
                 "synthesis_report": stage3_results,
 
                 # Metadata
                 "timestamp": datetime.now(timezone.utc).isoformat(),
-                "version": "1.0.0"
+                "version": "2.0.0"  # Updated version for Stage 3
             }
 
             # Complete the job
@@ -652,7 +803,14 @@ class ComprehensiveOrchestrator:
                     "session_id": session_id,
                     "processing_time": processing_time,
                     "modes_run": len(stage2_results.get("mode_reports", {})),
-                    "flags_raised": len(stage3_results.get("flags", []))
+                    "overall_score": stage3_results.get("overall_credibility_score"),
+                    "overall_rating": stage3_results.get("overall_credibility_rating"),
+                    "flags_raised": (
+                        len(stage3_results.get("credibility_flags", [])) +
+                        len(stage3_results.get("bias_flags", [])) +
+                        len(stage3_results.get("manipulation_flags", [])) +
+                        len(stage3_results.get("factual_accuracy_flags", []))
+                    )
                 }
             )
 
@@ -697,27 +855,59 @@ if __name__ == "__main__":
         of species.
 
         The IPCC's latest assessment suggests that current policies put us on track 
-        for 2.7°C of warming, well above the Paris Agreement target of 1.5°C. 
-        However, some skeptics argue that climate models have consistently 
-        overestimated warming trends.
+        for 2.7°C of warming, well above the Paris Agreement target of 1.5°C.
         """
 
-        # Create test job
-        job_id = job_manager.create_job(content=test_content)
+        # Create a test job
+        test_job_id = "test_comprehensive_stage3"
+        job_manager.create_job(test_job_id)
 
-        print(f"Testing with job_id: {job_id}")
+        try:
+            result = await orchestrator.process_with_progress(
+                content=test_content,
+                job_id=test_job_id,
+                source_url=None
+            )
 
-        result = await orchestrator.process_with_progress(
-            content=test_content,
-            job_id=job_id
-        )
+            print("\n" + "="*70)
+            print("COMPREHENSIVE ANALYSIS RESULT")
+            print("="*70)
+            print(f"Success: {result.get('success')}")
+            print(f"Processing Time: {result.get('processing_time')}s")
 
-        print("\n✅ Result:")
-        print(f"  Session: {result['session_id']}")
-        print(f"  Processing Time: {result['processing_time']}s")
-        print(f"  Content Type: {result['content_classification'].get('content_type') if result['content_classification'] else 'N/A'}")
-        print(f"  Selected Modes: {result['mode_routing'].get('selected_modes') if result['mode_routing'] else []}")
-        print(f"  Mode Reports: {list(result['mode_reports'].keys())}")
-        print(f"  Flags: {len(result['synthesis_report'].get('flags', []))}")
+            # Stage 3 Synthesis Results
+            synthesis = result.get("synthesis_report", {})
+            print(f"\n--- STAGE 3: SYNTHESIS ---")
+            print(f"Overall Score: {synthesis.get('overall_credibility_score')}/100")
+            print(f"Rating: {synthesis.get('overall_credibility_rating')}")
+            print(f"Confidence: {synthesis.get('confidence_in_assessment')}%")
+            print(f"\nNarrative Summary:\n{synthesis.get('narrative_summary')}")
+
+            print(f"\nKey Findings ({len(synthesis.get('key_findings', []))}):")
+            for finding in synthesis.get('key_findings', []):
+                print(f"  [{finding.get('importance')}] {finding.get('finding')}")
+
+            print(f"\nRecommendations ({len(synthesis.get('recommendations', []))}):")
+            for rec in synthesis.get('recommendations', []):
+                print(f"  - {rec}")
+
+            total_flags = (
+                len(synthesis.get('credibility_flags', [])) +
+                len(synthesis.get('bias_flags', [])) +
+                len(synthesis.get('manipulation_flags', [])) +
+                len(synthesis.get('factual_accuracy_flags', []))
+            )
+            print(f"\nFlags: {total_flags} total")
+            print(f"  Credibility: {len(synthesis.get('credibility_flags', []))}")
+            print(f"  Bias: {len(synthesis.get('bias_flags', []))}")
+            print(f"  Manipulation: {len(synthesis.get('manipulation_flags', []))}")
+            print(f"  Factual Accuracy: {len(synthesis.get('factual_accuracy_flags', []))}")
+
+            print(f"\nContradictions: {len(synthesis.get('contradictions', []))}")
+
+        except Exception as e:
+            print(f"Test failed: {e}")
+            import traceback
+            traceback.print_exc()
 
     asyncio.run(test())
