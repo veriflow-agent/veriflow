@@ -45,6 +45,7 @@ const keyClaimsTab = document.getElementById('keyClaimsTab');
 const biasAnalysisTab = document.getElementById('biasAnalysisTab');
 const lieDetectionTab = document.getElementById('lieDetectionTab');
 const manipulationTab = document.getElementById('manipulationTab');
+const comprehensiveTab = document.getElementById('comprehensiveTab');
 
 // Results panel elements
 const factCheckResults = document.getElementById('factCheckResults');
@@ -52,6 +53,7 @@ const keyClaimsResults = document.getElementById('keyClaimsResults');
 const biasAnalysisResults = document.getElementById('biasAnalysisResults');
 const lieDetectionResults = document.getElementById('lieDetectionResults');
 const manipulationResults = document.getElementById('manipulationResults');
+const comprehensiveResults = document.getElementById('comprehensiveResults');
 
 // Model tabs for bias analysis
 const modelTabs = document.querySelectorAll('.model-tab');
@@ -70,7 +72,7 @@ const retryBtn = document.getElementById('retryBtn');
 // ============================================
 
 const AppState = {
-    // Current mode: 'key-claims', 'bias-analysis', 'lie-detection', 'manipulation', 'text-factcheck', 'llm-output'
+    // Current mode: 'comprehensive', 'key-claims', 'bias-analysis', 'lie-detection', 'manipulation', 'text-factcheck', 'llm-output'
     currentMode: 'key-claims',
     
     // Results storage
@@ -80,6 +82,7 @@ const AppState = {
     currentBiasResults: null,
     currentLieDetectionResults: null,
     currentManipulationResults: null,
+    currentComprehensiveResults: null,
     
     // Active streams
     activeEventSources: [],
@@ -91,7 +94,8 @@ const AppState = {
         keyClaims: null,
         biasCheck: null,
         lieDetection: null,
-        manipulation: null
+        manipulation: null,
+        comprehensive: null
     },
     
     // Pending content for modal flow
@@ -109,13 +113,15 @@ const AppState = {
         this.currentBiasResults = null;
         this.currentLieDetectionResults = null;
         this.currentManipulationResults = null;
+        this.currentComprehensiveResults = null;
         this.currentJobIds = {
             llmVerification: null,
             factCheck: null,
             keyClaims: null,
             biasCheck: null,
             lieDetection: null,
-            manipulation: null
+            manipulation: null,
+            comprehensive: null
         };
 
         // Clear DOM containers to remove old rendered results

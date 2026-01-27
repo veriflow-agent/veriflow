@@ -35,7 +35,11 @@ async function handleAnalyze() {
     // Mode-specific validation and processing
     const mode = AppState.currentMode;
 
-    if (mode === 'llm-output') {
+    if (mode === 'comprehensive') {
+        // Comprehensive mode handles everything
+        processContent(content, 'comprehensive');
+
+    } else if (mode === 'llm-output') {
         const links = hasHTMLLinks(content);
 
         if (!links) {
@@ -81,6 +85,11 @@ async function processContent(content, type) {
 
     try {
         switch (type) {
+            case 'comprehensive':
+                addProgress('Starting comprehensive analysis...');
+                await runComprehensiveAnalysis(content);
+                break;
+
             case 'html':
                 addProgress('Starting LLM interpretation verification...');
                 await runLLMVerification(content);
@@ -140,8 +149,17 @@ function displayCombinedResults(type) {
     if (biasAnalysisTab) biasAnalysisTab.style.display = 'none';
     if (lieDetectionTab) lieDetectionTab.style.display = 'none';
     if (manipulationTab) manipulationTab.style.display = 'none';
+    if (comprehensiveTab) comprehensiveTab.style.display = 'none';
 
     switch (type) {
+        case 'comprehensive':
+            if (comprehensiveTab) comprehensiveTab.style.display = 'block';
+            if (AppState.currentComprehensiveResults) {
+                renderComprehensiveResults(AppState.currentComprehensiveResults);
+            }
+            switchResultTab('comprehensive');
+            break;
+
         case 'html':
         case 'text':
             if (factCheckTab) factCheckTab.style.display = 'block';
@@ -185,6 +203,10 @@ function exportResults() {
     let filename = 'veriflow-results';
 
     switch (mode) {
+        case 'comprehensive':
+            data = AppState.currentComprehensiveResults;
+            filename = 'veriflow-comprehensive';
+            break;
         case 'llm-output':
         case 'text-factcheck':
             data = AppState.currentLLMVerificationResults || AppState.currentFactCheckResults;
@@ -213,6 +235,138 @@ function exportResults() {
         downloadAsJson(data, `${filename}-${timestamp}.json`);
     } else {
         console.warn('No results to export');
+    }
+}
+
+// ============================================
+// COMPREHENSIVE ANALYSIS
+// ============================================
+
+async function runComprehensiveAnalysis(content) {
+    try {
+        addProgress('Initiating comprehensive analysis pipeline...');
+        
+        const response = await fetch('/api/comprehensive-analysis', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                content: content,
+                input_type: 'text'
+            })
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Comprehensive analysis failed to start');
+        }
+        
+        const data = await response.json();
+        
+        // Store job ID
+        AppState.currentJobIds.comprehensive = data.job_id;
+        
+        addProgress('Stage 1: Pre-analysis starting...');
+        
+        // Stream progress
+        await streamComprehensiveProgress(data.job_id);
+        
+    } catch (error) {
+        console.error('Comprehensive analysis error:', error);
+        addProgress(`Analysis failed: ${error.message}`, 'error');
+        throw error;
+    }
+}
+
+async function streamComprehensiveProgress(jobId) {
+    return new Promise((resolve, reject) => {
+        const eventSource = new EventSource(`/api/job/${jobId}/stream`);
+        
+        // Store for cleanup
+        AppState.activeEventSources.push(eventSource);
+        
+        eventSource.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                
+                // Handle heartbeat
+                if (data.heartbeat) return;
+                
+                // Handle progress updates
+                if (data.stage) {
+                    const stageMessages = {
+                        'content_classification': 'Classifying content type...',
+                        'source_verification': 'Verifying source credibility...',
+                        'author_research': 'Researching author...',
+                        'mode_routing': 'Selecting analysis modes...',
+                        'mode_execution': 'Running selected modes...',
+                        'synthesis': 'Synthesizing final report...'
+                    };
+                    addProgress(stageMessages[data.stage] || data.message || `Stage: ${data.stage}`);
+                }
+                
+                if (data.message && !data.stage) {
+                    addProgress(data.message);
+                }
+                
+                // Handle partial results (for progressive UI updates)
+                if (data.partial_result) {
+                    updateComprehensivePartialResults(data.partial_result);
+                }
+                
+                // Handle completion
+                if (data.status === 'completed') {
+                    eventSource.close();
+                    
+                    // Store results
+                    AppState.currentComprehensiveResults = data.result;
+                    
+                    addProgress('Comprehensive analysis complete!');
+                    resolve(data.result);
+                }
+                
+                // Handle failure
+                if (data.status === 'failed') {
+                    eventSource.close();
+                    reject(new Error(data.error || 'Analysis failed'));
+                }
+                
+            } catch (e) {
+                console.error('Error parsing SSE data:', e);
+            }
+        };
+        
+        eventSource.onerror = (error) => {
+            console.error('SSE error:', error);
+            eventSource.close();
+            
+            // Check if job completed despite stream error
+            fetch(`/api/job/${jobId}`)
+                .then(r => r.json())
+                .then(job => {
+                    if (job.status === 'completed') {
+                        AppState.currentComprehensiveResults = job.result;
+                        resolve(job.result);
+                    } else {
+                        reject(new Error('Connection lost'));
+                    }
+                })
+                .catch(() => reject(new Error('Connection lost')));
+        };
+    });
+}
+
+function updateComprehensivePartialResults(partial) {
+    // Update UI progressively as stages complete
+    if (partial.content_classification) {
+        renderContentClassification(partial.content_classification);
+    }
+    if (partial.source_verification) {
+        renderSourceCredibility(partial.source_verification);
+    }
+    if (partial.mode_routing) {
+        renderModeRouting(partial.mode_routing);
     }
 }
 
@@ -289,7 +443,8 @@ function initEventListeners() {
         { tab: keyClaimsTab, name: 'key-claims' },
         { tab: biasAnalysisTab, name: 'bias-analysis' },
         { tab: lieDetectionTab, name: 'lie-detection' },
-        { tab: manipulationTab, name: 'manipulation' }
+        { tab: manipulationTab, name: 'manipulation' },
+        { tab: comprehensiveTab, name: 'comprehensive' }
     ];
 
     resultTabs.forEach(({ tab, name }) => {

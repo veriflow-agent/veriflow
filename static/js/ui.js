@@ -101,9 +101,13 @@ function switchMode(mode) {
     hideContentFormatIndicator();
 
     // Hide URL toggle button for LLM output mode (copy-paste only)
+    // Also hide for comprehensive mode since it handles everything
     if (toggleUrlBtn) {
-        toggleUrlBtn.style.display = mode === 'llm-output' ? 'none' : '';
+        toggleUrlBtn.style.display = (mode === 'llm-output' || mode === 'comprehensive') ? 'none' : '';
     }
+
+    // Show/hide mode-specific instructions
+    updateModeInstructions(mode);
 
     // Ensure text input is shown when switching modes (reset to default)
     showTextInput();
@@ -115,6 +119,7 @@ function updatePlaceholder(mode) {
     if (!htmlInput) return;
 
     const placeholders = {
+        'comprehensive': 'Paste any article, text, or AI-generated content for full analysis...',
         'key-claims': 'Paste the article or text you want to analyze...',
         'bias-analysis': 'Paste the article or text to analyze for bias...',
         'lie-detection': 'Paste the text to analyze for deception markers...',
@@ -124,6 +129,82 @@ function updatePlaceholder(mode) {
     };
 
     htmlInput.placeholder = placeholders[mode] || 'Paste the article or text you want to analyze...';
+}
+
+function updateModeInstructions(mode) {
+    // Hide all instruction sections
+    const allInstructions = document.querySelectorAll('.mode-instructions');
+    allInstructions.forEach(el => el.style.display = 'none');
+    
+    // Show the relevant instruction section
+    const instructionMap = {
+        'comprehensive': 'comprehensiveInstructions',
+        'key-claims': 'keyClaimsInstructions',
+        'bias-analysis': 'biasAnalysisInstructions',
+        'lie-detection': 'lieDetectionInstructions',
+        'manipulation': 'manipulationInstructions',
+        'llm-output': 'llmOutputInstructions',
+        'text-factcheck': 'textFactcheckInstructions'
+    };
+    
+    const instructionId = instructionMap[mode];
+    if (instructionId) {
+        const el = document.getElementById(instructionId);
+        if (el) el.style.display = 'block';
+    }
+    
+    // Update input section labels
+    updateInputLabels(mode);
+}
+
+function updateInputLabels(mode) {
+    const inputSectionTitle = document.querySelector('.input-label');
+    const inputHelpText = document.querySelector('.input-help-text');
+    const publicationField = document.getElementById('publicationField');
+    
+    const labels = {
+        'comprehensive': {
+            title: 'Paste Content for Comprehensive Analysis',
+            help: 'Paste any article, news, opinion piece, or AI-generated content',
+            showPublication: false
+        },
+        'key-claims': {
+            title: 'Paste Text for Key Claims Analysis',
+            help: 'Paste any text - we\'ll identify and verify the 2-3 main arguments',
+            showPublication: false
+        },
+        'bias-analysis': {
+            title: 'Paste Text to Analyze for Bias',
+            help: 'Paste news articles, op-eds, or any content to analyze',
+            showPublication: true
+        },
+        'lie-detection': {
+            title: 'Paste Article or Text to Analyze',
+            help: 'Paste any article or text to analyze for deception markers',
+            showPublication: false
+        },
+        'manipulation': {
+            title: 'Paste Content for Manipulation Analysis',
+            help: 'Paste articles or opinion pieces to check for manipulation',
+            showPublication: false
+        },
+        'llm-output': {
+            title: 'Paste LLM Output with Sources',
+            help: 'Paste ChatGPT, Perplexity, or any LLM output with source links',
+            showPublication: false
+        },
+        'text-factcheck': {
+            title: 'Paste Text to Fact-Check',
+            help: 'Paste any text - we\'ll search the web to verify all claims',
+            showPublication: false
+        }
+    };
+    
+    const config = labels[mode] || labels['key-claims'];
+    
+    if (inputSectionTitle) inputSectionTitle.textContent = config.title;
+    if (inputHelpText) inputHelpText.textContent = config.help;
+    if (publicationField) publicationField.style.display = config.showPublication ? 'block' : 'none';
 }
 
 // ============================================
@@ -136,7 +217,8 @@ function switchResultTab(tabName) {
         'key-claims': { tab: keyClaimsTab, panel: keyClaimsResults },
         'bias-analysis': { tab: biasAnalysisTab, panel: biasAnalysisResults },
         'lie-detection': { tab: lieDetectionTab, panel: lieDetectionResults },
-        'manipulation': { tab: manipulationTab, panel: manipulationResults }
+        'manipulation': { tab: manipulationTab, panel: manipulationResults },
+        'comprehensive': { tab: comprehensiveTab, panel: comprehensiveResults }
     };
 
     Object.values(tabMappings).forEach(({ tab, panel }) => {
