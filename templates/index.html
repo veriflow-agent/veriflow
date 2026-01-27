@@ -35,6 +35,15 @@
             <section class="mode-selection-section">
                 <p class="section-label">CHOOSE ANALYSIS MODE</p>
                 <div class="mode-grid">
+                    <!-- Comprehensive Analysis - Featured Mode -->
+                    <button class="mode-card mode-card-comprehensive" data-mode="comprehensive">
+                        <div class="mode-content">
+                            <span class="mode-label">🔬 Comprehensive Analysis</span>
+                            <span class="mode-desc">Full verification — checks source, author & content quality</span>
+                        </div>
+                        <span class="mode-badge-new">NEW</span>
+                    </button>
+                    
                     <!-- Row 1: 3 cards -->
                     <button class="mode-card active" data-mode="key-claims">
                         <div class="mode-content">
@@ -139,61 +148,149 @@
                 </div>
             </section>
 
-            <!-- Mode Instructions (hidden by default, shown contextually) -->
-            <section class="mode-instructions" style="display: none;">
-                <!-- LLM Output Instructions -->
-                <div id="llmOutputInstructions" class="mode-instructions">
-                    <div class="instructions-card">
-                        <h3>📋 How to Verify LLM Output</h3>
-                        <div class="instructions-steps">
-                            <div class="step">
-                                <span class="step-number">1</span>
-                                <span class="step-text">Go to <strong>ChatGPT</strong>, <strong>Perplexity</strong>, or any LLM chat</span>
+                    <!-- Mode Instructions (shown contextually based on selected mode) -->
+
+                    <!-- Comprehensive Analysis Instructions -->
+                    <div id="comprehensiveInstructions" class="mode-instructions" style="display: none;">
+                        <div class="instructions-card instructions-card-comprehensive">
+                            <h3>🔬 How Comprehensive Analysis Works</h3>
+                            <p>Our most thorough analysis — we examine the source, investigate the author, and run multiple quality checks automatically.</p>
+
+                            <div class="instructions-stages">
+                                <div class="stage-block">
+                                    <div class="stage-header">
+                                        <span class="stage-number">1</span>
+                                        <span class="stage-title">We Examine the Basics</span>
+                                    </div>
+                                    <ul class="stage-items">
+                                        <li>🔍 What type of content is this? (news, opinion, AI-generated, etc.)</li>
+                                        <li>📰 Is the source reputable? (cross-referenced with media databases)</li>
+                                        <li>👤 Who wrote this? What's their track record?</li>
+                                    </ul>
+                                </div>
+
+                                <div class="stage-block">
+                                    <div class="stage-header">
+                                        <span class="stage-number">2</span>
+                                        <span class="stage-title">We Run Quality Checks</span>
+                                    </div>
+                                    <ul class="stage-items">
+                                        <li>🎯 Are the main claims actually true?</li>
+                                        <li>📊 Is there political or ideological bias?</li>
+                                        <li>🎭 Are facts being twisted or taken out of context?</li>
+                                        <li>🕵️ Are there signs of deceptive language?</li>
+                                    </ul>
+                                    <p class="stage-note">We automatically choose which checks to run based on your content</p>
+                                </div>
+
+                                <div class="stage-block">
+                                    <div class="stage-header">
+                                        <span class="stage-number">3</span>
+                                        <span class="stage-title">You Get a Clear Report</span>
+                                    </div>
+                                    <ul class="stage-items">
+                                        <li>📋 Overall trustworthiness score</li>
+                                        <li>⚠️ Key concerns to be aware of</li>
+                                        <li>💡 What to watch out for</li>
+                                    </ul>
+                                </div>
                             </div>
-                            <div class="step">
-                                <span class="step-number">2</span>
-                                <span class="step-text">Ask a question and get a response with <strong>source citations/links</strong></span>
+
+                            <div class="instructions-note">
+                                <span class="note-icon">⏱️</span>
+                                <span>Takes 3-5 minutes for thorough analysis. For a quick check, use <strong>Key Claims</strong> mode instead.</span>
                             </div>
-                            <div class="step">
-                                <span class="step-number">3</span>
-                                <span class="step-text">Click the <strong>📋 Copy button</strong> on the AI response (every chat has one)</span>
-                            </div>
-                            <div class="step">
-                                <span class="step-number">4</span>
-                                <span class="step-text">Paste it below and click <strong>Analyze</strong></span>
-                            </div>
-                        </div>
-                        <div class="instructions-note">
-                            <span class="note-icon">💡</span>
-                            <span>The copy button preserves source links in the correct format for verification</span>
                         </div>
                     </div>
-                </div>
 
-                <!-- Key Claims Instructions -->
-                <div id="keyClaimsInstructions" class="instructions-card" style="display: none;">
-                    <h3>Key Claims Analysis</h3>
-                    <p>Quickly verify the 2-3 most important claims in any text.</p>
-                </div>
+                    <!-- LLM Output Instructions -->
+                    <div id="llmOutputInstructions" class="mode-instructions" style="display: none;">
+                        <div class="instructions-card">
+                            <h3>📋 How to Verify AI-Generated Content</h3>
+                            <div class="instructions-steps">
+                                <div class="step">
+                                    <span class="step-number">1</span>
+                                    <span class="step-text">Go to <strong>ChatGPT</strong>, <strong>Perplexity</strong>, or any AI chat</span>
+                                </div>
+                                <div class="step">
+                                    <span class="step-number">2</span>
+                                    <span class="step-text">Get a response that includes <strong>source links</strong></span>
+                                </div>
+                                <div class="step">
+                                    <span class="step-number">3</span>
+                                    <span class="step-text">Click the <strong>📋 Copy button</strong> on the AI response</span>
+                                </div>
+                                <div class="step">
+                                    <span class="step-number">4</span>
+                                    <span class="step-text">Paste it below and click <strong>Analyze</strong></span>
+                                </div>
+                            </div>
+                            <div class="instructions-note">
+                                <span class="note-icon">💡</span>
+                                <span>The copy button preserves source links needed for verification</span>
+                            </div>
+                        </div>
+                    </div>
 
-                <!-- Bias Analysis Instructions -->
-                <div id="biasAnalysisInstructions" class="instructions-card" style="display: none;">
-                    <h3>Bias Analysis</h3>
-                    <p>Detect political, ideological, or commercial bias in content.</p>
-                </div>
+                    <!-- Key Claims Instructions -->
+                    <div id="keyClaimsInstructions" class="mode-instructions" style="display: none;">
+                        <div class="instructions-card">
+                            <h3>🎯 Key Claims Analysis</h3>
+                            <p>We identify the 2-3 most important claims and verify each one thoroughly.</p>
+                            <div class="instructions-note">
+                                <span class="note-icon">💡</span>
+                                <span>Best for: "Is the main point of this article actually true?"</span>
+                            </div>
+                        </div>
+                    </div>
 
-                <!-- Lie Detection Instructions -->
-                <div id="lieDetectionInstructions" class="instructions-card" style="display: none;">
-                    <h3>Deception Detection</h3>
-                    <p>Identify linguistic markers commonly associated with deception.</p>
-                </div>
+                    <!-- Bias Analysis Instructions -->
+                    <div id="biasAnalysisInstructions" class="mode-instructions" style="display: none;">
+                        <div class="instructions-card">
+                            <h3>📊 Bias Analysis</h3>
+                            <p>We detect political slant, loaded language, and one-sided framing.</p>
+                            <div class="instructions-note">
+                                <span class="note-icon">💡</span>
+                                <span>Best for news articles, opinion pieces, and political content</span>
+                            </div>
+                        </div>
+                    </div>
 
-                <!-- Text Fact-check Instructions -->
-                <div id="textFactcheckInstructions" class="instructions-card" style="display: none;">
-                    <h3>Full Fact-Check</h3>
-                    <p>Comprehensive verification of all claims using web search.</p>
-                </div>
-            </section>
+                    <!-- Lie Detection Instructions -->
+                    <div id="lieDetectionInstructions" class="mode-instructions" style="display: none;">
+                        <div class="instructions-card">
+                            <h3>🕵️ Deception Detection</h3>
+                            <p>We analyze linguistic patterns commonly associated with misleading communication.</p>
+                            <div class="instructions-note">
+                                <span class="note-icon">💡</span>
+                                <span>Best for statements, interviews, and press releases</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Manipulation Instructions -->
+                    <div id="manipulationInstructions" class="mode-instructions" style="display: none;">
+                        <div class="instructions-card">
+                            <h3>🎭 Manipulation Check</h3>
+                            <p>We look for facts taken out of context, cherry-picked data, and misleading framing.</p>
+                            <div class="instructions-note">
+                                <span class="note-icon">💡</span>
+                                <span>Best for opinion pieces and advocacy content</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Text Fact-check Instructions -->
+                    <div id="textFactcheckInstructions" class="mode-instructions" style="display: none;">
+                        <div class="instructions-card">
+                            <h3>🔍 Full Fact-Check</h3>
+                            <p>Comprehensive verification of all claims using web search.</p>
+                            <div class="instructions-note">
+                                <span class="note-icon">⏱️</span>
+                                <span>Coming soon</span>
+                            </div>
+                        </div>
+                    </div>
 
             <!-- Plain Text Modal -->
             <div id="plainTextModal" class="modal" style="display: none;">
@@ -252,6 +349,9 @@
             <section id="resultsSection" class="results-section" style="display: none;">
                 <!-- Results Tabs -->
                 <div class="results-tabs">
+                    <button id="comprehensiveTab" class="results-tab" style="display: none;">
+                        <span class="tab-label">Full Report</span>
+                    </button>
                     <button id="factCheckTab" class="results-tab active">
                         <span class="tab-label">Verification Results</span>
                     </button>
@@ -270,7 +370,175 @@
                 </div>
 
                 <!-- Results Content Container -->
+                <!-- Results Content Container -->
                 <div class="results-content">
+
+                    <!-- Comprehensive Analysis Results -->
+                    <div id="comprehensiveResults" class="results-panel" style="display: none;">
+
+                        <!-- What We Found Section -->
+                        <div class="comprehensive-section">
+                            <h3 class="section-title">
+                                <span class="section-icon">📋</span>
+                                What We Found
+                            </h3>
+
+                            <!-- Content Type Card -->
+                            <div id="contentClassificationCard" class="info-card">
+                                <div class="info-card-header">
+                                    <span class="info-card-icon">📝</span>
+                                    <span class="info-card-title">About This Content</span>
+                                </div>
+                                <div class="info-card-body">
+                                    <div class="info-grid">
+                                        <div class="info-item">
+                                            <span class="info-label">Type</span>
+                                            <span id="compContentType" class="info-value">—</span>
+                                        </div>
+                                        <div class="info-item">
+                                            <span class="info-label">Topic</span>
+                                            <span id="compContentRealm" class="info-value">—</span>
+                                        </div>
+                                        <div class="info-item">
+                                            <span class="info-label">Appears to be</span>
+                                            <span id="compContentPurpose" class="info-value">—</span>
+                                        </div>
+                                        <div class="info-item">
+                                            <span class="info-label">Has Sources</span>
+                                            <span id="compHasCitations" class="info-value">—</span>
+                                        </div>
+                                    </div>
+                                    <div id="compClassificationNotes" class="info-notes" style="display: none;"></div>
+                                </div>
+                            </div>
+
+                            <!-- Source Credibility Card -->
+                            <div id="sourceCredibilityCard" class="info-card">
+                                <div class="info-card-header">
+                                    <span class="info-card-icon">📰</span>
+                                    <span class="info-card-title">Source Reputation</span>
+                                </div>
+                                <div class="info-card-body">
+                                    <div class="credibility-display">
+                                        <div class="credibility-tier">
+                                            <span class="tier-label">Trust Level</span>
+                                            <span id="compCredTier" class="tier-value tier-3">3</span>
+                                            <span id="compCredTierDesc" class="tier-desc">Mixed</span>
+                                        </div>
+                                        <div class="credibility-details">
+                                            <div class="info-item">
+                                                <span class="info-label">Publication</span>
+                                                <span id="compPublicationName" class="info-value">—</span>
+                                            </div>
+                                            <div class="info-item">
+                                                <span class="info-label">Political Lean</span>
+                                                <span id="compBiasRating" class="info-value">—</span>
+                                            </div>
+                                            <div class="info-item">
+                                                <span class="info-label">Accuracy Record</span>
+                                                <span id="compFactualRating" class="info-value">—</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div id="compCredibilityFlags" class="flags-container" style="display: none;"></div>
+                                </div>
+                            </div>
+
+                            <!-- What We Checked Card -->
+                            <div id="modeRoutingCard" class="info-card">
+                                <div class="info-card-header">
+                                    <span class="info-card-icon">✅</span>
+                                    <span class="info-card-title">Checks We Performed</span>
+                                </div>
+                                <div class="info-card-body">
+                                    <div id="selectedModesGrid" class="modes-grid">
+                                        <!-- Populated by JS -->
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Detailed Findings Section (Collapsible) -->
+                        <div class="comprehensive-section">
+                            <h3 class="section-title">
+                                <span class="section-icon">📊</span>
+                                Detailed Findings
+                                <button id="toggleModeReports" class="toggle-section-btn">Show Details</button>
+                            </h3>
+
+                            <div id="modeReportsContainer" class="mode-reports-container">
+                                <!-- Populated dynamically by JS with collapsible report cards -->
+                            </div>
+                        </div>
+
+                        <!-- Overall Assessment Section -->
+                        <div class="comprehensive-section synthesis-section">
+                            <h3 class="section-title">
+                                <span class="section-icon">🔬</span>
+                                Our Assessment
+                            </h3>
+
+                            <!-- Overall Score -->
+                            <div class="synthesis-assessment">
+                                <div class="assessment-score">
+                                    <div class="score-circle" id="compOverallScore">
+                                        <span class="score-value">—</span>
+                                        <span class="score-label">Trust Score</span>
+                                    </div>
+                                    <span id="compOverallRating" class="overall-rating">Analysis in progress...</span>
+                                </div>
+                                <div class="assessment-confidence">
+                                    <span class="confidence-label">How confident are we?</span>
+                                    <div class="confidence-bar">
+                                        <div id="compConfidenceBar" class="confidence-fill" style="width: 0%;"></div>
+                                    </div>
+                                    <span id="compConfidenceValue" class="confidence-value">0%</span>
+                                </div>
+                            </div>
+
+                            <!-- Things to Watch Out For -->
+                            <div id="flagsSection" class="flags-section" style="display: none;">
+                                <h4 class="subsection-title">⚠️ Things to Watch Out For</h4>
+                                <div id="flagsContainer" class="flags-list">
+                                    <!-- Populated by JS -->
+                                </div>
+                            </div>
+
+                            <!-- What We Discovered -->
+                            <div id="keyFindingsSection" class="key-findings-section" style="display: none;">
+                                <h4 class="subsection-title">📌 What We Discovered</h4>
+                                <div id="keyFindingsContainer" class="findings-list">
+                                    <!-- Populated by JS -->
+                                </div>
+                            </div>
+
+                            <!-- Conflicting Information -->
+                            <div id="contradictionsSection" class="contradictions-section" style="display: none;">
+                                <h4 class="subsection-title">⚡ Conflicting Information</h4>
+                                <div id="contradictionsContainer" class="contradictions-list">
+                                    <!-- Populated by JS -->
+                                </div>
+                            </div>
+
+                            <!-- Our Recommendations -->
+                            <div id="recommendationsSection" class="recommendations-section" style="display: none;">
+                                <h4 class="subsection-title">💡 Our Recommendations</h4>
+                                <ul id="recommendationsContainer" class="recommendations-list">
+                                    <!-- Populated by JS -->
+                                </ul>
+                            </div>
+                        </div>
+
+                        <!-- Session Info -->
+                        <div class="session-info">
+                            <span>Report ID: <code id="compSessionId">—</code></span>
+                            <span class="separator">|</span>
+                            <span>Analysis time: <span id="compProcessingTime">—</span></span>
+                            <span id="compR2Sep" class="separator" style="display: none;">|</span>
+                            <a id="compR2Link" href="#" target="_blank" style="display: none;">Download Full Report</a>
+                        </div>
+                    </div>
+                    
                     <!-- Fact Check Results -->
                     <div id="factCheckResults" class="results-panel active">
                         <div class="results-summary">
@@ -481,6 +749,7 @@
     <script src="{{ url_for('static', filename='js/renderers/bias.js') }}"></script>
     <script src="{{ url_for('static', filename='js/renderers/liedetection.js') }}"></script>
     <script src="{{ url_for('static', filename='js/renderers/manipulation.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/renderers/comprehensive.js') }}"></script>
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>
 </body>
 </html>

@@ -1,0 +1,445 @@
+// ============================================
+// COMPREHENSIVE MODE - ADD TO static/js/app.js
+// ============================================
+
+// Add these changes to your existing app.js file
+
+// ============================================
+// 1. UPDATE PLACEHOLDERS OBJECT (in updatePlaceholder function)
+// ============================================
+
+// Add this to the placeholders object in updatePlaceholder():
+/*
+const placeholders = {
+    'comprehensive': 'Paste any article, text, or AI-generated content for full analysis...',
+    'key-claims': 'Paste the article or text you want to analyze...',
+    // ... rest of existing placeholders
+};
+*/
+
+
+// ============================================
+// 2. UPDATE switchMode FUNCTION
+// ============================================
+
+// Add comprehensive mode handling to switchMode():
+/*
+function switchMode(mode) {
+    AppState.currentMode = mode;
+
+    // Update card styling
+    modeCards.forEach(card => {
+        card.classList.toggle('active', card.dataset.mode === mode);
+    });
+
+    // Update placeholder text
+    updatePlaceholder(mode);
+
+    // Hide content format indicator when switching modes
+    hideContentFormatIndicator();
+
+    // Hide URL toggle button for LLM output mode (copy-paste only)
+    if (toggleUrlBtn) {
+        // Also hide for comprehensive mode since it handles everything
+        toggleUrlBtn.style.display = (mode === 'llm-output') ? 'none' : '';
+    }
+
+    // Show/hide mode-specific instructions
+    updateModeInstructions(mode);
+
+    // Ensure text input is shown when switching modes (reset to default)
+    showTextInput();
+
+    console.log('Mode switched to:', mode);
+}
+*/
+
+
+// ============================================
+// 3. ADD updateModeInstructions FUNCTION
+// ============================================
+
+function updateModeInstructions(mode) {
+    // Hide all instruction sections
+    const allInstructions = document.querySelectorAll('.mode-instructions');
+    allInstructions.forEach(el => el.style.display = 'none');
+    
+    // Show the relevant instruction section
+    const instructionMap = {
+        'comprehensive': 'comprehensiveInstructions',
+        'key-claims': 'keyClaimsInstructions',
+        'bias-analysis': 'biasAnalysisInstructions',
+        'lie-detection': 'lieDetectionInstructions',
+        'manipulation': 'manipulationInstructions',
+        'llm-output': 'llmOutputInstructions',
+        'text-factcheck': 'textFactcheckInstructions'
+    };
+    
+    const instructionId = instructionMap[mode];
+    if (instructionId) {
+        const el = document.getElementById(instructionId);
+        if (el) el.style.display = 'block';
+    }
+    
+    // Update input section labels
+    updateInputLabels(mode);
+}
+
+function updateInputLabels(mode) {
+    const inputSectionTitle = document.querySelector('.input-label');
+    const inputHelpText = document.querySelector('.input-help-text');
+    const publicationField = document.getElementById('publicationField');
+    
+    const labels = {
+        'comprehensive': {
+            title: 'Paste Content for Comprehensive Analysis',
+            help: 'Paste any article, news, opinion piece, or AI-generated content',
+            showPublication: false
+        },
+        'key-claims': {
+            title: 'Paste Text for Key Claims Analysis',
+            help: 'Paste any text - we\'ll identify and verify the 2-3 main arguments',
+            showPublication: false
+        },
+        'bias-analysis': {
+            title: 'Paste Text to Analyze for Bias',
+            help: 'Paste news articles, op-eds, or any content to analyze',
+            showPublication: true
+        },
+        'lie-detection': {
+            title: 'Paste Article or Text to Analyze',
+            help: 'Paste any article or text to analyze for deception markers',
+            showPublication: false
+        },
+        'manipulation': {
+            title: 'Paste Content for Manipulation Analysis',
+            help: 'Paste articles or opinion pieces to check for manipulation',
+            showPublication: false
+        },
+        'llm-output': {
+            title: 'Paste LLM Output with Sources',
+            help: 'Paste ChatGPT, Perplexity, or any LLM output with source links',
+            showPublication: false
+        },
+        'text-factcheck': {
+            title: 'Paste Text to Fact-Check',
+            help: 'Paste any text - we\'ll search the web to verify all claims',
+            showPublication: false
+        }
+    };
+    
+    const config = labels[mode] || labels['key-claims'];
+    
+    if (inputSectionTitle) inputSectionTitle.textContent = config.title;
+    if (inputHelpText) inputHelpText.textContent = config.help;
+    if (publicationField) publicationField.style.display = config.showPublication ? 'block' : 'none';
+}
+
+
+// ============================================
+// 4. UPDATE handleAnalyze FUNCTION
+// ============================================
+
+// Add comprehensive mode to handleAnalyze():
+/*
+async function handleAnalyze() {
+    const content = htmlInput.value.trim();
+
+    if (!content) {
+        showError('Please paste some content to analyze.');
+        return;
+    }
+
+    // Hide URL status when starting analysis
+    hideUrlStatus();
+
+    // Mode-specific validation and processing
+    const mode = AppState.currentMode;
+
+    if (mode === 'comprehensive') {
+        // Comprehensive mode handles everything
+        processContent(content, 'comprehensive');
+        
+    } else if (mode === 'llm-output') {
+        const links = hasHTMLLinks(content);
+        if (!links) {
+            AppState.pendingContent = content;
+            showPlainTextModal();
+            return;
+        }
+        processContent(content, 'html');
+        
+    } else if (mode === 'key-claims') {
+        processContent(content, 'key-claims');
+        
+    } // ... rest of existing modes
+}
+*/
+
+
+// ============================================
+// 5. UPDATE processContent FUNCTION
+// ============================================
+
+// Add comprehensive case to processContent():
+/*
+async function processContent(content, type) {
+    AppState.closeAllStreams();
+
+    setLoadingState(true);
+    if (stopBtn) stopBtn.disabled = false;
+    hideAllSections();
+    showSection(statusSection);
+    clearProgressLog();
+
+    // Clear all results
+    AppState.clearResults();
+
+    try {
+        switch (type) {
+            case 'comprehensive':
+                addProgress('🔬 Starting comprehensive analysis...');
+                await runComprehensiveAnalysis(content);
+                break;
+                
+            case 'html':
+                addProgress('Starting LLM interpretation verification...');
+                await runLLMVerification(content);
+                break;
+                
+            // ... rest of existing cases
+        }
+
+        displayCombinedResults(type);
+
+    } catch (error) {
+        // ... existing error handling
+    }
+}
+*/
+
+
+// ============================================
+// 6. ADD runComprehensiveAnalysis FUNCTION
+// ============================================
+
+async function runComprehensiveAnalysis(content) {
+    try {
+        addProgress('🔬 Initiating comprehensive analysis pipeline...');
+        
+        const response = await fetch('/api/comprehensive-analysis', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                content: content,
+                input_type: 'text'  // Let backend determine actual type
+            })
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Comprehensive analysis failed to start');
+        }
+        
+        const data = await response.json();
+        
+        // Store job ID
+        if (!AppState.currentJobIds) AppState.currentJobIds = {};
+        AppState.currentJobIds.comprehensive = data.job_id;
+        
+        addProgress('📋 Stage 1: Pre-analysis starting...');
+        
+        // Stream progress
+        await streamComprehensiveProgress(data.job_id);
+        
+    } catch (error) {
+        console.error('Comprehensive analysis error:', error);
+        addProgress(`❌ Analysis failed: ${error.message}`, 'error');
+        throw error;
+    }
+}
+
+async function streamComprehensiveProgress(jobId) {
+    return new Promise((resolve, reject) => {
+        const eventSource = new EventSource(`/api/job/${jobId}/stream`);
+        
+        // Store for cleanup
+        if (!AppState.activeStreams) AppState.activeStreams = [];
+        AppState.activeStreams.push(eventSource);
+        
+        eventSource.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                
+                // Handle heartbeat
+                if (data.heartbeat) return;
+                
+                // Handle progress updates
+                if (data.stage) {
+                    const stageMessages = {
+                        'content_classification': '📝 Classifying content type...',
+                        'source_verification': '📰 Verifying source credibility...',
+                        'author_research': '👤 Researching author...',
+                        'mode_routing': '🎯 Selecting analysis modes...',
+                        'mode_execution': '📊 Running selected modes...',
+                        'synthesis': '🔬 Synthesizing final report...'
+                    };
+                    addProgress(stageMessages[data.stage] || data.message || `Stage: ${data.stage}`);
+                }
+                
+                if (data.message && !data.stage) {
+                    addProgress(data.message);
+                }
+                
+                // Handle partial results (for progressive UI updates)
+                if (data.partial_result) {
+                    updateComprehensivePartialResults(data.partial_result);
+                }
+                
+                // Handle completion
+                if (data.status === 'completed') {
+                    eventSource.close();
+                    
+                    // Store results
+                    if (!AppState.currentResults) AppState.currentResults = {};
+                    AppState.currentResults.comprehensive = data.result;
+                    
+                    addProgress('✅ Comprehensive analysis complete!');
+                    resolve(data.result);
+                }
+                
+                // Handle failure
+                if (data.status === 'failed') {
+                    eventSource.close();
+                    reject(new Error(data.error || 'Analysis failed'));
+                }
+                
+            } catch (e) {
+                console.error('Error parsing SSE data:', e);
+            }
+        };
+        
+        eventSource.onerror = (error) => {
+            console.error('SSE error:', error);
+            eventSource.close();
+            
+            // Check if job completed despite stream error
+            fetch(`/api/job/${jobId}`)
+                .then(r => r.json())
+                .then(job => {
+                    if (job.status === 'completed') {
+                        AppState.currentResults.comprehensive = job.result;
+                        resolve(job.result);
+                    } else {
+                        reject(new Error('Connection lost'));
+                    }
+                })
+                .catch(() => reject(new Error('Connection lost')));
+        };
+    });
+}
+
+function updateComprehensivePartialResults(partial) {
+    // Update UI progressively as stages complete
+    if (partial.content_classification) {
+        renderContentClassification(partial.content_classification);
+    }
+    if (partial.source_verification) {
+        renderSourceCredibility(partial.source_verification);
+    }
+    if (partial.mode_routing) {
+        renderModeRouting(partial.mode_routing);
+    }
+}
+
+
+// ============================================
+// 7. UPDATE displayCombinedResults FUNCTION
+// ============================================
+
+// Add comprehensive case to displayCombinedResults():
+/*
+function displayCombinedResults(type) {
+    setLoadingState(false);
+    hideAllSections();
+    showSection(resultsSection);
+    
+    // Hide all tabs first
+    hideAllTabs();
+    
+    if (type === 'comprehensive') {
+        // Show comprehensive tab and results
+        showTab('comprehensiveTab');
+        activateTab('comprehensiveTab');
+        showResultsPanel('comprehensiveResults');
+        
+        // Render the results
+        if (AppState.currentResults && AppState.currentResults.comprehensive) {
+            renderComprehensiveResults(AppState.currentResults.comprehensive);
+        }
+        
+    } else if (type === 'html' || type === 'text') {
+        // ... existing LLM/fact-check handling
+    }
+    
+    // ... rest of existing code
+}
+*/
+
+
+// ============================================
+// 8. HELPER FUNCTIONS
+// ============================================
+
+function showTab(tabId) {
+    const tab = document.getElementById(tabId);
+    if (tab) tab.style.display = 'flex';
+}
+
+function hideAllTabs() {
+    const tabs = document.querySelectorAll('.results-tab');
+    tabs.forEach(tab => tab.style.display = 'none');
+}
+
+function activateTab(tabId) {
+    const tabs = document.querySelectorAll('.results-tab');
+    tabs.forEach(tab => tab.classList.remove('active'));
+    
+    const activeTab = document.getElementById(tabId);
+    if (activeTab) activeTab.classList.add('active');
+}
+
+function showResultsPanel(panelId) {
+    const panels = document.querySelectorAll('.results-content');
+    panels.forEach(panel => panel.style.display = 'none');
+    
+    const activePanel = document.getElementById(panelId);
+    if (activePanel) activePanel.style.display = 'block';
+}
+
+
+// ============================================
+// 9. ADD TAB CLICK HANDLER FOR COMPREHENSIVE
+// ============================================
+
+document.addEventListener('DOMContentLoaded', () => {
+    const comprehensiveTab = document.getElementById('comprehensiveTab');
+    if (comprehensiveTab) {
+        comprehensiveTab.addEventListener('click', () => {
+            activateTab('comprehensiveTab');
+            showResultsPanel('comprehensiveResults');
+        });
+    }
+});
+
+
+// ============================================
+// EXPORTS (if using modules)
+// ============================================
+
+if (typeof window !== 'undefined') {
+    window.runComprehensiveAnalysis = runComprehensiveAnalysis;
+    window.updateModeInstructions = updateModeInstructions;
+}
