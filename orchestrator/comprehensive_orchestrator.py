@@ -493,30 +493,25 @@ class ComprehensiveOrchestrator:
             # Add processing metadata
             synthesis_dict["synthesis_time_seconds"] = round(time.time() - start_time, 2)
 
-            # Count total flags for progress message
-            total_flags = (
-                len(synthesis_report.credibility_flags) +
-                len(synthesis_report.bias_flags) +
-                len(synthesis_report.manipulation_flags) +
-                len(synthesis_report.factual_accuracy_flags)
-            )
+            # Count total concerns for progress message (using new simplified model)
+            total_concerns = len(synthesis_report.key_concerns)
 
             job_manager.add_progress(
                 job_id, 
-                f"✅ Synthesis complete: Score {synthesis_report.overall_credibility_score:.0f}/100 "
-                f"({synthesis_report.overall_credibility_rating}), "
-                f"{total_flags} flags, {len(synthesis_report.key_findings)} key findings"
+                f"✅ Synthesis complete: Score {synthesis_report.overall_score}/100 "
+                f"({synthesis_report.overall_rating}), "
+                f"{total_concerns} concerns identified"
             )
 
             fact_logger.logger.info(
                 "✅ Stage 3 synthesis complete",
                 extra={
-                    "overall_score": synthesis_report.overall_credibility_score,
-                    "rating": synthesis_report.overall_credibility_rating,
-                    "confidence": synthesis_report.confidence_in_assessment,
-                    "flags_count": total_flags,
-                    "contradictions_count": len(synthesis_report.contradictions),
-                    "key_findings_count": len(synthesis_report.key_findings),
+                    "overall_score": synthesis_report.overall_score,
+                    "rating": synthesis_report.overall_rating,
+                    "confidence": synthesis_report.confidence,
+                    "concerns_count": total_concerns,
+                    "positives_count": len(synthesis_report.positive_indicators),
+                    "modes_analyzed": len(synthesis_report.modes_analyzed),
                     "synthesis_time": synthesis_dict["synthesis_time_seconds"]
                 }
             )
