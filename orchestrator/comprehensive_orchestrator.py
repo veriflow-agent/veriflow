@@ -354,7 +354,7 @@ class ComprehensiveOrchestrator:
             fact_logger.logger.error(f"❌ Mode {mode_id} failed: {e}")
             return (mode_id, None, str(e))
 
-    @traceable(name="comprehensive_stage2_execution", run_type="chain", tags=["comprehensive", "stage2", "parallel"])
+    @traceable(name="comprehensive_stage2_execution", run_type="chain", tags=["comprehensive", "stage2"])
     async def _run_stage2(
         self,
         content: str,
@@ -362,9 +362,13 @@ class ComprehensiveOrchestrator:
         stage1_results: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
-        Stage 2: Parallel Mode Execution
+        Stage 2: Mode Execution (SEQUENTIAL)
 
-        Run all selected modes in parallel and collect results
+        ⚠️ FIX: Run modes sequentially instead of in parallel to avoid
+        LangChain asyncio task context conflicts.
+
+        The error "Leaving task does not match current task" happens when
+        multiple LangChain LLM calls run simultaneously via asyncio.gather().
         """
         self._send_stage_update(job_id, "mode_execution", "📊 Running selected analysis modes...")
 
@@ -373,42 +377,54 @@ class ComprehensiveOrchestrator:
 
         job_manager.add_progress(
             job_id,
-            f"⚡ Executing {len(selected_modes)} modes in parallel: {', '.join(selected_modes)}"
+            f"🔄 Executing {len(selected_modes)} modes: {', '.join(selected_modes)}"
         )
-
-        # Create tasks for parallel execution
-        tasks = [
-            self._run_single_mode(mode_id, content, job_id, stage1_results)
-            for mode_id in selected_modes
-        ]
-
-        # Execute all modes in parallel
-        start_time = time.time()
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        execution_time = time.time() - start_time
 
         # Process results
         mode_reports: Dict[str, Any] = {}
         mode_errors: Dict[str, str] = {}
 
-        for result in results:
-            if isinstance(result, CancelledException):
-                raise result
-            elif isinstance(result, Exception):
-                fact_logger.logger.error(f"❌ Mode execution error: {result}")
-                continue
-            elif isinstance(result, tuple) and len(result) == 3:
-                mode_id, mode_result, error = result
+        start_time = time.time()
 
-                if error:
-                    mode_errors[mode_id] = error
-                    job_manager.add_progress(job_id, f"⚠️ {mode_id} failed: {error}")
-                elif mode_result:
-                    mode_reports[mode_id] = mode_result
-                    job_manager.add_progress(job_id, f"✅ {mode_id} complete")
+        # ✅ FIX: Run modes SEQUENTIALLY to avoid asyncio task conflicts
+        for i, mode_id in enumerate(selected_modes, 1):
+            try:
+                self._check_cancellation(job_id)
+
+                job_manager.add_progress(
+                    job_id,
+                    f"▶️ Running mode {i}/{len(selected_modes)}: {mode_id}..."
+                )
+
+                # Run single mode and await it directly (no gather)
+                result = await self._run_single_mode(
+                    mode_id, content, job_id, stage1_results
+                )
+
+                # Unpack the result tuple
+                if isinstance(result, tuple) and len(result) == 3:
+                    mode_id_returned, mode_result, error = result
+
+                    if error:
+                        mode_errors[mode_id] = error
+                        job_manager.add_progress(job_id, f"⚠️ {mode_id} failed: {error}")
+                    elif mode_result:
+                        mode_reports[mode_id] = mode_result
+                        job_manager.add_progress(job_id, f"✅ {mode_id} complete")
+
+            except CancelledException:
+                raise
+            except Exception as e:
+                fact_logger.logger.error(f"❌ Mode {mode_id} failed: {e}")
+                import traceback
+                fact_logger.logger.error(f"Traceback: {traceback.format_exc()}")
+                mode_errors[mode_id] = str(e)
+                job_manager.add_progress(job_id, f"❌ {mode_id} error: {str(e)}")
+
+        execution_time = time.time() - start_time
 
         fact_logger.logger.info(
-            f"⚡ Stage 2 complete in {execution_time:.1f}s",
+            f"⚡ Stage 2 complete in {execution_time:.1f}s (sequential execution)",
             extra={
                 "modes_run": len(selected_modes),
                 "modes_succeeded": len(mode_reports),

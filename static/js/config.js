@@ -73,7 +73,7 @@ const retryBtn = document.getElementById('retryBtn');
 
 const AppState = {
     // Current mode: 'comprehensive', 'key-claims', 'bias-analysis', 'lie-detection', 'manipulation', 'text-factcheck', 'llm-output'
-    currentMode: 'key-claims',
+    currentMode: 'comprehensive',
     
     // Results storage
     currentLLMVerificationResults: null,
