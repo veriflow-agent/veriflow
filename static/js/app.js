@@ -543,8 +543,9 @@ function init() {
     initBiasModelTabs();
     initManipulationTabs();
 
-    // Set initial mode
+    // Set initial mode AND activate the mode card
     updatePlaceholder(AppState.currentMode);
+    switchMode(AppState.currentMode);  // ← ADD THIS LINE
 
     console.log('VeriFlow initialized');
     console.log('Modules: config, utils, ui, modal, api, renderers');
