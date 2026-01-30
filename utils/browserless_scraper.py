@@ -1,47 +1,57 @@
 # utils/browserless_scraper.py
 """
-✅ FIXED Railway Browserless Scraper with Persistent Sessions & Replica Support
+Railway Browserless Scraper with Persistent Sessions & AI Content Cleaning
 
 KEY FEATURES:
-- ✅ Proper Railway Browserless connection using chromium.connect()
-- ✅ Persistent browser sessions (browsers stay open during run)
-- ✅ Support for Railway replicas with load distribution
-- ✅ Browser pooling for connection reuse
-- ✅ Fallback to local Playwright if Railway unavailable
-- ✅ TIMEOUT PROTECTION: Overall 30s timeout prevents infinite hangs
-- ✅ Individual operation timeouts for robustness
-- ✅ PARALLEL browser initialization (saves ~30 seconds!)
-- ✅ Paywall detection for early failure
+- Proper Railway Browserless connection using chromium.connect()
+- Persistent browser sessions (browsers stay open during run)
+- Support for Railway replicas with load distribution
+- Browser pooling for connection reuse
+- Fallback to local Playwright if Railway unavailable
+- TIMEOUT PROTECTION: Overall 30s timeout prevents infinite hangs
+- Individual operation timeouts for robustness
+- PARALLEL browser initialization (saves ~30 seconds!)
+- Paywall detection for early failure
+- AI-POWERED CONTENT CLEANING: Removes subscription noise, device warnings, etc.
 """
 
 import asyncio
 import time
 import re
 import os
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, TYPE_CHECKING
 from urllib.parse import urlparse
 from playwright.async_api import async_playwright, Browser, Page
 
 from utils.logger import fact_logger
 
+# NEW: Import content cleaner for AI-powered noise removal
+try:
+    from utils.article_content_cleaner import ArticleContentCleaner
+    CONTENT_CLEANER_AVAILABLE = True
+except ImportError:
+    CONTENT_CLEANER_AVAILABLE = False
+    fact_logger.logger.info("ℹ️ ArticleContentCleaner not available, using basic cleaning only")
+
 
 class BrowserlessScraper:
     """
-    ✅ OPTIMIZED: Railway Browserless scraper with persistent sessions and timeout protection
+    Railway Browserless scraper with persistent sessions, timeout protection,
+    and AI-powered content cleaning.
     """
 
     def __init__(self, config):
         self.config = config
 
-        # ✅ Railway Browserless configuration
+        # Railway Browserless configuration
         self.is_railway = os.getenv('RAILWAY_ENVIRONMENT') is not None
         self.browserless_endpoint = os.getenv('BROWSER_PLAYWRIGHT_ENDPOINT_PRIVATE') or os.getenv('BROWSER_PLAYWRIGHT_ENDPOINT')
         self.browserless_token = os.getenv('BROWSER_TOKEN')
 
-        # ✅ NEW: Support for Railway replicas
+        # Support for Railway replicas
         self.replica_id = os.getenv('RAILWAY_REPLICA_ID', '0')
 
-        # ✅ NEW: Browser pool for persistent sessions
+        # Browser pool for persistent sessions
         self.max_concurrent = 10  # Number of concurrent browsers
         self.playwright = None
         self.browser_pool: List[Browser] = []
@@ -54,7 +64,7 @@ class BrowserlessScraper:
         self.slow_timeout = 10000     # 10 seconds
         self.browser_launch_timeout = 10000
 
-        # ✅ NEW: Overall timeout to prevent infinite hangs
+        # Overall timeout to prevent infinite hangs
         self.overall_scrape_timeout = 30.0  # 30 second hard limit per URL
 
         # Domain-specific timeouts
@@ -69,13 +79,19 @@ class BrowserlessScraper:
         self.load_wait_time = 2.0
         self.interaction_delay = 0.5
 
+        # AI-powered content cleaner
+        self._content_cleaner = None
+        self.enable_ai_cleaning = True  # Can be disabled if needed
+
         # Stats tracking
         self.stats = {
             "total_scraped": 0,
             "successful_scrapes": 0,
             "failed_scrapes": 0,
             "timeout_scrapes": 0,
-            "paywall_detected": 0,  # ✅ NEW: Track paywalls
+            "paywall_detected": 0,
+            "ai_cleaned": 0,
+            "ai_cleaning_failed": 0,
             "avg_scrape_time": 0.0,
             "total_processing_time": 0.0,
             "browser_reuses": 0,
@@ -93,24 +109,35 @@ class BrowserlessScraper:
             "BrowserlessScraper",
             browserless=bool(self.browserless_endpoint),
             replica_id=self.replica_id,
-            browser_pool_size=self.max_concurrent
+            browser_pool_size=self.max_concurrent,
+            ai_cleaning=CONTENT_CLEANER_AVAILABLE
         )
+
+    def _get_content_cleaner(self) -> Optional['ArticleContentCleaner']:
+        """Lazy initialization of content cleaner"""
+        if self._content_cleaner is None and CONTENT_CLEANER_AVAILABLE:
+            try:
+                self._content_cleaner = ArticleContentCleaner(self.config)
+                fact_logger.logger.info("✅ AI content cleaner initialized")
+            except Exception as e:
+                fact_logger.logger.warning(f"⚠️ Failed to initialize content cleaner: {e}")
+        return self._content_cleaner
 
     async def scrape_urls_for_facts(self, urls: List[str]) -> Dict[str, str]:
         """
-        ✅ OPTIMIZED: Scrape multiple URLs with persistent browser sessions
+        Scrape multiple URLs with persistent browser sessions and AI cleaning.
 
         Args:
             urls: List of URLs to scrape
 
         Returns:
-            Dict mapping URL to scraped content
+            Dict mapping URL to scraped (and cleaned) content
         """
         if not urls:
             fact_logger.logger.warning("No URLs provided for scraping")
             return {}
 
-        # ✅ FIX: Calculate how many browsers we actually need
+        # Calculate how many browsers we actually need
         num_browsers_needed = min(len(urls), 3)  # Cap at 3 for small batches
 
         fact_logger.logger.info(
@@ -118,7 +145,6 @@ class BrowserlessScraper:
             extra={"url_count": len(urls), "replica_id": self.replica_id}
         )
 
-        # ✅ FIX: Pass num_browsers_needed to initialize only what we need
         await self._initialize_browser_pool(min_browsers=num_browsers_needed)
 
         try:
@@ -153,24 +179,24 @@ class BrowserlessScraper:
                     "total": len(urls),
                     "browser_reuses": self.stats["browser_reuses"],
                     "timeouts": self.stats["timeout_scrapes"],
-                    "paywalls": self.stats["paywall_detected"]
+                    "paywalls": self.stats["paywall_detected"],
+                    "ai_cleaned": self.stats["ai_cleaned"]
                 }
             )
 
             return results
 
         finally:
-            # ✅ IMPORTANT: Keep browsers alive for next batch
+            # Keep browsers alive for next batch
             # Browsers will be closed only when close() is called explicitly
             pass
 
     async def _initialize_browser_pool(self, min_browsers: Optional[int] = None):
         """
-        ✅ OPTIMIZED: Initialize browser pool in PARALLEL
+        Initialize browser pool in PARALLEL.
 
         Args:
             min_browsers: Minimum browsers to initialize (default: self.max_concurrent)
-                         For single URL scrapes, use min_browsers=1 or 2
         """
         if self.session_active:
             return  # Already initialized
@@ -189,7 +215,7 @@ class BrowserlessScraper:
             # Start Playwright once
             self.playwright = await async_playwright().start()
 
-            # ✅ KEY FIX: Create ALL browsers in PARALLEL
+            # Create ALL browsers in PARALLEL
             browser_tasks = [
                 self._create_single_browser(i) 
                 for i in range(num_browsers)
@@ -202,7 +228,7 @@ class BrowserlessScraper:
             for i, result in enumerate(results):
                 if isinstance(result, Exception):
                     fact_logger.logger.error(f"❌ Browser {i} failed: {result}")
-                elif isinstance(result, Browser):  # Explicit type check
+                elif isinstance(result, Browser):
                     self.browser_pool.append(result)
 
             init_time = time.time() - start_time
@@ -217,15 +243,14 @@ class BrowserlessScraper:
 
     async def _create_single_browser(self, browser_index: int) -> Optional[Browser]:
         """
-        ✅ FIXED: Create browser using proper Railway Browserless connection
+        Create browser using proper Railway Browserless connection.
         """
         try:
-            # ✅ FIX: Ensure playwright is initialized
             if not self.playwright:
                 fact_logger.logger.error(f"❌ Playwright not initialized for browser {browser_index}")
                 return None
 
-            # ✅ CRITICAL: Use chromium.connect() for Railway Browserless
+            # Use chromium.connect() for Railway Browserless
             if self.browserless_endpoint:
                 try:
                     # Build connection URL with token
@@ -235,7 +260,7 @@ class BrowserlessScraper:
                     if self.browserless_token and 'token=' not in connect_url:
                         separator = '&' if '?' in connect_url else '?'
                         connect_url = f"{connect_url}{separator}token={self.browserless_token}"
-                        # Add timeout parameter (4.5 minutes = 270000 milliseconds)
+                        # Add timeout parameter (30 minutes = 1800000 milliseconds)
                         browserless_session_timeout = 1800000
                         connect_url = f"{connect_url}&timeout={browserless_session_timeout}"
 
@@ -244,7 +269,6 @@ class BrowserlessScraper:
                         extra={"endpoint": connect_url[:50] + "...", "replica_id": self.replica_id}
                     )
 
-                    # ✅ THIS IS THE CORRECT METHOD for Railway Browserless
                     browser = await self.playwright.chromium.connect(
                         connect_url,
                         timeout=self.browser_launch_timeout
@@ -259,7 +283,7 @@ class BrowserlessScraper:
                     )
                     fact_logger.logger.info("🔄 Falling back to local Playwright...")
 
-            # ✅ Fallback to local Playwright
+            # Fallback to local Playwright
             fact_logger.logger.info(f"🔧 Browser {browser_index}: Using local Playwright")
             browser = await self.playwright.chromium.launch(
                 headless=True,
@@ -279,16 +303,12 @@ class BrowserlessScraper:
             return None
 
     async def _scrape_with_semaphore(self, semaphore: asyncio.Semaphore, url: str, browser_index: int) -> str:
-        """
-        ✅ OPTIMIZED: Scrape using persistent browser from pool
-        """
+        """Scrape using persistent browser from pool."""
         async with semaphore:
             return await self._scrape_single_url(url, browser_index)
 
     async def _scrape_single_url(self, url: str, browser_index: int) -> str:
-        """
-        ✅ FIXED: Scrape single URL with timeout protection
-        """
+        """Scrape single URL with timeout protection."""
         start_time = time.time()
         self.stats["total_scraped"] += 1
 
@@ -298,7 +318,7 @@ class BrowserlessScraper:
 
         browser = self.browser_pool[browser_index]
 
-        # ✅ FIX: Overall timeout to prevent infinite hangs
+        # Overall timeout to prevent infinite hangs
         try:
             return await asyncio.wait_for(
                 self._scrape_url_inner(url, browser_index, browser, start_time),
@@ -322,11 +342,10 @@ class BrowserlessScraper:
             )
             return ""
 
-    # ✅ FIX: _detect_paywall is now a proper class method (not nested!)
     async def _detect_paywall(self, page: Page) -> bool:
         """
-        Quick paywall detection to fail fast
-        Returns True if paywall detected
+        Quick paywall detection to fail fast.
+        Returns True if paywall detected.
         """
         try:
             # Common paywall indicators
@@ -351,13 +370,12 @@ class BrowserlessScraper:
                             fact_logger.logger.warning(f"🔒 Paywall detected: {selector}")
                             return True
                 except Exception:
-                    continue  # Selector might be invalid, skip
+                    continue
 
             # Check for very short content (often indicates paywall)
             try:
                 body_text = await page.inner_text('body')
                 if body_text and len(body_text.strip()) < 500:
-                    # Check for paywall keywords in body
                     paywall_keywords = ['subscribe', 'subscription', 'sign in to read', 'become a member', 'premium content']
                     body_lower = body_text.lower()
                     for keyword in paywall_keywords:
@@ -375,7 +393,7 @@ class BrowserlessScraper:
 
     async def _scrape_url_inner(self, url: str, browser_index: int, browser: Browser, start_time: float) -> str:
         """
-        ✅ NEW: Inner scraping logic separated for timeout wrapper
+        Inner scraping logic with AI content cleaning.
         """
         page = None
         try:
@@ -389,10 +407,10 @@ class BrowserlessScraper:
                 extra={"url": url, "browser_index": browser_index, "timeout_ms": timeout}
             )
 
-            # ✅ FIX: Add timeout to page creation
+            # Add timeout to page creation
             page = await asyncio.wait_for(browser.new_page(), timeout=10.0)
 
-            # ✅ FIX: Add timeout to page configuration
+            # Add timeout to page configuration
             await asyncio.wait_for(
                 self._configure_page_optimizations(page),
                 timeout=5.0
@@ -401,23 +419,64 @@ class BrowserlessScraper:
             # Navigate
             await page.goto(url, wait_until="domcontentloaded", timeout=timeout)
 
-            # ✅ FIX: Early paywall detection (call the method!)
+            # Early paywall detection
             if await self._detect_paywall(page):
                 self.stats["failed_scrapes"] += 1
                 self.stats["paywall_detected"] += 1
                 fact_logger.logger.warning(f"🔒 Paywall detected, skipping content extraction: {url}")
                 return ""
 
-            await asyncio.sleep(0.5)  # Reduced from 1.0 to 0.5
+            await asyncio.sleep(0.5)
 
-            # ✅ FIX: Add timeout to content extraction
-            content = await asyncio.wait_for(
+            # Extract raw content
+            raw_content = await asyncio.wait_for(
                 self._extract_structured_content(page),
                 timeout=10.0
             )
 
-            if content and len(content.strip()) > 100:
-                content = self._clean_content(content)
+            if raw_content and len(raw_content.strip()) > 100:
+                # Step 1: Basic regex cleaning
+                content = self._clean_content(raw_content)
+
+                # Step 2: AI-powered cleaning (removes subscription noise, device warnings, etc.)
+                if self.enable_ai_cleaning and CONTENT_CLEANER_AVAILABLE:
+                    try:
+                        cleaner = self._get_content_cleaner()
+                        if cleaner:
+                            cleaning_result = await asyncio.wait_for(
+                                cleaner.clean(url, content),
+                                timeout=15.0  # AI cleaning timeout
+                            )
+
+                            if cleaning_result.success and cleaning_result.cleaned.body:
+                                original_len = len(content)
+                                content = cleaning_result.cleaned.body
+                                self.stats["ai_cleaned"] += 1
+
+                                fact_logger.logger.info(
+                                    f"🧹 AI cleaned: {original_len} → {len(content)} chars "
+                                    f"({cleaning_result.reduction_percent:.0f}% noise removed)",
+                                    extra={
+                                        "url": url,
+                                        "original_length": original_len,
+                                        "cleaned_length": len(content),
+                                        "is_truncated": cleaning_result.cleaned.is_truncated,
+                                        "noise_removed": cleaning_result.cleaned.noise_removed
+                                    }
+                                )
+                            else:
+                                self.stats["ai_cleaning_failed"] += 1
+                                fact_logger.logger.debug(
+                                    f"⚠️ AI cleaning returned no content, using basic cleaning",
+                                    extra={"url": url, "error": cleaning_result.error}
+                                )
+                    except asyncio.TimeoutError:
+                        self.stats["ai_cleaning_failed"] += 1
+                        fact_logger.logger.warning(f"⚠️ AI cleaning timeout for {url}, using basic cleaning")
+                    except Exception as e:
+                        self.stats["ai_cleaning_failed"] += 1
+                        fact_logger.logger.warning(f"⚠️ AI cleaning failed for {url}: {e}, using basic cleaning")
+
                 processing_time = time.time() - start_time
 
                 self.stats["successful_scrapes"] += 1
@@ -446,15 +505,15 @@ class BrowserlessScraper:
                 return ""
 
         finally:
-            # ✅ FIX: Safe page close with timeout
+            # Safe page close with timeout
             if page:
                 try:
                     await asyncio.wait_for(page.close(), timeout=3.0)
                 except Exception:
-                    pass  # Non-critical, page might already be closed
+                    pass
 
     async def _configure_page_optimizations(self, page: Page):
-        """Configure page with optimizations"""
+        """Configure page with optimizations."""
         try:
             # Set realistic headers
             await page.set_extra_http_headers({
@@ -501,7 +560,7 @@ class BrowserlessScraper:
             fact_logger.logger.warning(f"⚠️ Page configuration partially failed: {e}")
 
     async def _block_resources(self, route):
-        """Block unnecessary resources for faster loading"""
+        """Block unnecessary resources for faster loading."""
         resource_type = route.request.resource_type
         url = route.request.url
 
@@ -525,7 +584,7 @@ class BrowserlessScraper:
         progress_callback=None
     ) -> Dict[str, str]:
         """
-        ✅ NEW: Scrape URLs in batches to handle large numbers of URLs
+        Scrape URLs in batches to handle large numbers of URLs.
 
         Args:
             urls: List of all URLs to scrape
@@ -565,7 +624,7 @@ class BrowserlessScraper:
                 }
             )
 
-            # Scrape this batch using existing method
+            # Scrape this batch
             batch_results = await self.scrape_urls_for_facts(batch_urls)
 
             # Merge results
@@ -590,8 +649,8 @@ class BrowserlessScraper:
                 except Exception as e:
                     fact_logger.logger.warning(f"Progress callback error: {e}")
 
-            # Small delay between batches to avoid overwhelming the system
-            if i + batch_size < len(urls):  # Not the last batch
+            # Small delay between batches
+            if i + batch_size < len(urls):
                 await asyncio.sleep(2.0)
 
         fact_logger.logger.info(
@@ -606,7 +665,7 @@ class BrowserlessScraper:
         return all_results
 
     async def _extract_structured_content(self, page: Page) -> str:
-        """Extract content while preserving structure"""
+        """Extract content while preserving structure."""
         try:
             fact_logger.logger.debug("Extracting structured content")
 
@@ -747,14 +806,14 @@ class BrowserlessScraper:
             return ""
 
     def _clean_content(self, content: str) -> str:
-        """Clean extracted content"""
+        """Basic regex cleaning of extracted content."""
         if not content:
             return ""
 
         # Remove excessive whitespace
         content = re.sub(r'\n\s*\n\s*\n+', '\n\n', content)
 
-        # Remove common noise
+        # Remove common noise patterns
         noise_patterns = [
             r'Cookie.*?(?=\n|$)',
             r'Privacy Policy.*?(?=\n|$)',
@@ -778,13 +837,11 @@ class BrowserlessScraper:
         return content
 
     def get_stats(self) -> Dict:
-        """Return scraping statistics"""
+        """Return scraping statistics."""
         return self.stats.copy()
 
     async def close(self):
-        """
-        ✅ NEW: Properly close browser pool and cleanup
-        """
+        """Properly close browser pool and cleanup."""
         fact_logger.logger.info("🛑 Shutting down scraper...")
 
         # Close all browsers in pool
@@ -804,7 +861,7 @@ class BrowserlessScraper:
                 fact_logger.logger.debug(f"Playwright stop error (non-critical): {e}")
 
         self.session_active = False
-        self.browser_pool = []  # Clear pool
+        self.browser_pool = []
 
         # Print stats
         if self.stats["total_scraped"] > 0:
@@ -812,7 +869,8 @@ class BrowserlessScraper:
             fact_logger.logger.info(
                 f"📊 Scraping stats: {self.stats['successful_scrapes']}/{self.stats['total_scraped']} "
                 f"successful ({success_rate:.1f}%), {self.stats['browser_reuses']} browser reuses, "
-                f"{self.stats['timeout_scrapes']} timeouts, {self.stats['paywall_detected']} paywalls"
+                f"{self.stats['timeout_scrapes']} timeouts, {self.stats['paywall_detected']} paywalls, "
+                f"{self.stats['ai_cleaned']} AI cleaned"
             )
 
         fact_logger.logger.info("✅ Scraper shutdown complete")

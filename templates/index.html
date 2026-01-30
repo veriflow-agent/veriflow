@@ -154,7 +154,7 @@
                     <!-- LLM Output Instructions -->
                     <div id="llmOutputInstructions" class="mode-instructions" style="display: none;">
                         <div class="instructions-card">
-                            <h3>📋 How to Verify AI-Generated Content</h3>
+                            <h3>How to Verify AI-Generated Content</h3>
                             <div class="instructions-steps">
                                 <div class="step">
                                     <span class="step-number">1</span>
@@ -166,7 +166,7 @@
                                 </div>
                                 <div class="step">
                                     <span class="step-number">3</span>
-                                    <span class="step-text">Click the <strong>📋 Copy button</strong> on the AI response</span>
+                                    <span class="step-text">Click the <strong>Copy button</strong> on the AI response</span>
                                 </div>
                                 <div class="step">
                                     <span class="step-number">4</span>
@@ -174,7 +174,6 @@
                                 </div>
                             </div>
                             <div class="instructions-note">
-                                <span class="note-icon">💡</span>
                                 <span>The copy button preserves source links needed for verification</span>
                             </div>
                         </div>
@@ -183,10 +182,9 @@
                     <!-- Key Claims Instructions -->
                     <div id="keyClaimsInstructions" class="mode-instructions" style="display: none;">
                         <div class="instructions-card">
-                            <h3>🎯 Key Claims Analysis</h3>
+                            <h3>Key Claims Analysis</h3>
                             <p>We identify the 2-3 most important claims and verify each one thoroughly.</p>
                             <div class="instructions-note">
-                                <span class="note-icon">💡</span>
                                 <span>Best for: "Is the main point of this article actually true?"</span>
                             </div>
                         </div>
@@ -195,10 +193,9 @@
                     <!-- Bias Analysis Instructions -->
                     <div id="biasAnalysisInstructions" class="mode-instructions" style="display: none;">
                         <div class="instructions-card">
-                            <h3>📊 Bias Analysis</h3>
+                            <h3>Bias Analysis</h3>
                             <p>We detect political slant, loaded language, and one-sided framing.</p>
                             <div class="instructions-note">
-                                <span class="note-icon">💡</span>
                                 <span>Best for news articles, opinion pieces, and political content</span>
                             </div>
                         </div>
@@ -207,10 +204,9 @@
                     <!-- Lie Detection Instructions -->
                     <div id="lieDetectionInstructions" class="mode-instructions" style="display: none;">
                         <div class="instructions-card">
-                            <h3>🕵️ Deception Detection</h3>
+                            <h3>Deception Detection</h3>
                             <p>We analyze linguistic patterns commonly associated with misleading communication.</p>
                             <div class="instructions-note">
-                                <span class="note-icon">💡</span>
                                 <span>Best for statements, interviews, and press releases</span>
                             </div>
                         </div>
@@ -219,10 +215,9 @@
                     <!-- Manipulation Instructions -->
                     <div id="manipulationInstructions" class="mode-instructions" style="display: none;">
                         <div class="instructions-card">
-                            <h3>🎭 Manipulation Check</h3>
+                            <h3>Manipulation Check</h3>
                             <p>We look for facts taken out of context, cherry-picked data, and misleading framing.</p>
                             <div class="instructions-note">
-                                <span class="note-icon">💡</span>
                                 <span>Best for opinion pieces and advocacy content</span>
                             </div>
                         </div>
@@ -231,7 +226,7 @@
                     <!-- Text Fact-check Instructions -->
                     <div id="textFactcheckInstructions" class="mode-instructions" style="display: none;">
                         <div class="instructions-card">
-                            <h3>🔍 Full Fact-Check</h3>
+                            <h3>Full Fact-Check</h3>
                             <p>Comprehensive verification of all claims using web search.</p>
                             <div class="instructions-note">
                                 <span class="note-icon">⏱️</span>
@@ -334,7 +329,6 @@
                             <!-- Content Type Card -->
                             <div id="contentClassificationCard" class="info-card">
                                 <div class="info-card-header">
-                                    <span class="info-card-icon">📝</span>
                                     <span class="info-card-title">About This Content</span>
                                 </div>
                                 <div class="info-card-body">
@@ -363,7 +357,6 @@
                             <!-- Source Credibility Card -->
                             <div id="sourceCredibilityCard" class="info-card">
                                 <div class="info-card-header">
-                                    <span class="info-card-icon">📰</span>
                                     <span class="info-card-title">Source Reputation</span>
                                 </div>
                                 <div class="info-card-body">
@@ -409,7 +402,6 @@
                         <!-- Detailed Findings Section (Collapsible) -->
                         <div class="comprehensive-section">
                             <h3 class="section-title">
-                                <span class="section-icon">📊</span>
                                 Detailed Findings
                                 <button id="toggleModeReports" class="toggle-section-btn">Show Details</button>
                             </h3>
@@ -420,10 +412,8 @@
                         </div>
 
                         <!-- Overall Assessment Section -->
-                        <!-- Overall Assessment Section -->
                         <div class="comprehensive-section synthesis-section">
                             <h3 class="section-title">
-                                <span class="section-icon">🔬</span>
                                 Our Assessment
                             </h3>
 
@@ -455,19 +445,19 @@
 
                             <!-- Key Concerns (if any) -->
                             <div id="keyConcernsSection" class="concerns-section" style="display: none;">
-                                <h4 class="subsection-title">⚠️ Key Concerns</h4>
+                                <h4 class="subsection-title">Key Concerns</h4>
                                 <ul id="keyConcernsContainer" class="concerns-list"></ul>
                             </div>
 
                             <!-- Positive Indicators (if any) -->
                             <div id="positiveIndicatorsSection" class="positives-section" style="display: none;">
-                                <h4 class="subsection-title">✅ Positive Indicators</h4>
+                                <h4 class="subsection-title">Positive Indicators</h4>
                                 <ul id="positiveIndicatorsContainer" class="positives-list"></ul>
                             </div>
 
                             <!-- Recommendations -->
                             <div id="recommendationsSection" class="recommendations-section" style="display: none;">
-                                <h4 class="subsection-title">💡 Our Recommendations</h4>
+                                <h4 class="subsection-title">Our Recommendations</h4>
                                 <ul id="recommendationsContainer" class="recommendations-list"></ul>
                             </div>
 
