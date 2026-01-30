@@ -196,7 +196,7 @@ class ComprehensiveOrchestrator:
             self._check_cancellation(job_id)
 
             if source_url:
-                verification_result = await self.source_verifier.verify(source_url)
+                verification_result = await self.source_verifier.verify_source(source_url)
 
                 if verification_result.report.verification_successful:
                     stage1_results["source_verification"] = {
@@ -880,7 +880,7 @@ if __name__ == "__main__":
 
             # Stage 3 Synthesis Results
             synthesis = result.get("synthesis_report", {})
-            print(f"\n--- STAGE 3: SYNTHESIS ---")
+            print("\n--- STAGE 3: SYNTHESIS ---")
             print(f"Overall Score: {synthesis.get('overall_credibility_score')}/100")
             print(f"Rating: {synthesis.get('overall_credibility_rating')}")
             print(f"Confidence: {synthesis.get('confidence_in_assessment')}%")
