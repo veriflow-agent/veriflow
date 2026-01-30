@@ -765,6 +765,11 @@ class BrowserlessScraper:
                         '.post-entry',
                         '.site-content', 
                         '.page-content',
+                        // Additional common news site selectors
+                        '.story-body',
+                        '.article-body',
+                        '#article-body',
+                        '.post-body',
                         '#primary'
                     ];
 
