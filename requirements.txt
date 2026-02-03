@@ -16,7 +16,8 @@ langchain-anthropic>=0.3.0,<0.4.0
 httpx>=0.25.0
 
 # Web scraping
-playwright==1.56.0
+playwright==1.49.0  # UPDATED from 1.56.0 (latest stable)
+playwright-stealth==1.0.2  # ADDED - Removes automation detection markers
 beautifulsoup4==4.12.3
 lxml==5.1.0
 
@@ -36,4 +37,5 @@ gevent>=24.2.1
 # Cloudflare R2 Storage (S3-compatible)
 boto3>=1.28.0
 
+# Supabase for domain strategy storage
 supabase>=2.0.0

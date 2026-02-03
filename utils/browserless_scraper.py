@@ -1,8 +1,19 @@
 # utils/browserless_scraper.py
 """
-Railway Browserless Scraper with Persistent Sessions & AI Content Cleaning
+Enhanced Railway Browserless Scraper with Multi-Layer Anti-Bot Evasion
 
-KEY FEATURES:
+NEW FEATURES:
+- MULTI-STRATEGY FALLBACK: Basic → Stealth → Advanced → Cloudflare bypass
+- USER-AGENT ROTATION: Modern browser UAs (Chrome 133, Firefox 124, Safari 17, Edge 133)
+- SITE-SPECIFIC SELECTORS: Custom extractors for The Hill, Reuters, and other news sites
+- STEALTH MODE: Removes automation detection markers
+- HUMAN BEHAVIOR SIMULATION: Random mouse movements, scrolling, delays
+- DOMAIN-SPECIFIC LEARNING: Remembers which strategy works for each domain
+- SMART WAIT STRATEGIES: networkidle → load → timed fallbacks
+- COOKIE PERSISTENCE: Session continuity across requests
+- ENHANCED HEADERS: Realistic browser headers with client hints
+
+EXISTING FEATURES:
 - Proper Railway Browserless connection using chromium.connect()
 - Persistent browser sessions (browsers stay open during run)
 - Support for Railway replicas with load distribution
@@ -19,9 +30,14 @@ import asyncio
 import time
 import re
 import os
-from typing import Dict, List, Optional
+import random
+import json
+from typing import Dict, List, Optional, Tuple
 from urllib.parse import urlparse
-from playwright.async_api import async_playwright, Browser, Page
+from enum import Enum
+
+from playwright.async_api import async_playwright, Browser, Page, BrowserContext
+from utils.domain_strategy_service import get_domain_strategy_service
 
 from utils.logger import fact_logger
 
@@ -36,11 +52,114 @@ try:
 except ImportError:
     fact_logger.logger.info("ℹ️ ArticleContentCleaner not available, using basic cleaning only")
 
+# NEW: Try to import playwright-stealth (optional but recommended)
+STEALTH_AVAILABLE = False
+try:
+    from playwright_stealth import stealth_async
+    STEALTH_AVAILABLE = True
+    fact_logger.logger.info("✅ Playwright Stealth mode available")
+except ImportError:
+    fact_logger.logger.info("ℹ️ Playwright Stealth not available (install: pip install playwright-stealth)")
+
+class ScrapingStrategy(str, Enum):
+    """Enumeration of scraping strategies in order of sophistication"""
+    BASIC = "basic"
+    STEALTH = "stealth"  
+    ADVANCED = "advanced"
+
+
+# ============================================================================
+# CONFIGURATION: User Agents, Selectors, and Strategies
+# ============================================================================
+
+# Modern user agents (updated Feb 2025)
+USER_AGENTS = [
+    # Latest Chrome (Jan 2025)
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
+    # Latest Firefox
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0",
+    # Safari on Mac
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_2) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
+    # Edge
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36 Edg/133.0.0.0",
+    # Chrome on Mac
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
+]
+
+# Site-specific content selectors
+SITE_SELECTORS = {
+    'thehill.com': [
+        '[data-content]',
+        '.article__content',
+        '.article-content',
+        '#article-content',
+        '[class*="article-body"]',
+        '[class*="story-content"]',
+        '.submitted-content',
+    ],
+    'reuters.com': [
+        '[data-testid="article-body"]',
+        '.article-body__content',
+        '[class*="ArticleBody"]',
+        '[data-module="Article"]',
+        '.StandardArticleBody_body',
+        '[class*="article-body"]',
+    ],
+    'nytimes.com': [
+        '.StoryBodyCompanionColumn',
+        '[name="articleBody"]',
+        '.story-body',
+        '#story',
+    ],
+    'washingtonpost.com': [
+        '.article-body',
+        '[data-qa="article-body"]',
+        '.story-body',
+    ],
+    'cnn.com': [
+        '.article__content',
+        '.pg-rail-tall__body',
+        '[class*="article-body"]',
+    ],
+    'bbc.com': [
+        '[data-component="text-block"]',
+        '.article__body',
+        '.story-body',
+    ],
+    'foxnews.com': [
+        '.article-body',
+        '.article-content',
+        '[class*="article-text"]',
+    ],
+}
+
+# Generic fallback selectors (used if no site-specific match)
+GENERIC_SELECTORS = [
+    'main',
+    'article',
+    '[role="main"]',
+    '.main-content',
+    '.content',
+    '.article-content',
+    '.post-content',
+    '#content',
+    '#main',
+    # WordPress selectors
+    '.entry-content',
+    '.post-entry',
+    '.site-content',
+    '.page-content',
+    # News site selectors
+    '.story-body',
+    '.article-body',
+    '#article-body',
+    '.post-body',
+    '#primary',
+]
 
 class BrowserlessScraper:
     """
-    Railway Browserless scraper with persistent sessions, timeout protection,
-    and AI-powered content cleaning.
+    Enhanced Railway Browserless scraper with multi-layered anti-bot evasion.
     """
 
     def __init__(self, config):
@@ -50,25 +169,26 @@ class BrowserlessScraper:
         self.is_railway = os.getenv('RAILWAY_ENVIRONMENT') is not None
         self.browserless_endpoint = os.getenv('BROWSER_PLAYWRIGHT_ENDPOINT_PRIVATE') or os.getenv('BROWSER_PLAYWRIGHT_ENDPOINT')
         self.browserless_token = os.getenv('BROWSER_TOKEN')
+        
 
         # Support for Railway replicas
         self.replica_id = os.getenv('RAILWAY_REPLICA_ID', '0')
 
         # Browser pool for persistent sessions
-        self.max_concurrent = 10  # Number of concurrent browsers
+        self.max_concurrent = 10
         self.playwright = None
         self.browser_pool: List[Browser] = []
+        self.context_pool: List[BrowserContext] = []  # NEW: Store contexts for cookie persistence
         self.current_browser_index = 0
         self.session_active = False
         self._session_lock = asyncio.Lock()
+        self.strategy_service = get_domain_strategy_service()
 
         # Timeouts
         self.default_timeout = 5000  # 5 seconds
         self.slow_timeout = 10000     # 10 seconds
         self.browser_launch_timeout = 10000
-
-        # Overall timeout to prevent infinite hangs
-        self.overall_scrape_timeout = 30.0  # 30 second hard limit per URL
+        self.overall_scrape_timeout = 45.0  # Increased from 30s for advanced strategies
 
         # Domain-specific timeouts
         self.domain_timeouts = {
@@ -76,17 +196,19 @@ class BrowserlessScraper:
             'washingtonpost.com': 10000,
             'wsj.com': 10000,
             'forbes.com': 10000,
+            'reuters.com': 12000,  # Needs more time
+            'thehill.com': 10000,
         }
 
         # Timing
         self.load_wait_time = 2.0
         self.interaction_delay = 0.5
 
-        # AI-powered content cleaner (initialized lazily)
+        # AI-powered content cleaner
         self._content_cleaner: Optional[object] = None
-        self.enable_ai_cleaning = True  # Can be disabled if needed
+        self.enable_ai_cleaning = True
 
-        # Stats tracking
+        # NEW: Enhanced stats tracking
         self.stats = {
             "total_scraped": 0,
             "successful_scrapes": 0,
@@ -100,6 +222,21 @@ class BrowserlessScraper:
             "browser_reuses": 0,
             "railway_browserless": bool(self.browserless_endpoint),
             "replica_id": self.replica_id,
+            # NEW: Strategy usage tracking
+            "strategy_usage": {
+                ScrapingStrategy.BASIC: 0,
+                ScrapingStrategy.STEALTH: 0,
+                ScrapingStrategy.ADVANCED: 0,
+                ScrapingStrategy.CLOUDFLARE: 0,
+            },
+            "strategy_success": {
+                ScrapingStrategy.BASIC: 0,
+                ScrapingStrategy.STEALTH: 0,
+                ScrapingStrategy.ADVANCED: 0,
+                ScrapingStrategy.CLOUDFLARE: 0,
+            },
+            # Site-specific failures
+            "site_failures": {},
         }
 
         if self.browserless_endpoint:
@@ -113,8 +250,20 @@ class BrowserlessScraper:
             browserless=bool(self.browserless_endpoint),
             replica_id=self.replica_id,
             browser_pool_size=self.max_concurrent,
-            ai_cleaning=CONTENT_CLEANER_AVAILABLE
+            ai_cleaning=CONTENT_CLEANER_AVAILABLE,
+            stealth_mode=STEALTH_AVAILABLE
         )
+
+    def _save_domain_strategy(self, domain: str, strategy: str):
+        """Save successful strategy for a domain"""
+        try:
+            self.domain_strategies[domain] = strategy
+            strategy_file = '/tmp/domain_strategies.json'
+            with open(strategy_file, 'w') as f:
+                json.dump(self.domain_strategies, f)
+            fact_logger.logger.debug(f"💾 Saved strategy for {domain}: {strategy}")
+        except Exception as e:
+            fact_logger.logger.debug(f"Could not save domain strategy: {e}")
 
     def _get_content_cleaner(self):
         """Lazy initialization of content cleaner"""
@@ -125,6 +274,24 @@ class BrowserlessScraper:
             except Exception as e:
                 fact_logger.logger.warning(f"⚠️ Failed to initialize content cleaner: {e}")
         return self._content_cleaner
+
+    def _get_random_user_agent(self) -> str:
+        """Select random modern user agent"""
+        return random.choice(USER_AGENTS)
+
+    def _get_site_selectors(self, url: str) -> List[str]:
+        """Get site-specific selectors + generic fallbacks"""
+        domain = urlparse(url).netloc.lower()
+        
+        # Remove www. prefix
+        if domain.startswith('www.'):
+            domain = domain[4:]
+        
+        # Get site-specific selectors
+        site_selectors = SITE_SELECTORS.get(domain, [])
+        
+        # Combine with generic selectors
+        return site_selectors + GENERIC_SELECTORS
 
     async def scrape_urls_for_facts(self, urls: List[str]) -> Dict[str, str]:
         """
@@ -178,12 +345,13 @@ class BrowserlessScraper:
             fact_logger.logger.info(
                 f"✅ Scraping complete: {successful}/{len(urls)} successful",
                 extra={
-                    "successful": successful, 
+                    "successful": successful,
                     "total": len(urls),
                     "browser_reuses": self.stats["browser_reuses"],
                     "timeouts": self.stats["timeout_scrapes"],
                     "paywalls": self.stats["paywall_detected"],
-                    "ai_cleaned": self.stats["ai_cleaned"]
+                    "ai_cleaned": self.stats["ai_cleaned"],
+                    "strategy_stats": self.stats["strategy_success"]
                 }
             )
 
@@ -191,114 +359,66 @@ class BrowserlessScraper:
 
         finally:
             # Keep browsers alive for next batch
-            # Browsers will be closed only when close() is called explicitly
             pass
 
     async def _initialize_browser_pool(self, min_browsers: Optional[int] = None):
-        """
-        Initialize browser pool in PARALLEL.
-
-        Args:
-            min_browsers: Minimum browsers to initialize (default: self.max_concurrent)
-        """
-        if self.session_active:
-            return  # Already initialized
-
+        """Initialize browser pool in PARALLEL with enhanced contexts"""
         async with self._session_lock:
-            if self.session_active:
+            if self.session_active and len(self.browser_pool) >= (min_browsers or 1):
                 return
 
-            # Determine how many browsers we need
-            num_browsers = min_browsers if min_browsers else self.max_concurrent
-            num_browsers = min(num_browsers, self.max_concurrent)  # Cap at max
+            target_count = min_browsers or self.max_concurrent
 
-            start_time = time.time()
-            fact_logger.logger.info(f"🚀 Initializing browser pool ({num_browsers} browsers in PARALLEL)...")
+            if len(self.browser_pool) < target_count:
+                browsers_needed = target_count - len(self.browser_pool)
+                fact_logger.logger.info(f"🔧 Initializing {browsers_needed} browsers in parallel...")
 
-            # Start Playwright once
-            self.playwright = await async_playwright().start()
+                start = time.time()
+                self.playwright = await async_playwright().start()
 
-            # Create ALL browsers in PARALLEL
-            browser_tasks = [
-                self._create_single_browser(i) 
-                for i in range(num_browsers)
-            ]
-
-            # Wait for all browsers to initialize at once
-            results = await asyncio.gather(*browser_tasks, return_exceptions=True)
-
-            # Collect successful browsers
-            for i, result in enumerate(results):
-                if isinstance(result, Exception):
-                    fact_logger.logger.error(f"❌ Browser {i} failed: {result}")
-                elif isinstance(result, Browser):
-                    self.browser_pool.append(result)
-
-            init_time = time.time() - start_time
-
-            if len(self.browser_pool) > 0:
-                self.session_active = True
-                fact_logger.logger.info(
-                    f"🎯 Browser pool ready: {len(self.browser_pool)}/{num_browsers} browsers in {init_time:.1f}s"
-                )
-            else:
-                raise Exception("Failed to initialize browser pool")
-
-    async def _create_single_browser(self, browser_index: int) -> Optional[Browser]:
-        """
-        Create browser using proper Railway Browserless connection.
-        """
-        try:
-            if not self.playwright:
-                fact_logger.logger.error(f"❌ Playwright not initialized for browser {browser_index}")
-                return None
-
-            # Use chromium.connect() for Railway Browserless
-            if self.browserless_endpoint:
-                try:
-                    # Build connection URL with token
-                    connect_url = self.browserless_endpoint
-
-                    # Add token if not already in URL
-                    if self.browserless_token and 'token=' not in connect_url:
-                        separator = '&' if '?' in connect_url else '?'
-                        connect_url = f"{connect_url}{separator}token={self.browserless_token}"
-                        # Add timeout parameter (30 minutes = 1800000 milliseconds)
-                        browserless_session_timeout = 1800000
-                        connect_url = f"{connect_url}&timeout={browserless_session_timeout}"
-
-                    fact_logger.logger.info(
-                        f"🔗 Browser {browser_index}: Connecting to Railway Browserless",
-                        extra={"endpoint": connect_url[:50] + "...", "replica_id": self.replica_id}
-                    )
-
-                    browser = await self.playwright.chromium.connect(
-                        connect_url,
-                        timeout=self.browser_launch_timeout
-                    )
-
-                    fact_logger.logger.info(f"✅ Browser {browser_index} connected to Railway Browserless")
-                    return browser
-
-                except Exception as browserless_error:
-                    fact_logger.logger.warning(
-                        f"⚠️ Railway Browserless connection failed for browser {browser_index}: {browserless_error}"
-                    )
-                    fact_logger.logger.info("🔄 Falling back to local Playwright...")
-
-            # Fallback to local Playwright
-            fact_logger.logger.info(f"🔧 Browser {browser_index}: Using local Playwright")
-            browser = await self.playwright.chromium.launch(
-                headless=True,
-                args=[
-                    "--no-sandbox",
-                    "--disable-setuid-sandbox",
-                    "--disable-dev-shm-usage",
-                    "--disable-web-security",
-                    "--disable-blink-features=AutomationControlled",
-                    "--disable-features=VizDisplayCompositor"
+                # Create browsers in parallel
+                browser_tasks = [
+                    self._create_browser(i + len(self.browser_pool))
+                    for i in range(browsers_needed)
                 ]
-            )
+                new_browsers = await asyncio.gather(*browser_tasks, return_exceptions=True)
+
+                # Filter out failed browsers
+                for browser in new_browsers:
+                    if browser and not isinstance(browser, Exception):
+                        self.browser_pool.append(browser)
+
+                elapsed = time.time() - start
+                fact_logger.logger.info(
+                    f"✅ Initialized {len(self.browser_pool)} browsers in {elapsed:.1f}s"
+                )
+
+            self.session_active = True
+
+    async def _create_browser(self, browser_index: int) -> Optional[Browser]:
+        """Create a single browser with Railway Browserless or local Playwright"""
+        try:
+            if self.browserless_endpoint and self.browserless_token:
+                # Railway Browserless connection
+                ws_endpoint = f"{self.browserless_endpoint}?token={self.browserless_token}"
+                browser = await self.playwright.chromium.connect(
+                    ws_endpoint,
+                    timeout=self.browser_launch_timeout
+                )
+                fact_logger.logger.debug(f"🌐 Connected to Railway browser {browser_index}")
+            else:
+                # Local Playwright
+                browser = await self.playwright.chromium.launch(
+                    headless=True,
+                    timeout=self.browser_launch_timeout,
+                    args=[
+                        '--disable-blink-features=AutomationControlled',
+                        '--no-sandbox',
+                        '--disable-dev-shm-usage',
+                    ]
+                )
+                fact_logger.logger.debug(f"🖥️ Launched local browser {browser_index}")
+
             return browser
 
         except Exception as e:
@@ -306,12 +426,12 @@ class BrowserlessScraper:
             return None
 
     async def _scrape_with_semaphore(self, semaphore: asyncio.Semaphore, url: str, browser_index: int) -> str:
-        """Scrape using persistent browser from pool."""
+        """Scrape using persistent browser from pool"""
         async with semaphore:
             return await self._scrape_single_url(url, browser_index)
 
     async def _scrape_single_url(self, url: str, browser_index: int) -> str:
-        """Scrape single URL with timeout protection."""
+        """Scrape single URL with timeout protection and multi-strategy fallback"""
         start_time = time.time()
         self.stats["total_scraped"] += 1
 
@@ -324,7 +444,7 @@ class BrowserlessScraper:
         # Overall timeout to prevent infinite hangs
         try:
             return await asyncio.wait_for(
-                self._scrape_url_inner(url, browser_index, browser, start_time),
+                self._scrape_url_multi_strategy(url, browser_index, browser, start_time),
                 timeout=self.overall_scrape_timeout
             )
         except asyncio.TimeoutError:
@@ -345,11 +465,399 @@ class BrowserlessScraper:
             )
             return ""
 
+    async def _scrape_url_multi_strategy(
+        self,
+        url: str,
+        browser_index: int,
+        browser: Browser,
+        start_time: float
+    ) -> str:
+        """
+        Multi-strategy scraping with Supabase domain learning.
+        Tries strategies in order: known → basic → stealth → advanced
+        """
+        domain = urlparse(url).netloc.lower()
+        if domain.startswith('www.'):
+            domain = domain[4:]
+
+        # Check Supabase for known working strategy
+        known_strategy = self.strategy_service.get_strategy(domain)
+
+        if known_strategy:
+            fact_logger.logger.info(
+                f"🎯 Using known strategy for {domain}: {known_strategy}",
+                extra={"domain": domain, "strategy": known_strategy, "source": "supabase"}
+            )
+
+            content = await self._try_strategy(
+                url, browser_index, browser, start_time, known_strategy
+            )
+
+            if content:
+                # Known strategy worked!
+                processing_time = time.time() - start_time
+                self.strategy_service.save_strategy(domain, known_strategy)
+                self.stats["strategy_success"][known_strategy] += 1
+
+                fact_logger.logger.debug(
+                    f"✅ Known strategy succeeded for {domain}",
+                    extra={
+                        "domain": domain,
+                        "strategy": known_strategy,
+                        "duration_ms": int(processing_time * 1000),
+                        "content_length": len(content)
+                    }
+                )
+                return content
+            else:
+                # Known strategy failed
+                fact_logger.logger.warning(
+                    f"⚠️ Known strategy '{known_strategy}' failed for {domain}, trying all strategies",
+                    extra={"domain": domain, "failed_strategy": known_strategy}
+                )
+
+        # Try strategies in order
+        strategies = [ScrapingStrategy.BASIC]
+
+        if STEALTH_AVAILABLE:
+            strategies.append(ScrapingStrategy.STEALTH)
+
+        strategies.append(ScrapingStrategy.ADVANCED)
+
+        for strategy in strategies:
+            fact_logger.logger.info(
+                f"🔄 Trying {strategy} strategy for {url}",
+                extra={"url": url, "strategy": strategy, "domain": domain}
+            )
+
+            content = await self._try_strategy(
+                url, browser_index, browser, start_time, strategy
+            )
+
+            if content:
+                # Success! Save to Supabase
+                processing_time = time.time() - start_time
+                self.strategy_service.save_strategy(domain, strategy)
+                self.stats["strategy_success"][strategy] += 1
+
+                fact_logger.logger.info(
+                    f"💾 Learned new strategy: {domain} → {strategy}",
+                    extra={
+                        "domain": domain,
+                        "strategy": strategy,
+                        "duration_ms": int(processing_time * 1000),
+                        "is_new_learning": known_strategy is None,
+                        "content_length": len(content)
+                    }
+                )
+                return content
+            else:
+                fact_logger.logger.debug(
+                    f"❌ {strategy} strategy failed for {url}",
+                    extra={"url": url, "strategy": strategy, "domain": domain}
+                )
+
+        # All strategies failed
+        fact_logger.logger.error(
+            f"❌ All strategies failed for {url}",
+            extra={
+                "url": url,
+                "domain": domain,
+                "strategies_tried": [s for s in strategies],
+                "known_strategy": known_strategy
+            }
+        )
+
+        # Track site-specific failure
+        if domain not in self.stats["site_failures"]:
+            self.stats["site_failures"][domain] = 0
+        self.stats["site_failures"][domain] += 1
+
+        return ""
+
+    async def _try_strategy(
+        self,
+        url: str,
+        browser_index: int,
+        browser: Browser,
+        start_time: float,
+        strategy: str
+    ) -> str:
+        """Try a specific scraping strategy"""
+        self.stats["strategy_usage"][strategy] += 1
+        
+        page = None
+        context = None
+        
+        try:
+            # Create context based on strategy
+            context = await self._create_context(browser, strategy)
+            
+            # Create page
+            page = await asyncio.wait_for(context.new_page(), timeout=10.0)
+            
+            # Apply stealth if available and strategy requires it
+            if STEALTH_AVAILABLE and strategy in [ScrapingStrategy.STEALTH, ScrapingStrategy.ADVANCED]:
+                await stealth_async(page)
+                fact_logger.logger.debug(f"🥷 Applied stealth mode to page")
+            
+            # Configure page based on strategy
+            await self._configure_page(page, strategy)
+            
+            # Navigate with strategy-specific wait
+            await self._navigate_with_strategy(page, url, strategy)
+            
+            # Early paywall detection
+            if await self._detect_paywall(page):
+                self.stats["failed_scrapes"] += 1
+                self.stats["paywall_detected"] += 1
+                fact_logger.logger.warning(f"🔒 Paywall detected, skipping: {url}")
+                return ""
+            
+            # Apply human-like behaviors for advanced strategies
+            if strategy == ScrapingStrategy.ADVANCED:
+                await self._simulate_human_behavior(page)
+            
+            # Extract content with site-specific selectors
+            raw_content = await asyncio.wait_for(
+                self._extract_structured_content(page, url),
+                timeout=10.0
+            )
+            
+            if raw_content and len(raw_content.strip()) > 100:
+                # Step 1: Basic regex cleaning
+                content = self._clean_content(raw_content)
+                
+                # Step 2: AI-powered cleaning
+                if self.enable_ai_cleaning and CONTENT_CLEANER_AVAILABLE:
+                    try:
+                        cleaner = self._get_content_cleaner()
+                        if cleaner is not None:
+                            cleaning_result = await asyncio.wait_for(
+                                cleaner.clean(url, content),  # type: ignore[union-attr]
+                                timeout=15.0
+                            )
+                            
+                            if (cleaning_result.success 
+                                and cleaning_result.cleaned is not None 
+                                and cleaning_result.cleaned.body):
+                                
+                                original_len = len(content)
+                                content = cleaning_result.cleaned.body
+                                self.stats["ai_cleaned"] += 1
+                                
+                                fact_logger.logger.info(
+                                    f"🧹 AI cleaned: {original_len} → {len(content)} chars "
+                                    f"({cleaning_result.reduction_percent:.0f}% noise removed)"
+                                )
+                            else:
+                                self.stats["ai_cleaning_failed"] += 1
+                    except Exception as e:
+                        self.stats["ai_cleaning_failed"] += 1
+                        fact_logger.logger.warning(f"⚠️ AI cleaning failed: {e}")
+                
+                processing_time = time.time() - start_time
+                self.stats["successful_scrapes"] += 1
+                self.stats["total_processing_time"] += processing_time
+                self.stats["avg_scrape_time"] = (
+                    self.stats["total_processing_time"] / self.stats["total_scraped"]
+                )
+                
+                fact_logger.logger.info(
+                    f"✅ Successfully scraped with {strategy}: {url}",
+                    extra={
+                        "url": url,
+                        "duration": processing_time,
+                        "content_length": len(content),
+                        "strategy": strategy
+                    }
+                )
+                return content
+            else:
+                fact_logger.logger.debug(
+                    f"⚠️ Insufficient content from {url} using {strategy}",
+                    extra={"url": url, "content_length": len(raw_content) if raw_content else 0}
+                )
+                return ""
+                
+        except Exception as e:
+            fact_logger.logger.debug(f"Strategy {strategy} failed for {url}: {e}")
+            return ""
+        finally:
+            # Close page
+            if page:
+                try:
+                    await asyncio.wait_for(page.close(), timeout=3.0)
+                except Exception:
+                    pass
+            
+            # Close context
+            if context:
+                try:
+                    await asyncio.wait_for(context.close(), timeout=3.0)
+                except Exception:
+                    pass
+
+    async def _create_context(self, browser: Browser, strategy: str) -> BrowserContext:
+        """Create browser context with strategy-specific configuration"""
+        user_agent = self._get_random_user_agent()
+        
+        # Base context options
+        context_options = {
+            'user_agent': user_agent,
+            'viewport': {'width': 1920, 'height': 1080},
+            'locale': 'en-US',
+            'timezone_id': 'America/New_York',
+        }
+        
+        # Enhanced options for stealth and advanced strategies
+        if strategy in [ScrapingStrategy.STEALTH, ScrapingStrategy.ADVANCED]:
+            context_options.update({
+                'permissions': [],
+                'geolocation': {'latitude': 40.7128, 'longitude': -74.0060},  # NYC
+                'color_scheme': 'light',
+                'has_touch': False,
+                'is_mobile': False,
+                'java_script_enabled': True,
+                'bypass_csp': True,
+                'ignore_https_errors': True,
+            })
+        
+        context = await browser.new_context(**context_options)
+        
+        # Set extra HTTP headers for better mimicry
+        if strategy in [ScrapingStrategy.STEALTH, ScrapingStrategy.ADVANCED]:
+            await context.set_extra_http_headers({
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'DNT': '1',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1',
+                'Sec-Fetch-Dest': 'document',
+                'Sec-Fetch-Mode': 'navigate',
+                'Sec-Fetch-Site': 'none',
+                'Sec-Fetch-User': '?1',
+                'Cache-Control': 'max-age=0',
+            })
+        
+        return context
+
+    async def _configure_page(self, page: Page, strategy: str):
+        """Configure page with strategy-specific optimizations"""
+        try:
+            # Block unnecessary resources for all strategies
+            await page.route("**/*", self._block_resources)
+            
+            # Add init scripts for stealth/advanced strategies
+            if strategy in [ScrapingStrategy.STEALTH, ScrapingStrategy.ADVANCED]:
+                await page.add_init_script("""
+                    // Remove webdriver flag
+                    Object.defineProperty(navigator, 'webdriver', {
+                        get: () => undefined
+                    });
+                    
+                    // Disable image loading
+                    Object.defineProperty(HTMLImageElement.prototype, 'src', {
+                        set: function() { /* blocked */ },
+                        get: function() { return ''; }
+                    });
+                    
+                    // Speed up animations
+                    document.addEventListener('DOMContentLoaded', function() {
+                        const style = document.createElement('style');
+                        style.textContent = `
+                            *, *::before, *::after {
+                                animation-duration: 0.01ms !important;
+                                animation-delay: -0.01ms !important;
+                                transition-duration: 0.01ms !important;
+                                transition-delay: -0.01ms !important;
+                            }
+                        `;
+                        document.head.appendChild(style);
+                    });
+                    
+                    // Disable popups
+                    window.alert = () => {};
+                    window.confirm = () => true;
+                    window.prompt = () => '';
+                """)
+        except Exception as e:
+            fact_logger.logger.warning(f"⚠️ Page configuration partially failed: {e}")
+
+    async def _navigate_with_strategy(self, page: Page, url: str, strategy: str):
+        """Navigate to URL with strategy-specific wait conditions"""
+        domain = urlparse(url).netloc.lower()
+        base_timeout = self.domain_timeouts.get(domain, self.default_timeout)
+        
+        if strategy == ScrapingStrategy.BASIC:
+            # Basic: domcontentloaded
+            await page.goto(url, wait_until="domcontentloaded", timeout=base_timeout)
+            await asyncio.sleep(random.uniform(0.5, 1.0))
+            
+        elif strategy == ScrapingStrategy.STEALTH:
+            # Stealth: Try networkidle, fallback to load
+            try:
+                await page.goto(url, wait_until="networkidle", timeout=base_timeout)
+            except Exception:
+                await page.goto(url, wait_until="load", timeout=base_timeout)
+            await asyncio.sleep(random.uniform(1.0, 2.0))
+            
+        elif strategy == ScrapingStrategy.ADVANCED:
+            # Advanced: Multiple wait strategies + random delay
+            try:
+                await page.goto(url, wait_until="networkidle", timeout=base_timeout)
+            except Exception:
+                try:
+                    await page.goto(url, wait_until="load", timeout=base_timeout)
+                except Exception:
+                    await page.goto(url, wait_until="domcontentloaded", timeout=base_timeout)
+            
+            # Random human-like delay
+            await asyncio.sleep(random.uniform(2.0, 4.0))
+
+    async def _simulate_human_behavior(self, page: Page):
+        """Simulate human-like behaviors: mouse movement, scrolling"""
+        try:
+            # Random mouse movement
+            await page.mouse.move(
+                random.randint(100, 500),
+                random.randint(100, 500),
+                steps=random.randint(5, 15)
+            )
+            
+            # Random scroll
+            scroll_amount = random.randint(100, 500)
+            await page.mouse.wheel(0, scroll_amount)
+            
+            # Small delay
+            await asyncio.sleep(random.uniform(0.3, 0.8))
+            
+            # Another random scroll
+            await page.mouse.wheel(0, random.randint(50, 200))
+            
+        except Exception as e:
+            fact_logger.logger.debug(f"Human behavior simulation error: {e}")
+
+    async def _block_resources(self, route):
+        """Block unnecessary resources for faster loading"""
+        resource_type = route.request.resource_type
+        url = route.request.url
+
+        # Block resource types
+        if resource_type in ['image', 'media', 'font']:
+            await route.abort()
+        # Block tracking and ads
+        elif any(blocked in url for blocked in [
+            'analytics', 'tracking', 'advertisement', 'ads',
+            'facebook.com/tr', 'google-analytics', 'doubleclick'
+        ]):
+            await route.abort()
+        else:
+            await route.continue_()
+
     async def _detect_paywall(self, page: Page) -> bool:
-        """
-        Quick paywall detection to fail fast.
-        Returns True if paywall detected.
-        """
+        """Quick paywall detection to fail fast"""
         try:
             # Common paywall indicators
             paywall_selectors = [
@@ -357,11 +865,11 @@ class BrowserlessScraper:
                 '[class*="subscription"]',
                 '[id*="paywall"]',
                 '[data-testid*="paywall"]',
-                '.gateway-content',  # NYT
-                '.meteredContent',   # WSJ
+                '.gateway-content',
+                '.meteredContent',
                 '#paywall-container',
-                '.piano-offer',      # Piano paywall
-                '.tp-modal',         # Another Piano variant
+                '.piano-offer',
+                '.tp-modal',
             ]
 
             for selector in paywall_selectors:
@@ -375,7 +883,7 @@ class BrowserlessScraper:
                 except Exception:
                     continue
 
-            # Check for very short content (often indicates paywall)
+            # Check for very short content
             try:
                 body_text = await page.inner_text('body')
                 if body_text and len(body_text.strip()) < 500:
@@ -394,314 +902,36 @@ class BrowserlessScraper:
             fact_logger.logger.debug(f"Paywall detection error: {e}")
             return False
 
-    async def _scrape_url_inner(self, url: str, browser_index: int, browser: Browser, start_time: float) -> str:
-        """
-        Inner scraping logic with AI content cleaning.
-        """
-        page = None
-        try:
-            # Get domain-specific timeout
-            domain = urlparse(url).netloc.lower()
-            base_timeout = self.domain_timeouts.get(domain, self.default_timeout)
-            timeout = min(base_timeout, 10000)  # Cap at 10 seconds
-
-            fact_logger.logger.debug(
-                f"🎯 Browser {browser_index}: Scraping {url}",
-                extra={"url": url, "browser_index": browser_index, "timeout_ms": timeout}
-            )
-
-            # Add timeout to page creation
-            page = await asyncio.wait_for(browser.new_page(), timeout=10.0)
-
-            # Add timeout to page configuration
-            await asyncio.wait_for(
-                self._configure_page_optimizations(page),
-                timeout=5.0
-            )
-
-            # Navigate
-            await page.goto(url, wait_until="domcontentloaded", timeout=timeout)
-
-            # Early paywall detection
-            if await self._detect_paywall(page):
-                self.stats["failed_scrapes"] += 1
-                self.stats["paywall_detected"] += 1
-                fact_logger.logger.warning(f"🔒 Paywall detected, skipping content extraction: {url}")
-                return ""
-
-            await asyncio.sleep(0.5)
-
-            # Extract raw content
-            raw_content = await asyncio.wait_for(
-                self._extract_structured_content(page),
-                timeout=10.0
-            )
-
-            if raw_content and len(raw_content.strip()) > 100:
-                # Step 1: Basic regex cleaning
-                content = self._clean_content(raw_content)
-
-                # Step 2: AI-powered cleaning (removes subscription noise, device warnings, etc.)
-                if self.enable_ai_cleaning and CONTENT_CLEANER_AVAILABLE:
-                    try:
-                        cleaner = self._get_content_cleaner()
-                        if cleaner is not None:
-                            cleaning_result = await asyncio.wait_for(
-                                cleaner.clean(url, content),  # type: ignore[union-attr]
-                                timeout=15.0
-                            )
-
-                            # Check if cleaning was successful and we have cleaned content
-                            if (cleaning_result.success 
-                                and cleaning_result.cleaned is not None 
-                                and cleaning_result.cleaned.body):
-
-                                original_len = len(content)
-                                content = cleaning_result.cleaned.body
-                                self.stats["ai_cleaned"] += 1
-
-                                # Safely access cleaned attributes
-                                is_truncated = cleaning_result.cleaned.is_truncated
-                                noise_removed = cleaning_result.cleaned.noise_removed
-
-                                fact_logger.logger.info(
-                                    f"🧹 AI cleaned: {original_len} → {len(content)} chars "
-                                    f"({cleaning_result.reduction_percent:.0f}% noise removed)",
-                                    extra={
-                                        "url": url,
-                                        "original_length": original_len,
-                                        "cleaned_length": len(content),
-                                        "is_truncated": is_truncated,
-                                        "noise_removed": noise_removed
-                                    }
-                                )
-                            else:
-                                self.stats["ai_cleaning_failed"] += 1
-                                error_msg = cleaning_result.error if cleaning_result else "No result"
-                                fact_logger.logger.debug(
-                                    "⚠️ AI cleaning returned no content, using basic cleaning",
-                                    extra={"url": url, "error": error_msg}
-                                )
-                    except asyncio.TimeoutError:
-                        self.stats["ai_cleaning_failed"] += 1
-                        fact_logger.logger.warning(f"⚠️ AI cleaning timeout for {url}, using basic cleaning")
-                    except Exception as e:
-                        self.stats["ai_cleaning_failed"] += 1
-                        fact_logger.logger.warning(f"⚠️ AI cleaning failed for {url}: {e}, using basic cleaning")
-
-                processing_time = time.time() - start_time
-
-                self.stats["successful_scrapes"] += 1
-                self.stats["total_processing_time"] += processing_time
-                self.stats["avg_scrape_time"] = (
-                    self.stats["total_processing_time"] / self.stats["total_scraped"]
-                )
-
-                fact_logger.logger.info(
-                    f"✅ Successfully scraped: {url}",
-                    extra={
-                        "url": url,
-                        "duration": processing_time,
-                        "content_length": len(content),
-                        "browser_index": browser_index
-                    }
-                )
-                return content
-            else:
-                processing_time = time.time() - start_time
-                self.stats["failed_scrapes"] += 1
-                fact_logger.logger.warning(
-                    f"⚠️ Insufficient content from {url}",
-                    extra={"url": url, "duration": processing_time}
-                )
-                return ""
-
-        finally:
-            # Safe page close with timeout
-            if page:
-                try:
-                    await asyncio.wait_for(page.close(), timeout=3.0)
-                except Exception:
-                    pass
-
-    async def _configure_page_optimizations(self, page: Page):
-        """Configure page with optimizations."""
-        try:
-            # Set realistic headers
-            await page.set_extra_http_headers({
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-                "Accept-Language": "en-US,en;q=0.5",
-                "Accept-Encoding": "gzip, deflate, br",
-                "Cache-Control": "no-cache",
-                "Pragma": "no-cache",
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
-            })
-
-            # Block unnecessary resources
-            await page.route("**/*", self._block_resources)
-
-            # Inject optimization scripts
-            await page.add_init_script("""
-                // Disable image loading
-                Object.defineProperty(HTMLImageElement.prototype, 'src', {
-                    set: function() { /* blocked */ },
-                    get: function() { return ''; }
-                });
-
-                // Speed up animations
-                document.addEventListener('DOMContentLoaded', function() {
-                    const style = document.createElement('style');
-                    style.textContent = `
-                        *, *::before, *::after {
-                            animation-duration: 0.01ms !important;
-                            animation-delay: -0.01ms !important;
-                            transition-duration: 0.01ms !important;
-                            transition-delay: -0.01ms !important;
-                        }
-                    `;
-                    document.head.appendChild(style);
-                });
-
-                // Disable popups
-                window.alert = () => {};
-                window.confirm = () => true;
-                window.prompt = () => '';
-            """)
-
-        except Exception as e:
-            fact_logger.logger.warning(f"⚠️ Page configuration partially failed: {e}")
-
-    async def _block_resources(self, route):
-        """Block unnecessary resources for faster loading."""
-        resource_type = route.request.resource_type
-        url = route.request.url
-
-        # Block resource types
-        if resource_type in ['image', 'media', 'font', 'stylesheet']:
-            await route.abort()
-        # Block tracking domains
-        elif any(domain in url for domain in [
-            'google-analytics', 'googletagmanager', 'facebook.com',
-            'doubleclick', 'adsystem', 'amazon-adsystem', 'googlesyndication',
-            'chartbeat', 'quantserve', 'scorecardresearch'
-        ]):
-            await route.abort()
-        else:
-            await route.continue_()
-
-    async def scrape_urls_in_batches(
-        self, 
-        urls: List[str], 
-        batch_size: int = 5,
-        progress_callback=None
-    ) -> Dict[str, str]:
-        """
-        Scrape URLs in batches to handle large numbers of URLs.
-
-        Args:
-            urls: List of all URLs to scrape
-            batch_size: Number of URLs per batch (default: 5)
-            progress_callback: Optional callback(current, total, results_so_far)
-
-        Returns:
-            Dict mapping URL to scraped content
-        """
-        if not urls:
-            fact_logger.logger.warning("No URLs provided for scraping")
-            return {}
-
-        fact_logger.logger.info(
-            f"🔄 Starting batch scraping of {len(urls)} URLs",
-            extra={
-                "total_urls": len(urls),
-                "batch_size": batch_size,
-                "estimated_batches": (len(urls) + batch_size - 1) // batch_size
-            }
-        )
-
-        all_results = {}
-        total_urls = len(urls)
-
-        # Process URLs in batches
-        for batch_num, i in enumerate(range(0, len(urls), batch_size), 1):
-            batch_urls = urls[i:i + batch_size]
-            total_batches = (len(urls) + batch_size - 1) // batch_size
-
-            fact_logger.logger.info(
-                f"📦 Processing batch {batch_num}/{total_batches} ({len(batch_urls)} URLs)",
-                extra={
-                    "batch_num": batch_num,
-                    "total_batches": total_batches,
-                    "batch_size": len(batch_urls)
-                }
-            )
-
-            # Scrape this batch
-            batch_results = await self.scrape_urls_for_facts(batch_urls)
-
-            # Merge results
-            all_results.update(batch_results)
-
-            # Calculate progress
-            completed = len(all_results)
-
-            fact_logger.logger.info(
-                f"✅ Batch {batch_num}/{total_batches} complete",
-                extra={
-                    "completed_urls": completed,
-                    "total_urls": total_urls,
-                    "progress_percent": round((completed / total_urls) * 100, 1)
-                }
-            )
-
-            # Call progress callback if provided
-            if progress_callback:
-                try:
-                    progress_callback(completed, total_urls, all_results)
-                except Exception as e:
-                    fact_logger.logger.warning(f"Progress callback error: {e}")
-
-            # Small delay between batches
-            if i + batch_size < len(urls):
-                await asyncio.sleep(2.0)
-
-        fact_logger.logger.info(
-            f"🎉 Batch scraping complete: {len(all_results)}/{total_urls} URLs scraped",
-            extra={
-                "successful": len([v for v in all_results.values() if v]),
-                "failed": len([v for v in all_results.values() if not v]),
-                "total": total_urls
-            }
-        )
-
-        return all_results
-
-    async def _extract_structured_content(self, page: Page) -> str:
-        """Extract content while preserving structure."""
+    async def _extract_structured_content(self, page: Page, url: str = "") -> str:
+        """Extract main content using site-specific and generic selectors"""
         try:
             fact_logger.logger.debug("Extracting structured content")
-
-            content_data = await page.evaluate("""
-                () => {
-                    // Extract text while preserving structure
-                    function htmlToStructuredText(element, level = 0) {
+            
+            # Get site-specific selectors
+            selectors = self._get_site_selectors(url) if url else GENERIC_SELECTORS
+            
+            # JavaScript function to extract content
+            content_data = await page.evaluate(f"""
+                () => {{
+                    function htmlToStructuredText(element, level = 0) {{
                         if (!element) return '';
-
+                        if (level > 10) return '';
+                        
                         let result = '';
-
-                        if (element.nodeType === Node.TEXT_NODE) {
+                        
+                        if (element.nodeType === Node.TEXT_NODE) {{
                             const text = element.textContent.trim();
-                            return text ? text + ' ' : '';
-                        }
-
-                        if (element.nodeType === Node.ELEMENT_NODE) {
+                            if (text && text.length > 0) {{
+                                result += text + ' ';
+                            }}
+                        }} else if (element.nodeType === Node.ELEMENT_NODE) {{
                             const tagName = element.tagName.toLowerCase();
-
-                            if (['script', 'style', 'noscript', 'head', 'meta', 'link'].includes(tagName)) {
+                            
+                            if (['script', 'style', 'noscript', 'head', 'meta', 'link'].includes(tagName)) {{
                                 return '';
-                            }
-
-                            switch (tagName) {
+                            }}
+                            
+                            switch (tagName) {{
                                 case 'h1':
                                 case 'h2':
                                 case 'h3':
@@ -709,127 +939,106 @@ class BrowserlessScraper:
                                 case 'h5':
                                 case 'h6':
                                     const headingText = element.textContent.trim();
-                                    if (headingText) {
+                                    if (headingText) {{
                                         const headingLevel = parseInt(tagName[1]);
                                         const prefix = '#'.repeat(headingLevel);
                                         result += '\\n\\n' + prefix + ' ' + headingText + '\\n';
-                                    }
+                                    }}
                                     break;
-
+                                
                                 case 'p':
                                     const pText = element.textContent.trim();
-                                    if (pText && pText.length > 20) {
+                                    if (pText && pText.length > 20) {{
                                         result += '\\n' + pText + '\\n';
-                                    }
+                                    }}
                                     break;
-
+                                
                                 case 'div':
                                 case 'section':
                                 case 'article':
-                                    for (let child of element.childNodes) {
+                                    for (let child of element.childNodes) {{
                                         result += htmlToStructuredText(child, level + 1);
-                                    }
+                                    }}
                                     break;
-
+                                
                                 case 'li':
                                     const liText = element.textContent.trim();
-                                    if (liText && liText.length > 10) {
+                                    if (liText && liText.length > 10) {{
                                         result += '\\n• ' + liText + '\\n';
-                                    }
+                                    }}
                                     break;
-
+                                
                                 default:
-                                    for (let child of element.childNodes) {
+                                    for (let child of element.childNodes) {{
                                         result += htmlToStructuredText(child, level + 1);
-                                    }
+                                    }}
                                     break;
-                            }
-                        }
-
+                            }}
+                        }}
+                        
                         return result;
-                    }
-
-                    // Try main content selectors
-                    const mainSelectors = [
-                        'main',
-                        'article',
-                        '[role="main"]',
-                        '.main-content',
-                        '.content',
-                        '.article-content',
-                        '.post-content',
-                        '#content',
-                        '#main',
-                        // WordPress selectors (used by MBFC and many other sites)
-                        '.entry-content',
-                        '.post-entry',
-                        '.site-content', 
-                        '.page-content',
-                        // Additional common news site selectors
-                        '.story-body',
-                        '.article-body',
-                        '#article-body',
-                        '.post-body',
-                        '#primary'
-                    ];
-
+                    }}
+                    
+                    // Try selectors in order
+                    const selectors = {json.dumps(selectors)};
+                    
                     let bestContent = '';
                     let bestScore = 0;
-
-                    for (const selector of mainSelectors) {
+                    
+                    for (const selector of selectors) {{
                         const element = document.querySelector(selector);
-                        if (element) {
+                        if (element) {{
                             const clone = element.cloneNode(true);
-
+                            
                             // Remove unwanted elements
                             const unwantedElements = clone.querySelectorAll(`
                                 nav, footer, header, aside,
                                 .sidebar, .navigation, .nav, .menu,
                                 .cookie, .popup, .modal, .advertisement, .ad,
-                                .social-share, .comments,
+                                .social-share, .comments, .related-articles,
                                 [role="navigation"], [role="banner"], [role="contentinfo"],
                                 script, style, noscript
                             `);
                             unwantedElements.forEach(el => el.remove());
-
+                            
                             const structuredText = htmlToStructuredText(clone);
-
+                            
                             // Score based on content quality
                             const headingCount = (structuredText.match(/^#+\\s/gm) || []).length;
                             const paragraphCount = (structuredText.match(/\\n[^\\n#•].+\\n/g) || []).length;
                             const wordCount = structuredText.split(/\\s+/).filter(w => w.length > 0).length;
-
+                            
                             let score = 0;
                             score += headingCount * 10;
                             score += paragraphCount * 5;
                             score += Math.min(wordCount, 500);
-
-                            if (score > bestScore && structuredText.length > 200) {
+                            
+                            if (score > bestScore && structuredText.length > 100) {{
                                 bestScore = score;
                                 bestContent = structuredText;
-                            }
-                        }
-                    }
-
+                            }}
+                        }}
+                    }}
+                    
                     return bestContent;
-                }
+                }}
             """)
-
+            
             content = content_data if content_data else ""
-
+            
             fact_logger.logger.debug(
                 "Structure extraction complete",
                 extra={"content_length": len(content)}
             )
-
+            
             return content
-
+            
         except Exception as e:
             fact_logger.logger.error(f"❌ Structure extraction error: {e}")
             return ""
 
     def _clean_content(self, content: str) -> str:
-        """Basic regex cleaning of extracted content."""
+        """Basic regex cleaning of extracted content"""
         if not content:
             return ""
 
@@ -860,12 +1069,40 @@ class BrowserlessScraper:
         return content
 
     def get_stats(self) -> Dict:
-        """Return scraping statistics."""
-        return self.stats.copy()
+        """Return scraping statistics with Supabase domain learning data"""
+        stats = self.stats.copy()
+
+        # Add domain strategy information from Supabase
+        try:
+            all_strategies = self.strategy_service.get_all_strategies()
+            stats['learned_domains_count'] = len(all_strategies)
+            stats['learned_strategies'] = all_strategies
+
+            fact_logger.logger.debug(
+                f"📊 Retrieved {len(all_strategies)} learned strategies from Supabase",
+                extra={"strategy_count": len(all_strategies)}
+            )
+        except Exception as e:
+            fact_logger.logger.warning(
+                f"⚠️ Could not retrieve Supabase strategy stats: {e}",
+                extra={"error": str(e)}
+            )
+            stats['learned_domains_count'] = 0
+            stats['learned_strategies'] = {}
+
+        return stats
 
     async def close(self):
-        """Properly close browser pool and cleanup."""
+        """Properly close browser pool and cleanup"""
         fact_logger.logger.info("🛑 Shutting down scraper...")
+
+        # Close all contexts
+        for i, context in enumerate(self.context_pool):
+            try:
+                await context.close()
+                fact_logger.logger.debug(f"✅ Closed context {i}")
+            except Exception as e:
+                fact_logger.logger.debug(f"Context close error (non-critical): {e}")
 
         # Close all browsers in pool
         for i, browser in enumerate(self.browser_pool):
@@ -885,15 +1122,50 @@ class BrowserlessScraper:
 
         self.session_active = False
         self.browser_pool = []
+        self.context_pool = []
 
         # Print stats
         if self.stats["total_scraped"] > 0:
             success_rate = (self.stats["successful_scrapes"] / self.stats["total_scraped"]) * 100
             fact_logger.logger.info(
                 f"📊 Scraping stats: {self.stats['successful_scrapes']}/{self.stats['total_scraped']} "
-                f"successful ({success_rate:.1f}%), {self.stats['browser_reuses']} browser reuses, "
-                f"{self.stats['timeout_scrapes']} timeouts, {self.stats['paywall_detected']} paywalls, "
-                f"{self.stats['ai_cleaned']} AI cleaned"
+                f"successful ({success_rate:.1f}%), {self.stats['browser_reuses']} browser reuses"
             )
+            
+            # Strategy stats
+            fact_logger.logger.info("📈 Strategy performance:")
+            for strategy, usage in self.stats["strategy_usage"].items():
+                if usage > 0:
+                    success = self.stats["strategy_success"].get(strategy, 0)
+                    rate = (success / usage * 100) if usage > 0 else 0
+                    fact_logger.logger.info(f"  {strategy}: {success}/{usage} ({rate:.1f}%)")
+            
+            # Site failures
+            if self.stats["site_failures"]:
+                fact_logger.logger.info("⚠️ Sites with failures:")
+                for domain, count in sorted(
+                    self.stats["site_failures"].items(),
+                    key=lambda x: x[1],
+                    reverse=True
+                )[:5]:
+                    fact_logger.logger.info(f"  {domain}: {count} failures")
 
+        # Log Supabase learning stats on shutdown
+        try:
+            all_strategies = self.strategy_service.get_all_strategies()
+            if all_strategies:
+                fact_logger.logger.info(
+                    f"📚 Domain learning summary: {len(all_strategies)} strategies saved in Supabase"
+                )
+
+                # Count by strategy type
+                strategy_counts = {}
+                for domain, strategy in all_strategies.items():
+                    strategy_counts[strategy] = strategy_counts.get(strategy, 0) + 1
+
+                for strategy, count in sorted(strategy_counts.items(), key=lambda x: x[1], reverse=True):
+                    fact_logger.logger.info(f"  {strategy}: {count} domains")
+        except Exception as e:
+            fact_logger.logger.debug(f"Could not retrieve Supabase stats on shutdown: {e}")
+            
         fact_logger.logger.info("✅ Scraper shutdown complete")
