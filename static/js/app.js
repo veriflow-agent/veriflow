@@ -13,11 +13,19 @@ async function handleAnalyze() {
     if (url && isValidUrl(url) && !content) {
         try {
             showUrlStatus('loading', 'Fetching article...');
+
+            // Show progress section so SSE messages are visible during fetch
+            hideAllSections();
+            showSection(statusSection);
+            clearProgressLog();
+            addProgress('Fetching article from URL...');
+
             const result = await fetchArticleFromUrl(url);
             content = result.content;
             if (htmlInput) htmlInput.value = content;
             showUrlStatus('success', 'Article fetched successfully', result);
         } catch (error) {
+            hideAllSections();
             showUrlStatus('error', 'Failed to fetch: ' + error.message);
             showError('Failed to fetch article: ' + error.message);
             return;
@@ -245,7 +253,7 @@ function exportResults() {
 async function runComprehensiveAnalysis(content) {
     try {
         addProgress('Initiating comprehensive analysis pipeline...');
-        
+
         const response = await fetch('/api/comprehensive-analysis', {
             method: 'POST',
             headers: {
@@ -256,22 +264,22 @@ async function runComprehensiveAnalysis(content) {
                 input_type: 'text'
             })
         });
-        
+
         if (!response.ok) {
             const error = await response.json();
             throw new Error(error.error || 'Comprehensive analysis failed to start');
         }
-        
+
         const data = await response.json();
-        
+
         // Store job ID
         AppState.currentJobIds.comprehensive = data.job_id;
-        
+
         addProgress('Stage 1: Pre-analysis starting...');
-        
+
         // Stream progress
         await streamComprehensiveProgress(data.job_id);
-        
+
     } catch (error) {
         console.error('Comprehensive analysis error:', error);
         addProgress(`Analysis failed: ${error.message}`, 'error');
@@ -282,17 +290,17 @@ async function runComprehensiveAnalysis(content) {
 async function streamComprehensiveProgress(jobId) {
     return new Promise((resolve, reject) => {
         const eventSource = new EventSource(`/api/job/${jobId}/stream`);
-        
+
         // Store for cleanup
         AppState.activeEventSources.push(eventSource);
-        
+
         eventSource.onmessage = (event) => {
             try {
                 const data = JSON.parse(event.data);
-                
+
                 // Handle heartbeat
                 if (data.heartbeat) return;
-                
+
                 // Handle progress updates
                 if (data.stage) {
                     const stageMessages = {
@@ -305,42 +313,42 @@ async function streamComprehensiveProgress(jobId) {
                     };
                     addProgress(stageMessages[data.stage] || data.message || `Stage: ${data.stage}`);
                 }
-                
+
                 if (data.message && !data.stage) {
                     addProgress(data.message);
                 }
-                
+
                 // Handle partial results (for progressive UI updates)
                 if (data.partial_result) {
                     updateComprehensivePartialResults(data.partial_result);
                 }
-                
+
                 // Handle completion
                 if (data.status === 'completed') {
                     eventSource.close();
-                    
+
                     // Store results
                     AppState.currentComprehensiveResults = data.result;
-                    
+
                     addProgress('Comprehensive analysis complete!');
                     resolve(data.result);
                 }
-                
+
                 // Handle failure
                 if (data.status === 'failed') {
                     eventSource.close();
                     reject(new Error(data.error || 'Analysis failed'));
                 }
-                
+
             } catch (e) {
                 console.error('Error parsing SSE data:', e);
             }
         };
-        
+
         eventSource.onerror = (error) => {
             console.error('SSE error:', error);
             eventSource.close();
-            
+
             // Check if job completed despite stream error
             fetch(`/api/job/${jobId}`)
                 .then(r => r.json())
@@ -504,7 +512,17 @@ function initUrlInputListeners() {
 
             try {
                 showUrlStatus('loading', 'Fetching article...');
+
+                // Show progress section so SSE messages are visible during fetch
+                hideAllSections();
+                showSection(statusSection);
+                clearProgressLog();
+                addProgress('Fetching article from URL...');
+
                 const result = await fetchArticleFromUrl(url);
+
+                // Hide progress section after successful fetch
+                hideAllSections();
 
                 if (htmlInput) {
                     htmlInput.value = result.content;
@@ -512,13 +530,14 @@ function initUrlInputListeners() {
 
                 showUrlStatus('success', `Fetched: ${result.title || result.domain}`, result);
 
-                // ADD THIS LINE - Show the metadata panel
+                // Show the metadata panel
                 showArticleMetadata(result);
 
                 // Switch to text view to show content
                 showTextInput();
 
             } catch (error) {
+                hideAllSections();
                 showUrlStatus('error', 'Failed to fetch: ' + error.message);
             }
         });
@@ -545,7 +564,7 @@ function init() {
 
     // Set initial mode AND activate the mode card
     updatePlaceholder(AppState.currentMode);
-    switchMode(AppState.currentMode);  // ← ADD THIS LINE
+    switchMode(AppState.currentMode);  // â† ADD THIS LINE
 
     console.log('VeriFlow initialized');
     console.log('Modules: config, utils, ui, modal, api, renderers');

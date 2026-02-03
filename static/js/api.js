@@ -5,7 +5,7 @@
 // UNIFIED STREAMING WITH AUTO-RECONNECTION
 // ============================================
 
-function streamJobProgress(jobId, emoji = '•', reconnectAttempts = 0) {
+function streamJobProgress(jobId, emoji = 'â€¢', reconnectAttempts = 0) {
     const maxReconnects = 3;
     const baseDelay = 2000;
 
@@ -117,12 +117,12 @@ async function fetchArticleFromUrl(url, options = {}) {
             throw new Error('No job ID returned from server');
         }
 
-        // Step 2: Poll for job completion
-        const result = await pollJobCompletion(jobId, 60000, 1000);
-        
+        // Step 2: Stream progress via SSE (no timeout, consistent with all other endpoints)
+        const result = await streamJobProgress(jobId);
+
         // Store for later use
         setLastFetchedArticle(result);
-        
+
         return result;
 
     } catch (error) {
@@ -131,47 +131,7 @@ async function fetchArticleFromUrl(url, options = {}) {
     }
 }
 
-/**
- * Poll job status until completion
- */
-async function pollJobCompletion(jobId, timeout = 60000, pollInterval = 1000) {
-    const startTime = Date.now();
 
-    while (Date.now() - startTime < timeout) {
-        try {
-            const response = await fetch(`/api/job/${jobId}`);
-            
-            if (!response.ok) {
-                throw new Error('Job not found');
-            }
-
-            const job = await response.json();
-
-            if (job.status === 'completed') {
-                return job.result;
-            }
-
-            if (job.status === 'failed') {
-                throw new Error(job.error || 'Job failed');
-            }
-
-            if (job.status === 'cancelled') {
-                throw new Error('Job was cancelled');
-            }
-
-            // Wait before next poll
-            await new Promise(resolve => setTimeout(resolve, pollInterval));
-
-        } catch (error) {
-            if (error.message.includes('Job not found')) {
-                throw new Error('Job expired or not found');
-            }
-            throw error;
-        }
-    }
-
-    throw new Error('Timeout waiting for job completion');
-}
 
 // ============================================
 // LLM VERIFICATION
@@ -213,7 +173,7 @@ async function runLLMVerification(content) {
         const data = await response.json();
         AppState.currentJobIds.llmVerification = data.job_id;
 
-        const result = await streamJobProgress(data.job_id, '•');
+        const result = await streamJobProgress(data.job_id, 'â€¢');
         AppState.currentLLMVerificationResults = result;
         addProgress('LLM interpretation verification completed');
         return result;
@@ -267,7 +227,7 @@ async function runFactCheck(content) {
         const data = await response.json();
         AppState.currentJobIds.factCheck = data.job_id;
 
-        const result = await streamJobProgress(data.job_id, '•');
+        const result = await streamJobProgress(data.job_id, 'â€¢');
         AppState.currentFactCheckResults = result;
         addProgress('Fact checking completed');
         return result;
@@ -318,7 +278,7 @@ async function runKeyClaimsCheck(content) {
         const data = await response.json();
         AppState.currentJobIds.keyClaims = data.job_id;
 
-        const result = await streamJobProgress(data.job_id, '•');
+        const result = await streamJobProgress(data.job_id, 'â€¢');
         AppState.currentKeyClaimsResults = result;
         addProgress('Key claims analysis completed');
         return result;
@@ -369,7 +329,7 @@ async function runBiasCheck(content) {
         const data = await response.json();
         AppState.currentJobIds.biasCheck = data.job_id;
 
-        const result = await streamJobProgress(data.job_id, '•');
+        const result = await streamJobProgress(data.job_id, 'â€¢');
         AppState.currentBiasResults = result;
         addProgress('Bias analysis completed');
         return result;
@@ -405,7 +365,7 @@ async function runLieDetection(content) {
         const data = await response.json();
         AppState.currentJobIds.lieDetection = data.job_id;
 
-        const result = await streamJobProgress(data.job_id, '•');
+        const result = await streamJobProgress(data.job_id, 'â€¢');
         AppState.currentLieDetectionResults = result;
         addProgress('Deception detection completed');
         return result;
@@ -456,7 +416,7 @@ async function runManipulationCheck(content) {
         const data = await response.json();
         AppState.currentJobIds.manipulation = data.job_id;
 
-        const result = await streamJobProgress(data.job_id, '•');
+        const result = await streamJobProgress(data.job_id, 'â€¢');
         AppState.currentManipulationResults = result;
         addProgress('Manipulation analysis completed');
         return result;
