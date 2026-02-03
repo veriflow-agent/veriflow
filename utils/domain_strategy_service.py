@@ -21,7 +21,7 @@ try:
     import os
     SUPABASE_AVAILABLE = True
 except ImportError:
-    fact_logger.logger.warning("⚠️ Supabase not available, using in-memory strategy cache")
+    fact_logger.logger.warning("âš ï¸ Supabase not available, using in-memory strategy cache")
 
 
 class DomainStrategyService:
@@ -44,7 +44,7 @@ class DomainStrategyService:
         if SUPABASE_AVAILABLE:
             self._init_supabase()
         else:
-            fact_logger.logger.info("📝 Using in-memory strategy cache (Supabase not configured)")
+            fact_logger.logger.info("ðŸ“ Using in-memory strategy cache (Supabase not configured)")
             self.cache_enabled = True
     
     def _init_supabase(self):
@@ -59,14 +59,14 @@ class DomainStrategyService:
                 # Test connection
                 self._test_connection()
                 
-                fact_logger.logger.info("✅ Domain strategy service connected to Supabase")
+                fact_logger.logger.info("âœ… Domain strategy service connected to Supabase")
             else:
-                fact_logger.logger.warning("⚠️ Supabase credentials not found, using in-memory cache")
+                fact_logger.logger.warning("âš ï¸ Supabase credentials not found, using in-memory cache")
                 self.cache_enabled = True
                 
         except Exception as e:
-            fact_logger.logger.warning(f"⚠️ Failed to initialize Supabase: {e}")
-            fact_logger.logger.info("📝 Falling back to in-memory strategy cache")
+            fact_logger.logger.warning(f"âš ï¸ Failed to initialize Supabase: {e}")
+            fact_logger.logger.info("ðŸ“ Falling back to in-memory strategy cache")
             self.cache_enabled = True
     
     def _test_connection(self):
@@ -76,8 +76,8 @@ class DomainStrategyService:
                 # Try a simple query to verify table exists
                 self.supabase.table('domain_scraping_strategies').select('domain').limit(1).execute()
         except Exception as e:
-            fact_logger.logger.warning(f"⚠️ Supabase connection test failed: {e}")
-            fact_logger.logger.info("💡 Make sure 'domain_scraping_strategies' table exists")
+            fact_logger.logger.warning(f"âš ï¸ Supabase connection test failed: {e}")
+            fact_logger.logger.info("ðŸ’¡ Make sure 'domain_scraping_strategies' table exists")
             self.cache_enabled = True
     
     def get_strategy(self, domain: str) -> Optional[str]:
@@ -88,29 +88,35 @@ class DomainStrategyService:
             domain: Domain name (e.g., "reuters.com")
             
         Returns:
-            Strategy name ("basic", "stealth", "advanced") or None if unknown
+            Strategy name ("basic", "advanced", "scrapingbee") or None if unknown
         """
         try:
             # Try Supabase first
             if self.supabase and not self.cache_enabled:
                 result = self.supabase.table('domain_scraping_strategies').select(
-                    'strategy, success_rate'
-                ).eq('domain', domain).single().execute()
+                    'strategy, success_count, total_attempts'
+                ).eq('domain', domain).limit(1).execute()
                 
-                if result.data:
-                    strategy = result.data['strategy']
-                    success_rate = result.data.get('success_rate', 0)
+                if result.data and len(result.data) > 0:
+                    record = result.data[0]
+                    strategy = record['strategy']
+                    success_count = record.get('success_count', 0) or 0
+                    total_attempts = record.get('total_attempts', 0) or 0
                     
-                    # Only use strategy if success rate is decent
-                    if success_rate >= 50:
+                    # Compute success rate from counts
+                    success_rate = (success_count / total_attempts * 100) if total_attempts > 0 else 0
+                    
+                    # Use strategy if success rate is decent or too few attempts to judge
+                    if success_rate >= 50 or total_attempts < 3:
                         fact_logger.logger.debug(
-                            f"📚 Retrieved strategy for {domain}: {strategy} ({success_rate}% success)"
+                            f"Retrieved strategy for {domain}: {strategy} "
+                            f"({success_rate:.0f}% success, {total_attempts} attempts)"
                         )
                         return strategy
                     else:
                         fact_logger.logger.debug(
-                            f"⚠️ Strategy for {domain} has low success rate ({success_rate}%), "
-                            "will try all strategies"
+                            f"Strategy for {domain} has low success rate "
+                            f"({success_rate:.0f}%), will try all strategies"
                         )
                         return None
                 
@@ -131,6 +137,79 @@ class DomainStrategyService:
             
             return None
     
+
+    def save_strategy(self, domain: str, strategy: str):
+        """
+        Save/update the best-known strategy for a domain (simple upsert).
+        
+        Called by the scraper after a successful scrape to remember
+        which strategy worked. Delegates to record_success with
+        minimal overhead.
+        
+        Args:
+            domain: Domain name (e.g., "reuters.com")
+            strategy: Strategy that worked ("basic", "advanced", "scrapingbee")
+        """
+        try:
+            if self.supabase and not self.cache_enabled:
+                # Check if domain already has a record
+                existing = self.supabase.table('domain_scraping_strategies').select(
+                    'strategy, success_count, total_attempts'
+                ).eq('domain', domain).limit(1).execute()
+                
+                if existing.data and len(existing.data) > 0:
+                    record = existing.data[0]
+                    old_strategy = record.get('strategy')
+                    
+                    if old_strategy == strategy:
+                        # Same strategy -- just bump success count
+                        self.supabase.table('domain_scraping_strategies').update({
+                            'success_count': record['success_count'] + 1,
+                            'total_attempts': record['total_attempts'] + 1,
+                            'last_success_at': datetime.utcnow().isoformat(),
+                        }).eq('domain', domain).execute()
+                    else:
+                        # Strategy changed -- update and reset counts
+                        self.supabase.table('domain_scraping_strategies').update({
+                            'strategy': strategy,
+                            'success_count': 1,
+                            'failure_count': 0,
+                            'total_attempts': 1,
+                            'last_success_at': datetime.utcnow().isoformat(),
+                        }).eq('domain', domain).execute()
+                        
+                        fact_logger.logger.info(
+                            f"Strategy changed for {domain}: {old_strategy} -> {strategy}"
+                        )
+                else:
+                    # New domain -- insert
+                    self.supabase.table('domain_scraping_strategies').insert({
+                        'domain': domain,
+                        'strategy': strategy,
+                        'success_count': 1,
+                        'failure_count': 0,
+                        'total_attempts': 1,
+                        'last_success_at': datetime.utcnow().isoformat(),
+                    }).execute()
+                    
+                    fact_logger.logger.info(f"New strategy learned: {domain} -> {strategy}")
+            
+            # Always update in-memory cache
+            self.in_memory_cache[domain] = {
+                'strategy': strategy,
+                'success_count': self.in_memory_cache.get(domain, {}).get('success_count', 0) + 1,
+                'failure_count': self.in_memory_cache.get(domain, {}).get('failure_count', 0),
+            }
+            
+        except Exception as e:
+            fact_logger.logger.debug(f"Error saving strategy for {domain}: {e}")
+            # Still update in-memory cache
+            self.in_memory_cache[domain] = {
+                'strategy': strategy,
+                'success_count': 1,
+                'failure_count': 0,
+            }
+
     def record_success(
         self,
         domain: str,
@@ -172,7 +251,7 @@ class DomainStrategyService:
                     }).eq('domain', domain).eq('strategy', strategy).execute()
                     
                     fact_logger.logger.debug(
-                        f"✅ Updated {domain} success: {new_success}/{new_total} "
+                        f"âœ… Updated {domain} success: {new_success}/{new_total} "
                         f"({new_success/new_total*100:.1f}%)"
                     )
                 else:
@@ -187,7 +266,7 @@ class DomainStrategyService:
                         'last_success_at': datetime.utcnow().isoformat(),
                     }).execute()
                     
-                    fact_logger.logger.info(f"💾 New strategy learned: {domain} → {strategy}")
+                    fact_logger.logger.info(f"ðŸ’¾ New strategy learned: {domain} â†’ {strategy}")
             
             # Always update in-memory cache
             if domain not in self.in_memory_cache:
@@ -245,7 +324,7 @@ class DomainStrategyService:
                     success_rate = (record['success_count'] / new_total * 100) if new_total > 0 else 0
                     
                     fact_logger.logger.debug(
-                        f"❌ Updated {domain} failure: {record['success_count']}/{new_total} "
+                        f"âŒ Updated {domain} failure: {record['success_count']}/{new_total} "
                         f"({success_rate:.1f}%)"
                     )
                 else:
@@ -459,7 +538,7 @@ class DomainStrategyService:
                     'domain', domain
                 ).execute()
                 
-                fact_logger.logger.info(f"🔄 Reset strategy learning for {domain}")
+                fact_logger.logger.info(f"ðŸ”„ Reset strategy learning for {domain}")
             
             # Remove from in-memory cache
             if domain in self.in_memory_cache:

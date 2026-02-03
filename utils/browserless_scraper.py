@@ -3,13 +3,12 @@
 Enhanced Railway Browserless Scraper with Multi-Layer Anti-Bot Evasion
 
 NEW FEATURES:
-- MULTI-STRATEGY FALLBACK: Basic â†’ Stealth â†’ Advanced â†’ Cloudflare bypass
+- MULTI-STRATEGY FALLBACK: Basic Ã¢â€ â€™ Ã¢â€ â€™ Advanced Ã¢â€ â€™ Cloudflare bypass
 - USER-AGENT ROTATION: Modern browser UAs (Chrome 133, Firefox 124, Safari 17, Edge 133)
 - SITE-SPECIFIC SELECTORS: Custom extractors for The Hill, Reuters, and other news sites
-- STEALTH MODE: Removes automation detection markers
 - HUMAN BEHAVIOR SIMULATION: Random mouse movements, scrolling, delays
 - DOMAIN-SPECIFIC LEARNING: Remembers which strategy works for each domain
-- SMART WAIT STRATEGIES: networkidle â†’ load â†’ timed fallbacks
+- SMART WAIT STRATEGIES: networkidle Ã¢â€ â€™ load Ã¢â€ â€™ timed fallbacks
 - COOKIE PERSISTENCE: Session continuity across requests
 - ENHANCED HEADERS: Realistic browser headers with client hints
 
@@ -32,7 +31,7 @@ import re
 import os
 import random
 import json
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 from urllib.parse import urlparse
 from enum import Enum
 
@@ -50,16 +49,8 @@ try:
     ArticleContentCleaner = _ArticleContentCleaner
     CONTENT_CLEANER_AVAILABLE = True
 except ImportError:
-    fact_logger.logger.info("â„¹ï¸ ArticleContentCleaner not available, using basic cleaning only")
+    fact_logger.logger.info("Ã¢â€žÂ¹Ã¯Â¸Â ArticleContentCleaner not available, using basic cleaning only")
 
-# NEW: Try to import playwright-stealth (optional but recommended)
-STEALTH_AVAILABLE = False
-try:
-    from playwright_stealth import stealth_async
-    STEALTH_AVAILABLE = True
-    fact_logger.logger.info("âœ… Playwright Stealth mode available")
-except ImportError:
-    fact_logger.logger.info("â„¹ï¸ Playwright Stealth not available (install: pip install playwright-stealth)")
 
 # NEW: ScrapingBee fallback for 401/403 blocked sites (Imperva, Reuters, etc.)
 SCRAPINGBEE_AVAILABLE = False
@@ -83,7 +74,6 @@ class HTTPBlockedError(Exception):
 class ScrapingStrategy(str, Enum):
     """Enumeration of scraping strategies in order of sophistication"""
     BASIC = "basic"
-    STEALTH = "stealth"  
     ADVANCED = "advanced"
 
 
@@ -189,13 +179,26 @@ class BrowserlessScraper:
         self.browserless_endpoint = os.getenv('BROWSER_PLAYWRIGHT_ENDPOINT_PRIVATE') or os.getenv('BROWSER_PLAYWRIGHT_ENDPOINT')
         self.browserless_token = os.getenv('BROWSER_TOKEN')
 
+        # Diagnostic logging for auth debugging
+        if self.browserless_endpoint:
+            has_token_in_url = '?token=' in (self.browserless_endpoint or '') or '&token=' in (self.browserless_endpoint or '')
+            fact_logger.logger.info(
+                f"Browserless config: endpoint={'SET' if self.browserless_endpoint else 'MISSING'}, "
+                f"token={'SET' if self.browserless_token else 'MISSING'}, "
+                f"token_in_url={has_token_in_url}"
+            )
+            if not self.browserless_token and not has_token_in_url:
+                fact_logger.logger.warning(
+                    "BROWSER_TOKEN env var is not set and endpoint has no embedded token. "
+                    "Authentication will fail. Set BROWSER_TOKEN in Railway variables."
+                )
 
         # Support for Railway replicas
         self.replica_id = os.getenv('RAILWAY_REPLICA_ID', '0')
 
         # Browser pool for persistent sessions
         self.max_concurrent = 10
-        self.playwright = None
+        self.playwright = None  # type: async_playwright context, set in _initialize_browser_pool
         self.browser_pool: List[Browser] = []
         self.context_pool: List[BrowserContext] = []  # NEW: Store contexts for cookie persistence
         self.current_browser_index = 0
@@ -229,7 +232,7 @@ class BrowserlessScraper:
         self.interaction_delay = 0.5
 
         # AI-powered content cleaner
-        self._content_cleaner: Optional[object] = None
+        self._content_cleaner = None  # ArticleContentCleaner, initialized lazily
         self.enable_ai_cleaning = True
 
         # NEW: Enhanced stats tracking
@@ -249,12 +252,10 @@ class BrowserlessScraper:
             # NEW: Strategy usage tracking
             "strategy_usage": {
                 ScrapingStrategy.BASIC: 0,
-                ScrapingStrategy.STEALTH: 0,
                 ScrapingStrategy.ADVANCED: 0,
             },
             "strategy_success": {
                 ScrapingStrategy.BASIC: 0,
-                ScrapingStrategy.STEALTH: 0,
                 ScrapingStrategy.ADVANCED: 0,
             },
             # Site-specific failures
@@ -265,39 +266,27 @@ class BrowserlessScraper:
         }
 
         if self.browserless_endpoint:
-            fact_logger.logger.info(f"ðŸš‚ Railway Browserless endpoint configured: {self.browserless_endpoint[:50]}...")
-            fact_logger.logger.info(f"ðŸ”¢ Running on replica: {self.replica_id}")
+            fact_logger.logger.info(f"Ã°Å¸Å¡â€š Railway Browserless endpoint configured: {self.browserless_endpoint[:50]}...")
+            fact_logger.logger.info(f"Ã°Å¸â€Â¢ Running on replica: {self.replica_id}")
         else:
-            fact_logger.logger.info("ðŸ”§ Local Playwright mode")
+            fact_logger.logger.info("Ã°Å¸â€Â§ Local Playwright mode")
 
         fact_logger.log_component_start(
             "BrowserlessScraper",
             browserless=bool(self.browserless_endpoint),
             replica_id=self.replica_id,
             browser_pool_size=self.max_concurrent,
-            ai_cleaning=CONTENT_CLEANER_AVAILABLE,
-            stealth_mode=STEALTH_AVAILABLE
+            ai_cleaning=CONTENT_CLEANER_AVAILABLE
         )
-
-    def _save_domain_strategy(self, domain: str, strategy: str):
-        """Save successful strategy for a domain"""
-        try:
-            self.domain_strategies[domain] = strategy
-            strategy_file = '/tmp/domain_strategies.json'
-            with open(strategy_file, 'w') as f:
-                json.dump(self.domain_strategies, f)
-            fact_logger.logger.debug(f"ðŸ’¾ Saved strategy for {domain}: {strategy}")
-        except Exception as e:
-            fact_logger.logger.debug(f"Could not save domain strategy: {e}")
 
     def _get_content_cleaner(self):
         """Lazy initialization of content cleaner"""
         if self._content_cleaner is None and CONTENT_CLEANER_AVAILABLE and ArticleContentCleaner is not None:
             try:
                 self._content_cleaner = ArticleContentCleaner(self.config)
-                fact_logger.logger.info("âœ… AI content cleaner initialized")
+                fact_logger.logger.info("Ã¢Å“â€¦ AI content cleaner initialized")
             except Exception as e:
-                fact_logger.logger.warning(f"âš ï¸ Failed to initialize content cleaner: {e}")
+                fact_logger.logger.warning(f"Ã¢Å¡ Ã¯Â¸Â Failed to initialize content cleaner: {e}")
         return self._content_cleaner
 
     def _get_random_user_agent(self) -> str:
@@ -336,13 +325,21 @@ class BrowserlessScraper:
         num_browsers_needed = min(len(urls), 3)  # Cap at 3 for small batches
 
         fact_logger.logger.info(
-            f"ðŸš€ Starting scrape of {len(urls)} URLs with persistent browsers",
+            f"Ã°Å¸Å¡â‚¬ Starting scrape of {len(urls)} URLs with persistent browsers",
             extra={"url_count": len(urls), "replica_id": self.replica_id}
         )
 
         await self._initialize_browser_pool(min_browsers=num_browsers_needed)
 
         try:
+            # Guard: If no browsers initialized, return empty results
+            if not self.browser_pool:
+                fact_logger.logger.error(
+                    "No browsers available in pool. Check BROWSER_TOKEN env var "
+                    "and Browserless service status in Railway."
+                )
+                return {url: "" for url in urls}
+
             # Process URLs with concurrency control
             semaphore = asyncio.Semaphore(self.max_concurrent)
             tasks = [
@@ -357,7 +354,7 @@ class BrowserlessScraper:
             for url, result in zip(urls, results_list):
                 if isinstance(result, Exception):
                     fact_logger.logger.error(
-                        f"âŒ Scraping failed for {url}: {result}",
+                        f"Ã¢ÂÅ’ Scraping failed for {url}: {result}",
                         extra={"url": url, "error": str(result)}
                     )
                     results[url] = ""
@@ -368,7 +365,7 @@ class BrowserlessScraper:
             self.stats["browser_reuses"] += max(0, len(urls) - len(self.browser_pool))
 
             fact_logger.logger.info(
-                f"âœ… Scraping complete: {successful}/{len(urls)} successful",
+                f"Ã¢Å“â€¦ Scraping complete: {successful}/{len(urls)} successful",
                 extra={
                     "successful": successful,
                     "total": len(urls),
@@ -396,7 +393,7 @@ class BrowserlessScraper:
 
             if len(self.browser_pool) < target_count:
                 browsers_needed = target_count - len(self.browser_pool)
-                fact_logger.logger.info(f"ðŸ”§ Initializing {browsers_needed} browsers in parallel...")
+                fact_logger.logger.info(f"Ã°Å¸â€Â§ Initializing {browsers_needed} browsers in parallel...")
 
                 start = time.time()
                 self.playwright = await async_playwright().start()
@@ -409,13 +406,13 @@ class BrowserlessScraper:
                 new_browsers = await asyncio.gather(*browser_tasks, return_exceptions=True)
 
                 # Filter out failed browsers
-                for browser in new_browsers:
-                    if browser and not isinstance(browser, Exception):
-                        self.browser_pool.append(browser)
+                for result in new_browsers:
+                    if isinstance(result, Browser):
+                        self.browser_pool.append(result)
 
                 elapsed = time.time() - start
                 fact_logger.logger.info(
-                    f"âœ… Initialized {len(self.browser_pool)} browsers in {elapsed:.1f}s"
+                    f"Ã¢Å“â€¦ Initialized {len(self.browser_pool)} browsers in {elapsed:.1f}s"
                 )
 
             self.session_active = True
@@ -423,14 +420,30 @@ class BrowserlessScraper:
     async def _create_browser(self, browser_index: int) -> Optional[Browser]:
         """Create a single browser with Railway Browserless or local Playwright"""
         try:
-            if self.browserless_endpoint and self.browserless_token:
-                # Railway Browserless connection
-                ws_endpoint = f"{self.browserless_endpoint}?token={self.browserless_token}"
+            if self.browserless_endpoint:
+                # Build WebSocket endpoint with authentication
+                endpoint = self.browserless_endpoint
+                has_token_in_url = '?token=' in endpoint or '&token=' in endpoint
+
+                if has_token_in_url:
+                    # Endpoint already contains token (e.g. from Railway reference var)
+                    ws_endpoint = endpoint
+                elif self.browserless_token:
+                    # Append token as query parameter
+                    separator = '&' if '?' in endpoint else '?'
+                    ws_endpoint = f"{endpoint}{separator}token={self.browserless_token}"
+                else:
+                    # No token available -- warn and try anyway (will likely 401)
+                    fact_logger.logger.warning(
+                        "No BROWSER_TOKEN set. Connection will likely fail with 401."
+                    )
+                    ws_endpoint = endpoint
+
                 browser = await self.playwright.chromium.connect(
                     ws_endpoint,
                     timeout=self.browser_launch_timeout
                 )
-                fact_logger.logger.debug(f"ðŸŒ Connected to Railway browser {browser_index}")
+                fact_logger.logger.debug(f"Ã°Å¸Å’Â Connected to Railway browser {browser_index}")
             else:
                 # Local Playwright
                 browser = await self.playwright.chromium.launch(
@@ -442,12 +455,12 @@ class BrowserlessScraper:
                         '--disable-dev-shm-usage',
                     ]
                 )
-                fact_logger.logger.debug(f"ðŸ–¥ï¸ Launched local browser {browser_index}")
+                fact_logger.logger.debug(f"Ã°Å¸â€“Â¥Ã¯Â¸Â Launched local browser {browser_index}")
 
             return browser
 
         except Exception as e:
-            fact_logger.logger.error(f"âŒ Failed to create browser {browser_index}: {e}")
+            fact_logger.logger.error(f"Ã¢ÂÅ’ Failed to create browser {browser_index}: {e}")
             return None
 
     async def _scrape_with_semaphore(self, semaphore: asyncio.Semaphore, url: str, browser_index: int) -> str:
@@ -477,7 +490,7 @@ class BrowserlessScraper:
             self.stats["failed_scrapes"] += 1
             self.stats["timeout_scrapes"] += 1
             fact_logger.logger.error(
-                f"â° TIMEOUT after {processing_time:.1f}s: {url}",
+                f"Ã¢ÂÂ° TIMEOUT after {processing_time:.1f}s: {url}",
                 extra={"url": url, "browser_index": browser_index, "timeout": self.overall_scrape_timeout}
             )
             return ""
@@ -485,7 +498,7 @@ class BrowserlessScraper:
             processing_time = time.time() - start_time
             self.stats["failed_scrapes"] += 1
             fact_logger.logger.error(
-                f"âŒ Scraping error for {url}: {e}",
+                f"Ã¢ÂÅ’ Scraping error for {url}: {e}",
                 extra={"url": url, "duration": processing_time, "error": str(e)}
             )
             return ""
@@ -499,7 +512,7 @@ class BrowserlessScraper:
     ) -> str:
         """
         Multi-strategy scraping with Supabase domain learning.
-        Tries strategies in order: known -> basic -> stealth -> advanced -> ScrapingBee
+        Tries strategies in order: known -> basic -> advanced -> ScrapingBee
 
         If a 401/403 HTTP block is detected, immediately breaks to ScrapingBee fallback.
         If ScrapingBee succeeds, saves "scrapingbee" as the domain strategy so future
@@ -563,13 +576,8 @@ class BrowserlessScraper:
                     extra={"domain": domain, "failed_strategy": known_strategy}
                 )
 
-        # Try strategies in order
-        strategies = [ScrapingStrategy.BASIC]
-
-        if STEALTH_AVAILABLE:
-            strategies.append(ScrapingStrategy.STEALTH)
-
-        strategies.append(ScrapingStrategy.ADVANCED)
+        # Try strategies in order: basic -> advanced -> ScrapingBee
+        strategies = [ScrapingStrategy.BASIC, ScrapingStrategy.ADVANCED]
 
         http_blocked = False
 
@@ -659,10 +667,6 @@ class BrowserlessScraper:
             # Create page
             page = await asyncio.wait_for(context.new_page(), timeout=10.0)
 
-            # Apply stealth if available and strategy requires it
-            if STEALTH_AVAILABLE and strategy in [ScrapingStrategy.STEALTH, ScrapingStrategy.ADVANCED]:
-                await stealth_async(page)
-                fact_logger.logger.debug(f"ðŸ¥· Applied stealth mode to page")
 
             # Configure page based on strategy
             await self._configure_page(page, strategy)
@@ -678,7 +682,7 @@ class BrowserlessScraper:
             if await self._detect_paywall(page):
                 self.stats["failed_scrapes"] += 1
                 self.stats["paywall_detected"] += 1
-                fact_logger.logger.warning(f"ðŸ”’ Paywall detected, skipping: {url}")
+                fact_logger.logger.warning(f"Ã°Å¸â€â€™ Paywall detected, skipping: {url}")
                 return ""
 
             # Apply human-like behaviors for advanced strategies
@@ -714,14 +718,14 @@ class BrowserlessScraper:
                                 self.stats["ai_cleaned"] += 1
 
                                 fact_logger.logger.info(
-                                    f"ðŸ§¹ AI cleaned: {original_len} â†’ {len(content)} chars "
+                                    f"Ã°Å¸Â§Â¹ AI cleaned: {original_len} Ã¢â€ â€™ {len(content)} chars "
                                     f"({cleaning_result.reduction_percent:.0f}% noise removed)"
                                 )
                             else:
                                 self.stats["ai_cleaning_failed"] += 1
                     except Exception as e:
                         self.stats["ai_cleaning_failed"] += 1
-                        fact_logger.logger.warning(f"âš ï¸ AI cleaning failed: {e}")
+                        fact_logger.logger.warning(f"Ã¢Å¡ Ã¯Â¸Â AI cleaning failed: {e}")
 
                 processing_time = time.time() - start_time
                 self.stats["successful_scrapes"] += 1
@@ -731,7 +735,7 @@ class BrowserlessScraper:
                 )
 
                 fact_logger.logger.info(
-                    f"âœ… Successfully scraped with {strategy}: {url}",
+                    f"Ã¢Å“â€¦ Successfully scraped with {strategy}: {url}",
                     extra={
                         "url": url,
                         "duration": processing_time,
@@ -742,7 +746,7 @@ class BrowserlessScraper:
                 return content
             else:
                 fact_logger.logger.debug(
-                    f"âš ï¸ Insufficient content from {url} using {strategy}",
+                    f"Ã¢Å¡ Ã¯Â¸Â Insufficient content from {url} using {strategy}",
                     extra={"url": url, "content_length": len(raw_content) if raw_content else 0}
                 )
                 return ""
@@ -838,8 +842,8 @@ class BrowserlessScraper:
             'timezone_id': 'America/New_York',
         }
 
-        # Enhanced options for stealth and advanced strategies
-        if strategy in [ScrapingStrategy.STEALTH, ScrapingStrategy.ADVANCED]:
+        # Enhanced options for advanced strategies
+        if strategy == ScrapingStrategy.ADVANCED:
             context_options.update({
                 'permissions': [],
                 'geolocation': {'latitude': 40.7128, 'longitude': -74.0060},  # NYC
@@ -854,7 +858,7 @@ class BrowserlessScraper:
         context = await browser.new_context(**context_options)
 
         # Set extra HTTP headers for better mimicry
-        if strategy in [ScrapingStrategy.STEALTH, ScrapingStrategy.ADVANCED]:
+        if strategy == ScrapingStrategy.ADVANCED:
             await context.set_extra_http_headers({
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
                 'Accept-Language': 'en-US,en;q=0.9',
@@ -877,8 +881,8 @@ class BrowserlessScraper:
             # Block unnecessary resources for all strategies
             await page.route("**/*", self._block_resources)
 
-            # Add init scripts for stealth/advanced strategies
-            if strategy in [ScrapingStrategy.STEALTH, ScrapingStrategy.ADVANCED]:
+            # Add init scripts for advanced strategies
+            if strategy == ScrapingStrategy.ADVANCED:
                 await page.add_init_script("""
                     // Remove webdriver flag
                     Object.defineProperty(navigator, 'webdriver', {
@@ -911,7 +915,7 @@ class BrowserlessScraper:
                     window.prompt = () => '';
                 """)
         except Exception as e:
-            fact_logger.logger.warning(f"âš ï¸ Page configuration partially failed: {e}")
+            fact_logger.logger.warning(f"Ã¢Å¡ Ã¯Â¸Â Page configuration partially failed: {e}")
 
     async def _navigate_with_strategy(self, page: Page, url: str, strategy: str) -> int:
         """Navigate to URL with strategy-specific wait conditions.
@@ -927,13 +931,6 @@ class BrowserlessScraper:
         if strategy == ScrapingStrategy.BASIC:
             response = await page.goto(url, wait_until="domcontentloaded", timeout=base_timeout)
             await asyncio.sleep(random.uniform(0.5, 1.0))
-
-        elif strategy == ScrapingStrategy.STEALTH:
-            try:
-                response = await page.goto(url, wait_until="networkidle", timeout=base_timeout)
-            except Exception:
-                response = await page.goto(url, wait_until="load", timeout=base_timeout)
-            await asyncio.sleep(random.uniform(1.0, 2.0))
 
         elif strategy == ScrapingStrategy.ADVANCED:
             try:
@@ -1014,7 +1011,7 @@ class BrowserlessScraper:
                     if element:
                         is_visible = await element.is_visible()
                         if is_visible:
-                            fact_logger.logger.warning(f"ðŸ”’ Paywall detected: {selector}")
+                            fact_logger.logger.warning(f"Ã°Å¸â€â€™ Paywall detected: {selector}")
                             return True
                 except Exception:
                     continue
@@ -1027,7 +1024,7 @@ class BrowserlessScraper:
                     body_lower = body_text.lower()
                     for keyword in paywall_keywords:
                         if keyword in body_lower:
-                            fact_logger.logger.warning(f"ðŸ”’ Likely paywall (short content with '{keyword}')")
+                            fact_logger.logger.warning(f"Ã°Å¸â€â€™ Likely paywall (short content with '{keyword}')")
                             return True
             except Exception:
                 pass
@@ -1100,7 +1097,7 @@ class BrowserlessScraper:
                                 case 'li':
                                     const liText = element.textContent.trim();
                                     if (liText && liText.length > 10) {{
-                                        result += '\\nâ€¢ ' + liText + '\\n';
+                                        result += '\\nÃ¢â‚¬Â¢ ' + liText + '\\n';
                                     }}
                                     break;
 
@@ -1141,7 +1138,7 @@ class BrowserlessScraper:
 
                             // Score based on content quality
                             const headingCount = (structuredText.match(/^#+\\s/gm) || []).length;
-                            const paragraphCount = (structuredText.match(/\\n[^\\n#â€¢].+\\n/g) || []).length;
+                            const paragraphCount = (structuredText.match(/\\n[^\\n#Ã¢â‚¬Â¢].+\\n/g) || []).length;
                             const wordCount = structuredText.split(/\\s+/).filter(w => w.length > 0).length;
 
                             let score = 0;
@@ -1170,7 +1167,7 @@ class BrowserlessScraper:
             return content
 
         except Exception as e:
-            fact_logger.logger.error(f"âŒ Structure extraction error: {e}")
+            fact_logger.logger.error(f"Ã¢ÂÅ’ Structure extraction error: {e}")
             return ""
 
     def _clean_content(self, content: str) -> str:
@@ -1215,12 +1212,12 @@ class BrowserlessScraper:
             stats['learned_strategies'] = all_strategies
 
             fact_logger.logger.debug(
-                f"ðŸ“Š Retrieved {len(all_strategies)} learned strategies from Supabase",
+                f"Ã°Å¸â€œÅ  Retrieved {len(all_strategies)} learned strategies from Supabase",
                 extra={"strategy_count": len(all_strategies)}
             )
         except Exception as e:
             fact_logger.logger.warning(
-                f"âš ï¸ Could not retrieve Supabase strategy stats: {e}",
+                f"Ã¢Å¡ Ã¯Â¸Â Could not retrieve Supabase strategy stats: {e}",
                 extra={"error": str(e)}
             )
             stats['learned_domains_count'] = 0
@@ -1230,13 +1227,13 @@ class BrowserlessScraper:
 
     async def close(self):
         """Properly close browser pool and cleanup"""
-        fact_logger.logger.info("ðŸ›‘ Shutting down scraper...")
+        fact_logger.logger.info("Ã°Å¸â€ºâ€˜ Shutting down scraper...")
 
         # Close all contexts
         for i, context in enumerate(self.context_pool):
             try:
                 await context.close()
-                fact_logger.logger.debug(f"âœ… Closed context {i}")
+                fact_logger.logger.debug(f"Ã¢Å“â€¦ Closed context {i}")
             except Exception as e:
                 fact_logger.logger.debug(f"Context close error (non-critical): {e}")
 
@@ -1244,7 +1241,7 @@ class BrowserlessScraper:
         for i, browser in enumerate(self.browser_pool):
             try:
                 await browser.close()
-                fact_logger.logger.debug(f"âœ… Closed browser {i}")
+                fact_logger.logger.debug(f"Ã¢Å“â€¦ Closed browser {i}")
             except Exception as e:
                 fact_logger.logger.debug(f"Browser close error (non-critical): {e}")
 
@@ -1252,7 +1249,7 @@ class BrowserlessScraper:
         if self.playwright:
             try:
                 await self.playwright.stop()
-                fact_logger.logger.debug("âœ… Playwright stopped")
+                fact_logger.logger.debug("Ã¢Å“â€¦ Playwright stopped")
             except Exception as e:
                 fact_logger.logger.debug(f"Playwright stop error (non-critical): {e}")
 
@@ -1264,12 +1261,12 @@ class BrowserlessScraper:
         if self.stats["total_scraped"] > 0:
             success_rate = (self.stats["successful_scrapes"] / self.stats["total_scraped"]) * 100
             fact_logger.logger.info(
-                f"ðŸ“Š Scraping stats: {self.stats['successful_scrapes']}/{self.stats['total_scraped']} "
+                f"Ã°Å¸â€œÅ  Scraping stats: {self.stats['successful_scrapes']}/{self.stats['total_scraped']} "
                 f"successful ({success_rate:.1f}%), {self.stats['browser_reuses']} browser reuses"
             )
 
             # Strategy stats
-            fact_logger.logger.info("ðŸ“ˆ Strategy performance:")
+            fact_logger.logger.info("Ã°Å¸â€œË† Strategy performance:")
             for strategy, usage in self.stats["strategy_usage"].items():
                 if usage > 0:
                     success = self.stats["strategy_success"].get(strategy, 0)
@@ -1278,7 +1275,7 @@ class BrowserlessScraper:
 
             # Site failures
             if self.stats["site_failures"]:
-                fact_logger.logger.info("âš ï¸ Sites with failures:")
+                fact_logger.logger.info("Ã¢Å¡ Ã¯Â¸Â Sites with failures:")
                 for domain, count in sorted(
                     self.stats["site_failures"].items(),
                     key=lambda x: x[1],
@@ -1291,7 +1288,7 @@ class BrowserlessScraper:
             all_strategies = self.strategy_service.get_all_strategies()
             if all_strategies:
                 fact_logger.logger.info(
-                    f"ðŸ“š Domain learning summary: {len(all_strategies)} strategies saved in Supabase"
+                    f"Ã°Å¸â€œÅ¡ Domain learning summary: {len(all_strategies)} strategies saved in Supabase"
                 )
 
                 # Count by strategy type
@@ -1304,4 +1301,4 @@ class BrowserlessScraper:
         except Exception as e:
             fact_logger.logger.debug(f"Could not retrieve Supabase stats on shutdown: {e}")
 
-        fact_logger.logger.info("âœ… Scraper shutdown complete")
+        fact_logger.logger.info("Ã¢Å“â€¦ Scraper shutdown complete")
