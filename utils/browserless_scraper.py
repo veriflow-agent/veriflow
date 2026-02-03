@@ -227,13 +227,11 @@ class BrowserlessScraper:
                 ScrapingStrategy.BASIC: 0,
                 ScrapingStrategy.STEALTH: 0,
                 ScrapingStrategy.ADVANCED: 0,
-                ScrapingStrategy.CLOUDFLARE: 0,
             },
             "strategy_success": {
                 ScrapingStrategy.BASIC: 0,
                 ScrapingStrategy.STEALTH: 0,
                 ScrapingStrategy.ADVANCED: 0,
-                ScrapingStrategy.CLOUDFLARE: 0,
             },
             # Site-specific failures
             "site_failures": {},
