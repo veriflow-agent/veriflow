@@ -60,6 +60,52 @@ class ScrapingBeeFallback:
     # Public API
     # ------------------------------------------------------------------
 
+    async def fetch_raw_html(self, url: str) -> Optional[str]:
+        """
+        Fetch raw HTML from URL via ScrapingBee API.
+
+        Returns the full HTML page content for processing by the caller.
+        No content extraction or cleaning is performed here.
+
+        Args:
+            url: The URL to fetch.
+
+        Returns:
+            Raw HTML string, or None on failure / block page.
+        """
+        if not self.enabled:
+            fact_logger.logger.debug("ScrapingBee fallback skipped (not enabled)")
+            return None
+
+        self.stats["attempts"] += 1
+        fact_logger.logger.info(f"[ScrapingBee] Fetching raw HTML: {url}")
+
+        try:
+            html = await self._fetch_html(url)
+
+            if not html:
+                self.stats["failures"] += 1
+                fact_logger.logger.warning(f"[ScrapingBee] No HTML returned for {url}")
+                return None
+
+            # Check if ScrapingBee returned a block/error page
+            soup = BeautifulSoup(html, "lxml")
+            if self._is_block_page(soup):
+                self.stats["failures"] += 1
+                fact_logger.logger.warning(f"[ScrapingBee] Block page detected for {url}")
+                return None
+
+            self.stats["successes"] += 1
+            fact_logger.logger.info(
+                f"[ScrapingBee] Fetched {len(html)} chars of HTML from {url}"
+            )
+            return html
+
+        except Exception as e:
+            self.stats["failures"] += 1
+            fact_logger.logger.error(f"[ScrapingBee] Error fetching {url}: {e}")
+            return None
+
     async def scrape(self, url: str, selectors: List[str]) -> Optional[str]:
         """
         Scrape a URL using ScrapingBee API.
