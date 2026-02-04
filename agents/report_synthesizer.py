@@ -3,7 +3,9 @@
 Report Synthesizer Agent
 Stage 3: Comprehensive Analysis Synthesis
 
-SIMPLIFIED VERSION - Produces human-readable reports instead of complex structured data.
+METADATA BLOCK ARCHITECTURE - Dynamically assembles synthesis prompt from
+whatever MetadataBlocks Stage 1 produced. Adding a new pre-analysis check
+requires zero changes here.
 
 Analyzes all reports from Stage 1 and Stage 2 to create:
 - Overall credibility score (0-100) and rating
@@ -29,13 +31,12 @@ from utils.langsmith_config import langsmith_config
 
 
 # ============================================================================
-# SIMPLIFIED PYDANTIC OUTPUT MODEL
+# PYDANTIC OUTPUT MODEL
 # ============================================================================
 
 class SynthesisReport(BaseModel):
     """
-    Simplified synthesis report - focuses on human-readable output.
-
+    Synthesis report - focuses on human-readable output.
     The main content is in 'summary' - a comprehensive narrative analysis.
     """
 
@@ -90,8 +91,14 @@ class ReportSynthesizer:
     """
     Stage 3 Agent: Synthesizes all analysis reports into a human-readable assessment.
 
-    Takes Stage 1 and Stage 2 results and produces a clear, readable report
-    that general users can understand.
+    Takes Stage 1 metadata blocks and Stage 2 mode reports and produces a clear,
+    readable report that general users can understand.
+
+    DYNAMIC BLOCK CONSUMPTION:
+    - Iterates over whatever MetadataBlocks Stage 1 produced
+    - Each block provides its own summary_for_synthesis text
+    - No hardcoded knowledge of specific block types needed
+    - New checks appear in the synthesis automatically
     """
 
     def __init__(self, config: Optional[Dict] = None):
@@ -114,46 +121,64 @@ class ReportSynthesizer:
             model="gpt-4o"
         )
 
-    def _format_content_classification(self, classification: Optional[Dict]) -> str:
-        """Format content classification for prompt"""
-        if not classification:
-            return "Not available"
+    # =========================================================================
+    # DYNAMIC BLOCK FORMATTING
+    # =========================================================================
 
-        return f"""
-Content Type: {classification.get('content_type', 'Unknown')}
-Realm: {classification.get('realm', 'Unknown')} / {classification.get('sub_realm', '')}
-Purpose: {classification.get('purpose', 'Unknown')}
-Contains References: {classification.get('contains_references', False)}
-LLM Characteristics: {classification.get('llm_characteristics', {})}
-"""
+    def _format_pre_analysis_context(
+        self,
+        metadata_blocks: list,
+        mode_routing: Optional[Dict] = None
+    ) -> str:
+        """
+        Dynamically assemble pre-analysis context from whatever MetadataBlocks
+        are present. Each block formats itself via summary_for_synthesis.
 
-    def _format_source_verification(self, verification: Optional[Dict]) -> str:
-        """Format source verification for prompt"""
-        if not verification:
-            return "Not available"
+        This method has ZERO knowledge of specific block types. New checks
+        appear here automatically when they produce a MetadataBlock.
 
-        if verification.get('error') or verification.get('status') == 'no_url_to_verify':
-            return f"Source verification not performed: {verification.get('error', verification.get('status', 'Unknown'))}"
+        Args:
+            metadata_blocks: List of MetadataBlock objects (or dicts from .model_dump())
+            mode_routing: Mode routing decision (separate from blocks)
 
-        return f"""
-Domain: {verification.get('domain', 'Unknown')}
-Credibility Tier: {verification.get('credibility_tier', 'Unknown')} - {verification.get('tier_description', '')}
-Verification Source: {verification.get('verification_source', 'Unknown')}
-Bias Rating: {verification.get('bias_rating', 'Unknown')}
-Factual Reporting: {verification.get('factual_reporting', 'Unknown')}
-Is Propaganda: {verification.get('is_propaganda', False)}
-"""
+        Returns:
+            Formatted string for the synthesis prompt
+        """
+        sections = []
 
-    def _format_mode_routing(self, routing: Optional[Dict]) -> str:
-        """Format mode routing for prompt"""
-        if not routing:
-            return "Not available"
+        for block in metadata_blocks:
+            # Handle both MetadataBlock objects and raw dicts
+            if hasattr(block, 'display_name'):
+                name = block.display_name
+                summary = block.summary_for_synthesis
+                success = block.success
+                error = block.error
+            else:
+                name = block.get("display_name", "Unknown Check")
+                summary = block.get("summary_for_synthesis", "No data available")
+                success = block.get("success", False)
+                error = block.get("error")
 
-        return f"""
-Selected Modes: {routing.get('selected_modes', [])}
-Excluded Modes: {routing.get('excluded_modes', [])}
-Routing Reasoning: {routing.get('reasoning', 'Not provided')}
-"""
+            if success:
+                sections.append(f"### {name}\n{summary}")
+            else:
+                error_msg = error or "Check did not complete"
+                sections.append(f"### {name}\nNot available: {error_msg}")
+
+        # Add mode routing info (not a metadata block -- it's control flow)
+        if mode_routing:
+            selected = mode_routing.get("selected_modes", [])
+            excluded = mode_routing.get("excluded_modes", [])
+            reasoning = mode_routing.get("routing_reasoning", "Not provided")
+
+            sections.append(
+                f"### Analysis Mode Selection\n"
+                f"Selected Modes: {', '.join(selected)}\n"
+                f"Excluded Modes: {', '.join(excluded) if excluded else 'None'}\n"
+                f"Routing Reasoning: {reasoning}"
+            )
+
+        return "\n\n".join(sections) if sections else "No pre-analysis data available"
 
     def _format_mode_reports(self, mode_reports: Dict[str, Any], mode_errors: Dict[str, str]) -> str:
         """Format all mode reports for the prompt"""
@@ -237,6 +262,10 @@ Key Findings:
 
         return "\n".join(sections) if sections else "No mode reports available"
 
+    # =========================================================================
+    # MAIN SYNTHESIS METHOD
+    # =========================================================================
+
     @traceable(
         name="synthesize_reports",
         run_type="chain",
@@ -250,8 +279,11 @@ Key Findings:
         """
         Synthesize all analysis reports into a human-readable assessment.
 
+        Dynamically assembles prompt from whatever MetadataBlocks are present.
+        Falls back to legacy individual keys if metadata_blocks not available.
+
         Args:
-            stage1_results: Results from Stage 1 (classification, verification, routing)
+            stage1_results: Results from Stage 1 (includes metadata_blocks)
             stage2_results: Results from Stage 2 (mode_reports, mode_errors)
 
         Returns:
@@ -259,29 +291,36 @@ Key Findings:
         """
         start_time = time.time()
 
-        # Extract data
-        content_classification = stage1_results.get("content_classification")
-        source_verification = stage1_results.get("source_verification")
-        mode_routing = stage1_results.get("mode_routing")
-
         mode_reports = stage2_results.get("mode_reports", {})
         mode_errors = stage2_results.get("mode_errors", {})
 
         fact_logger.logger.info(
-            "🔬 Stage 3: Synthesizing reports",
+            "Stage 3: Synthesizing reports",
             extra={
                 "modes_completed": list(mode_reports.keys()),
                 "modes_failed": list(mode_errors.keys())
             }
         )
 
-        # Format inputs for prompt
-        content_classification_str = self._format_content_classification(content_classification)
-        source_verification_str = self._format_source_verification(source_verification)
-        mode_routing_str = self._format_mode_routing(mode_routing)
+        # -----------------------------------------------------------------
+        # Assemble pre-analysis context from metadata blocks
+        # -----------------------------------------------------------------
+        metadata_blocks = stage1_results.get("metadata_blocks", [])
+        mode_routing = stage1_results.get("mode_routing")
+
+        if metadata_blocks:
+            # New path: dynamically assemble from blocks
+            pre_analysis_context = self._format_pre_analysis_context(
+                metadata_blocks, mode_routing
+            )
+        else:
+            # Legacy fallback: format from individual keys
+            pre_analysis_context = self._format_legacy_context(stage1_results)
+
+        # Format mode reports (Stage 2 -- unchanged)
         mode_reports_str = self._format_mode_reports(mode_reports, mode_errors)
 
-        # Build prompt
+        # Build prompt using the new single-variable template
         prompt = ChatPromptTemplate.from_messages([
             ("system", self.prompts["system"]),
             ("user", self.prompts["user"])
@@ -298,9 +337,7 @@ Key Findings:
         try:
             response = await chain.ainvoke(
                 {
-                    "content_classification": content_classification_str,
-                    "source_verification": source_verification_str,
-                    "mode_routing": mode_routing_str,
+                    "pre_analysis_context": pre_analysis_context,
                     "mode_reports_formatted": mode_reports_str
                 },
                 config={"callbacks": callbacks}
@@ -309,7 +346,7 @@ Key Findings:
             # Add metadata
             response["modes_analyzed"] = list(mode_reports.keys())
 
-            # Handle any failed modes
+            # Note any failed modes
             if mode_errors:
                 response["analysis_notes"] = f"Some analysis modes failed: {', '.join(mode_errors.keys())}"
 
@@ -318,7 +355,7 @@ Key Findings:
 
             duration = time.time() - start_time
             fact_logger.logger.info(
-                "✅ Stage 3 synthesis complete",
+                "Stage 3 synthesis complete",
                 extra={
                     "duration": round(duration, 2),
                     "overall_score": synthesis_report.overall_score,
@@ -331,14 +368,77 @@ Key Findings:
             return synthesis_report
 
         except Exception as e:
-            fact_logger.logger.error(f"❌ Report synthesis failed: {e}")
+            fact_logger.logger.error(f"Report synthesis failed: {e}")
 
             # Return a fallback synthesis report on error
             return self._create_fallback_report(
-                mode_reports, 
-                mode_errors, 
+                mode_reports,
+                mode_errors,
                 str(e)
             )
+
+    # =========================================================================
+    # LEGACY FALLBACK FORMATTING
+    # =========================================================================
+
+    def _format_legacy_context(self, stage1_results: Dict[str, Any]) -> str:
+        """
+        Format pre-analysis context from legacy individual keys.
+        Used when metadata_blocks are not available (backward compatibility).
+        """
+        sections = []
+
+        # Content classification
+        cc = stage1_results.get("content_classification")
+        if cc and not cc.get("error"):
+            sections.append(
+                f"### Content Classification\n"
+                f"Content Type: {cc.get('content_type', 'Unknown')}\n"
+                f"Realm: {cc.get('realm', 'Unknown')} / {cc.get('sub_realm', '')}\n"
+                f"Purpose: {cc.get('apparent_purpose', cc.get('purpose', 'Unknown'))}\n"
+                f"Contains References: {cc.get('contains_references', cc.get('reference_count', 0) > 0)}\n"
+                f"LLM Characteristics: {cc.get('llm_characteristics', cc.get('llm_output_indicators', {}))}"
+            )
+        else:
+            sections.append("### Content Classification\nNot available")
+
+        # Source verification
+        sv = stage1_results.get("source_verification")
+        if sv and not sv.get("error") and sv.get("status") != "no_url_to_verify":
+            sections.append(
+                f"### Source Credibility\n"
+                f"Domain: {sv.get('domain', 'Unknown')}\n"
+                f"Credibility Tier: {sv.get('credibility_tier', 'Unknown')} - "
+                f"{sv.get('tier_description', '')}\n"
+                f"Verification Source: {sv.get('verification_source', 'Unknown')}\n"
+                f"Bias Rating: {sv.get('bias_rating', 'Unknown')}\n"
+                f"Factual Reporting: {sv.get('factual_reporting', 'Unknown')}\n"
+                f"Is Propaganda: {sv.get('is_propaganda', False)}"
+            )
+        else:
+            error_info = ""
+            if sv:
+                error_info = sv.get("error", sv.get("status", ""))
+            sections.append(
+                f"### Source Credibility\n"
+                f"Not available: {error_info}"
+            )
+
+        # Mode routing
+        mr = stage1_results.get("mode_routing")
+        if mr:
+            sections.append(
+                f"### Analysis Mode Selection\n"
+                f"Selected Modes: {mr.get('selected_modes', [])}\n"
+                f"Excluded Modes: {mr.get('excluded_modes', [])}\n"
+                f"Routing Reasoning: {mr.get('routing_reasoning', 'Not provided')}"
+            )
+
+        return "\n\n".join(sections)
+
+    # =========================================================================
+    # FALLBACK REPORT
+    # =========================================================================
 
     def _create_fallback_report(
         self,
@@ -348,18 +448,15 @@ Key Findings:
     ) -> SynthesisReport:
         """Create a basic fallback synthesis report when AI synthesis fails"""
 
-        # Calculate basic metrics from available data
         concerns = []
         positives = []
-        score = 50  # Start neutral
+        score = 50
 
         # Check key claims if available
         if "key_claims_analysis" in mode_reports:
             kc = mode_reports["key_claims_analysis"]
             summary = kc.get("summary", {})
             avg_conf = summary.get("average_confidence", 0.5)
-            verified = summary.get("verified_count", 0)
-            total = summary.get("total_key_claims", 1)
 
             if avg_conf >= 0.7:
                 score += 15
@@ -404,24 +501,25 @@ Key Findings:
         else:
             rating = "Unreliable"
 
-        # Build fallback summary
+        # Build summary
         summary_parts = [
             f"This content has been assessed with a credibility rating of **{rating}** (score: {score}/100).",
             "",
-            "**Note:** Full AI-powered synthesis was unavailable for this analysis. The assessment above is based on automated metrics from the individual analysis modes.",
+            "**Note:** Full AI-powered synthesis was unavailable for this analysis. "
+            "The assessment above is based on automated metrics from the individual analysis modes.",
             ""
         ]
 
         if concerns:
             summary_parts.append("**Key Concerns:**")
             for concern in concerns:
-                summary_parts.append(f"• {concern}")
+                summary_parts.append(f"- {concern}")
             summary_parts.append("")
 
         if positives:
             summary_parts.append("**Positive Indicators:**")
             for positive in positives:
-                summary_parts.append(f"• {positive}")
+                summary_parts.append(f"- {positive}")
             summary_parts.append("")
 
         summary_parts.append("Please review the detailed findings from each analysis mode below for more specific information.")
@@ -429,7 +527,7 @@ Key Findings:
         return SynthesisReport(
             overall_score=max(0, min(100, score)),
             overall_rating=rating,
-            confidence=40,  # Low confidence due to fallback
+            confidence=40,
             summary="\n".join(summary_parts),
             key_concerns=concerns,
             positive_indicators=positives,
@@ -455,29 +553,50 @@ if __name__ == "__main__":
     load_dotenv()
 
     async def test():
+        from utils.metadata_block import (
+            build_content_classification_block,
+            build_source_credibility_block,
+        )
+
         synthesizer = ReportSynthesizer()
 
-        # Mock Stage 1 results
+        # Build metadata blocks
+        cc_block = build_content_classification_block({
+            "content_type": "news_article",
+            "realm": "politics",
+            "sub_realm": "domestic_policy",
+            "apparent_purpose": "inform",
+            "detected_language": "English",
+            "formality_level": "formal",
+            "is_likely_llm_output": False,
+            "reference_count": 0,
+            "llm_output_indicators": [],
+            "notable_characteristics": [],
+        })
+
+        sv_block = build_source_credibility_block({
+            "domain": "example.com",
+            "credibility_tier": 2,
+            "tier_description": "Generally reliable source",
+            "bias_rating": "left-center",
+            "factual_reporting": "HIGH",
+            "is_propaganda": False,
+            "verification_source": "mbfc",
+        })
+
+        # Stage 1 results with blocks
         stage1_results = {
-            "content_classification": {
-                "content_type": "news_article",
-                "realm": "politics",
-                "sub_realm": "domestic_policy",
-                "purpose": "inform"
-            },
-            "source_verification": {
-                "domain": "example.com",
-                "credibility_tier": 2,
-                "tier_description": "Generally reliable source",
-                "bias_rating": "left-center"
-            },
+            "metadata_blocks": [cc_block, sv_block],
+            "content_classification": cc_block.data,
+            "source_verification": sv_block.data,
             "mode_routing": {
                 "selected_modes": ["key_claims_analysis", "bias_analysis"],
-                "excluded_modes": ["llm_output_verification"]
+                "excluded_modes": ["llm_output_verification"],
+                "routing_reasoning": "News article about politics -- fact check and bias analysis appropriate",
             }
         }
 
-        # Mock Stage 2 results
+        # Stage 2 results
         stage2_results = {
             "mode_reports": {
                 "key_claims_analysis": {
@@ -513,13 +632,13 @@ if __name__ == "__main__":
         print(f"\n--- SUMMARY ---\n{result.summary}")
         print(f"\n--- KEY CONCERNS ({len(result.key_concerns)}) ---")
         for concern in result.key_concerns:
-            print(f"  • {concern}")
+            print(f"  - {concern}")
         print(f"\n--- POSITIVE INDICATORS ({len(result.positive_indicators)}) ---")
         for pos in result.positive_indicators:
-            print(f"  • {pos}")
+            print(f"  - {pos}")
         print(f"\n--- RECOMMENDATIONS ({len(result.recommendations)}) ---")
         for rec in result.recommendations:
-            print(f"  • {rec}")
+            print(f"  - {rec}")
         print(f"\nModes Analyzed: {result.modes_analyzed}")
         if result.analysis_notes:
             print(f"Notes: {result.analysis_notes}")
