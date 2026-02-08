@@ -18,7 +18,7 @@ function parseApiError(errorBody, fallback = 'Request failed') {
 // UNIFIED STREAMING WITH AUTO-RECONNECTION
 // ============================================
 
-function streamJobProgress(jobId, emoji = 'â€¢', reconnectAttempts = 0) {
+function streamJobProgress(jobId, emoji = '', reconnectAttempts = 0) {
     const maxReconnects = 3;
     const baseDelay = 2000;
 
@@ -186,7 +186,7 @@ async function runLLMVerification(content) {
         const data = await response.json();
         AppState.currentJobIds.llmVerification = data.job_id;
 
-        const result = await streamJobProgress(data.job_id, 'â€¢');
+        const result = await streamJobProgress(data.job_id);
         AppState.currentLLMVerificationResults = result;
         addProgress('LLM interpretation verification completed');
         return result;
@@ -240,7 +240,7 @@ async function runFactCheck(content) {
         const data = await response.json();
         AppState.currentJobIds.factCheck = data.job_id;
 
-        const result = await streamJobProgress(data.job_id, 'â€¢');
+        const result = await streamJobProgress(data.job_id);
         AppState.currentFactCheckResults = result;
         addProgress('Fact checking completed');
         return result;
@@ -291,7 +291,7 @@ async function runKeyClaimsCheck(content) {
         const data = await response.json();
         AppState.currentJobIds.keyClaims = data.job_id;
 
-        const result = await streamJobProgress(data.job_id, 'â€¢');
+        const result = await streamJobProgress(data.job_id);
         AppState.currentKeyClaimsResults = result;
         addProgress('Key claims analysis completed');
         return result;
@@ -342,7 +342,7 @@ async function runBiasCheck(content) {
         const data = await response.json();
         AppState.currentJobIds.biasCheck = data.job_id;
 
-        const result = await streamJobProgress(data.job_id, 'â€¢');
+        const result = await streamJobProgress(data.job_id);
         AppState.currentBiasResults = result;
         addProgress('Bias analysis completed');
         return result;
@@ -378,7 +378,7 @@ async function runLieDetection(content) {
         const data = await response.json();
         AppState.currentJobIds.lieDetection = data.job_id;
 
-        const result = await streamJobProgress(data.job_id, 'â€¢');
+        const result = await streamJobProgress(data.job_id);
         AppState.currentLieDetectionResults = result;
         addProgress('Deception detection completed');
         return result;
@@ -429,7 +429,7 @@ async function runManipulationCheck(content) {
         const data = await response.json();
         AppState.currentJobIds.manipulation = data.job_id;
 
-        const result = await streamJobProgress(data.job_id, 'â€¢');
+        const result = await streamJobProgress(data.job_id);
         AppState.currentManipulationResults = result;
         addProgress('Manipulation analysis completed');
         return result;

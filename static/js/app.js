@@ -633,7 +633,7 @@ function init() {
 
     // Set initial mode AND activate the mode card
     updatePlaceholder(AppState.currentMode);
-    switchMode(AppState.currentMode);  // ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Ãƒâ€šÃ‚Â ADD THIS LINE
+    switchMode(AppState.currentMode);
 
     console.log('VeriFlow initialized');
     console.log('Modules: config, utils, ui, modal, api, renderers');
