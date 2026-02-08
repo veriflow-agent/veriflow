@@ -112,19 +112,19 @@ function renderSourceCredibility(verification) {
     // Publication name (HTML id: compPublicationName)
     const pubEl = document.getElementById('compPublicationName');
     if (pubEl) {
-        pubEl.textContent = verification.domain || verification.publication_name || 'â€”';
+        pubEl.textContent = verification.domain || verification.publication_name || '—';
     }
 
     // Bias Rating (HTML id: compBiasRating)
     const biasEl = document.getElementById('compBiasRating');
     if (biasEl) {
-        biasEl.textContent = verification.bias_rating || 'â€”';
+        biasEl.textContent = verification.bias_rating || '—';
     }
 
     // Accuracy Record
     const accuracyEl = document.getElementById('compFactualRating');
     if (accuracyEl) {
-        accuracyEl.textContent = verification.factual_reporting || 'â€”';
+        accuracyEl.textContent = verification.factual_reporting || '—';
     }
 }
 
@@ -173,11 +173,11 @@ function renderModeReports(modeReports) {
     }
 
     const modeConfig = {
-        'key_claims_analysis': { title: 'ðŸ“Š Fact Check Results', renderer: renderFactCheckSummary },
-        'bias_analysis': { title: 'âš–ï¸ Bias Analysis', renderer: renderBiasSummary },
-        'manipulation_detection': { title: 'ðŸ” Manipulation Detection', renderer: renderManipulationSummary },
-        'lie_detection': { title: 'ðŸŽ­ Deception Indicators', renderer: renderLieDetectionSummary },
-        'llm_output_verification': { title: 'ðŸ¤– AI Citation Check', renderer: renderLLMVerificationSummary }
+        'key_claims_analysis': { title: 'Fact Check Results', renderer: renderFactCheckSummary },
+        'bias_analysis': { title: 'Bias Analysis', renderer: renderBiasSummary },
+        'manipulation_detection': { title: 'Manipulation Detection', renderer: renderManipulationSummary },
+        'lie_detection': { title: 'Deception Indicators', renderer: renderLieDetectionSummary },
+        'llm_output_verification': { title: 'AI Citation Check', renderer: renderLLMVerificationSummary }
     };
 
     let html = '';
@@ -189,7 +189,7 @@ function renderModeReports(modeReports) {
             <div class="mode-report-card" data-mode="${modeKey}">
                 <div class="mode-report-header" onclick="toggleModeReport('${modeKey}')">
                     <span class="mode-title">${config.title}</span>
-                    <span class="mode-toggle">â–¼</span>
+                    <span class="mode-toggle">▼</span>
                 </div>
                 <div class="mode-report-content" id="modeContent_${modeKey}" style="display: none;">
                     ${config.renderer(report)}
@@ -209,7 +209,7 @@ function toggleModeReport(modeKey) {
     if (content) {
         const isVisible = content.style.display !== 'none';
         content.style.display = isVisible ? 'none' : 'block';
-        if (toggle) toggle.textContent = isVisible ? 'â–¼' : 'â–²';
+        if (toggle) toggle.textContent = isVisible ? '▼' : '▲';
     }
 }
 
@@ -393,7 +393,7 @@ function renderSynthesisReport(synthesis) {
     // Overall Rating
     const ratingEl = document.getElementById('compOverallRating');
     if (ratingEl) {
-        const rating = synthesis.overall_rating ?? synthesis.overall_credibility_rating ?? 'â€”';
+        const rating = synthesis.overall_rating ?? synthesis.overall_credibility_rating ?? '—';
         ratingEl.textContent = rating;
         ratingEl.className = 'rating-badge ' + getRatingClass(rating);
     }
@@ -470,7 +470,7 @@ function renderKeyConcerns(concerns) {
     section.style.display = 'block';
     container.innerHTML = concerns.map(concern => `
         <li class="concern-item">
-            <span class="concern-icon">âš ï¸</span>
+            <span class="concern-icon">⚠️</span>
             <span class="concern-text">${escapeHtml(concern)}</span>
         </li>
     `).join('');
@@ -489,7 +489,7 @@ function renderPositiveIndicators(positives) {
     section.style.display = 'block';
     container.innerHTML = positives.map(positive => `
         <li class="positive-item">
-            <span class="positive-icon">âœ…</span>
+            <span class="positive-icon">✅</span>
             <span class="positive-text">${escapeHtml(positive)}</span>
         </li>
     `).join('');
@@ -508,7 +508,7 @@ function renderRecommendations(recommendations) {
     section.style.display = 'block';
     container.innerHTML = recommendations.map(rec => `
         <li class="recommendation-item">
-            <span class="rec-icon">ðŸ’¡</span>
+            <span class="rec-icon">💡</span>
             <span class="rec-text">${escapeHtml(rec)}</span>
         </li>
     `).join('');
@@ -526,7 +526,7 @@ function renderAnalysisNotes(notes) {
     container.style.display = 'block';
     container.innerHTML = `
         <div class="analysis-notes">
-            <span class="notes-icon">â„¹ï¸</span>
+            <span class="notes-icon">ℹ️</span>
             <span class="notes-text">${escapeHtml(notes)}</span>
         </div>
     `;
@@ -543,12 +543,12 @@ function updateComprehensiveSessionInfo(data) {
     const r2Sep = document.getElementById('compR2Sep');
 
     if (sessionIdEl) {
-        sessionIdEl.textContent = data.session_id || 'â€”';
+        sessionIdEl.textContent = data.session_id || '—';
     }
 
     if (analysisTimeEl) {
         const time = data.processing_time || data.total_processing_time;
-        analysisTimeEl.textContent = time ? `${Math.round(time)}s` : 'â€”';
+        analysisTimeEl.textContent = time ? `${Math.round(time)}s` : '—';
     }
 
     if (r2Link && r2Sep) {
