@@ -21,6 +21,20 @@ async function handleAnalyze() {
             addProgress('Fetching article from URL...');
 
             const result = await fetchArticleFromUrl(url);
+
+            // Check if scraping failed (but we may still have credibility data)
+            if (result && result.scrape_failed) {
+                hideAllSections();
+
+                // Show the scrape failure UI with reason and paste prompt
+                showScrapeFailure(result);
+
+                // Switch to text input so user can paste
+                showTextInput();
+
+                return;
+            }
+
             content = result.content;
             if (htmlInput) htmlInput.value = content;
             showUrlStatus('success', 'Article fetched successfully', result);
@@ -521,8 +535,19 @@ function initUrlInputListeners() {
 
                 const result = await fetchArticleFromUrl(url);
 
-                // Hide progress section after successful fetch
+                // Hide progress section after fetch completes
                 hideAllSections();
+
+                // Check if scraping failed
+                if (result && result.scrape_failed) {
+                    // Show the scrape failure UI with reason and paste prompt
+                    showScrapeFailure(result);
+
+                    // Switch to text view so user can paste
+                    showTextInput();
+
+                    return;
+                }
 
                 if (htmlInput) {
                     htmlInput.value = result.content;
@@ -564,7 +589,7 @@ function init() {
 
     // Set initial mode AND activate the mode card
     updatePlaceholder(AppState.currentMode);
-    switchMode(AppState.currentMode);  // â† ADD THIS LINE
+    switchMode(AppState.currentMode);  // Ã¢â€ Â ADD THIS LINE
 
     console.log('VeriFlow initialized');
     console.log('Modules: config, utils, ui, modal, api, renderers');

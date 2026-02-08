@@ -1051,15 +1051,30 @@ def run_scrape_task(
             finally:
                 await scraper.close()
 
-            if not content or len(content.strip()) < 100:
-                return {
-                    "success": False,
-                    "error": "Could not extract meaningful content from URL",
-                    "url": url,
-                    "domain": domain
-                }
+            # Determine if scraping failed and why
+            scrape_failed = not content or len(content.strip()) < 100
+            scrape_error = None
+            scrape_error_type = None  # 'paywall', 'blocked', 'empty'
 
-            job_manager.add_progress(job_id, f"✅ Scraped {len(content)} characters")
+            if scrape_failed:
+                # Determine the specific failure reason from scraper stats
+                if scraper.stats.get("paywall_detected", 0) > 0:
+                    scrape_error_type = "paywall"
+                    scrape_error = "This article appears to be behind a paywall. Please copy and paste the article text below."
+                elif scraper.stats.get("site_failures", {}).get(domain, 0) > 0:
+                    scrape_error_type = "blocked"
+                    scrape_error = f"The site {domain} is blocking automated access. Please copy and paste the article text below."
+                else:
+                    scrape_error_type = "empty"
+                    scrape_error = "Could not extract article content from this URL. The page may require JavaScript, login, or have an unusual layout. Please copy and paste the article text below."
+
+                job_manager.add_progress(job_id, f"Content extraction failed: {scrape_error_type}")
+                fact_logger.logger.warning(
+                    f"Scrape failed for {url}: {scrape_error_type}",
+                    extra={"url": url, "domain": domain, "error_type": scrape_error_type}
+                )
+            else:
+                job_manager.add_progress(job_id, f"Scraped {len(content)} characters")
 
             # Initialize result variables
             title = None
@@ -1082,10 +1097,10 @@ def run_scrape_task(
             mbfc_url = None
 
             # ============================================
-            # STEP 2: Extract metadata (no Playwright needed)
+            # STEP 2: Extract metadata (only if we have content)
             # ============================================
-            if extract_metadata:
-                job_manager.add_progress(job_id, "📋 Extracting article metadata...")
+            if extract_metadata and not scrape_failed:
+                job_manager.add_progress(job_id, "Extracting article metadata...")
                 try:
                     from utils.article_metadata_extractor import ArticleMetadataExtractor
 
@@ -1103,18 +1118,18 @@ def run_scrape_task(
 
                     job_manager.add_progress(
                         job_id, 
-                        f"✅ Metadata: {title[:40] if title else 'No title'}... by {author or 'Unknown'}"
+                        f"Metadata: {title[:40] if title else 'No title'}... by {author or 'Unknown'}"
                     )
 
                 except Exception as e:
-                    fact_logger.logger.warning(f"⚠️ Metadata extraction failed: {e}")
+                    fact_logger.logger.warning(f"Metadata extraction failed: {e}")
                     errors.append(f"Metadata extraction failed: {str(e)}")
 
             # ============================================
-            # STEP 3: Check credibility (with MBFC lookup if needed)
+            # STEP 3: Check credibility (ALWAYS runs - only needs URL/domain)
             # ============================================
             if check_credibility:
-                job_manager.add_progress(job_id, f"🔍 Checking credibility for {domain}...")
+                job_manager.add_progress(job_id, f"Checking source credibility for {domain}...")
                 try:
                     from utils.source_credibility_service import SourceCredibilityService
                     from utils.brave_searcher import BraveSearcher
@@ -1158,15 +1173,52 @@ def run_scrape_task(
 
                     # Log what happened
                     if cred.source == "supabase":
-                        job_manager.add_progress(job_id, f"✅ Found {domain} in database (Tier {credibility_tier})")
+                        job_manager.add_progress(job_id, f"Found {domain} in database (Tier {credibility_tier})")
                     elif cred.source == "mbfc":
-                        job_manager.add_progress(job_id, f"✅ MBFC lookup complete, saved to database (Tier {credibility_tier})")
+                        job_manager.add_progress(job_id, f"MBFC lookup complete, saved to database (Tier {credibility_tier})")
                     else:
-                        job_manager.add_progress(job_id, f"ℹ️ No credibility data found for {domain} (Tier 3 default)")
+                        job_manager.add_progress(job_id, f"No credibility data found for {domain} (Tier 3 default)")
 
                 except Exception as e:
-                    fact_logger.logger.warning(f"⚠️ Credibility check failed: {e}")
+                    fact_logger.logger.warning(f"Credibility check failed: {e}")
                     errors.append(f"Credibility check failed: {str(e)}")
+
+            # Build tier descriptions (used by both success and failure paths)
+            tier_descriptions = {
+                1: "Highly Credible - Official sources, major wire services, highly reputable news",
+                2: "Credible - Reputable mainstream media with strong factual reporting",
+                3: "Mixed - Requires verification, may have bias or mixed factual reporting",
+                4: "Low Credibility - Significant bias issues or poor factual reporting",
+                5: "Unreliable - Propaganda, conspiracy, or known disinformation source"
+            }
+
+            # If scrape failed, return with credibility data but flag the failure
+            if scrape_failed:
+                return {
+                    "success": False,
+                    "scrape_failed": True,
+                    "scrape_error": scrape_error,
+                    "scrape_error_type": scrape_error_type,
+                    "url": url,
+                    "domain": domain,
+                    "publication_name": publication_name,
+
+                    # Credibility data (gathered even though scrape failed)
+                    "credibility": {
+                        "tier": credibility_tier,
+                        "tier_description": tier_descriptions.get(credibility_tier, "Unknown"),
+                        "rating": credibility_rating,
+                        "bias_rating": bias_rating,
+                        "factual_reporting": factual_reporting,
+                        "is_propaganda": is_propaganda,
+                        "special_tags": special_tags,
+                        "source": credibility_source,
+                        "reasoning": tier_reasoning,
+                        "mbfc_url": mbfc_url
+                    },
+
+                    "errors": errors
+                }
 
             # Fallback title extraction
             if not title:
@@ -1176,15 +1228,7 @@ def run_scrape_task(
                     if first_line.startswith('#'):
                         title = first_line.lstrip('#').strip()[:200]
 
-            # Build result
-            tier_descriptions = {
-                1: "Highly Credible - Official sources, major wire services, highly reputable news",
-                2: "Credible - Reputable mainstream media with strong factual reporting",
-                3: "Mixed - Requires verification, may have bias or mixed factual reporting",
-                4: "Low Credibility - Significant bias issues or poor factual reporting",
-                5: "Unreliable - Propaganda, conspiracy, or known disinformation source"
-            }
-
+            # Build success result
             return {
                 "success": True,
                 "url": url,

@@ -64,7 +64,7 @@ function showContentFormatIndicator(hasLinks, linkCount) {
     const formatText = contentFormatIndicator.querySelector('.format-text');
 
     if (hasLinks) {
-        if (formatIcon) formatIcon.textContent = '✓';
+        if (formatIcon) formatIcon.textContent = '✔';
         if (formatText) formatText.textContent = `Detected ${linkCount} source link${linkCount !== 1 ? 's' : ''}`;
         contentFormatIndicator.className = 'content-format-indicator valid';
     } else {
@@ -301,7 +301,7 @@ function hideUrlStatus() {
 function getStatusIcon(type) {
     const icons = {
         loading: '🔵',
-        success: '✓',
+        success: '✔',
         error: '✕',
         info: 'i'
     };
@@ -496,7 +496,7 @@ function buildCredibilitySection(credibility) {
     if (credibility.is_propaganda) {
         html += `
             <div class="credibility-warning propaganda-warning">
-                ⚠️ Identified as propaganda source
+                âš ï¸ Identified as propaganda source
             </div>
         `;
     }
@@ -515,7 +515,7 @@ function buildCredibilitySection(credibility) {
         html += `
             <div class="mbfc-link">
                 <a href="${escapeHtml(credibility.mbfc_url)}" target="_blank" rel="noopener">
-                    View MBFC Report →
+                    View MBFC Report â†’
                 </a>
             </div>
         `;
@@ -589,7 +589,119 @@ function clearUrlInput() {
     if (articleUrl) articleUrl.value = '';
     hideUrlStatus();
     hideArticleMetadata();
+    hideScrapeFailure();
     setLastFetchedArticle(null);
+}
+
+// ============================================
+// SCRAPE FAILURE DISPLAY
+// ============================================
+
+/**
+ * Show scrape failure message with reason, credibility data (if available),
+ * and instruction to paste the article text.
+ * 
+ * @param {Object} result - The scrape result with scrape_failed=true
+ */
+function showScrapeFailure(result) {
+    if (!result) return;
+
+    const container = document.getElementById('articleMetadataContainer');
+    if (!container) return;
+
+    const errorType = result.scrape_error_type || 'empty';
+    const errorMessage = result.scrape_error || 'Could not extract article content. Please copy and paste the article text below.';
+    const domain = result.domain || '';
+
+    // Error type icon (no emoji -- using text markers)
+    const errorIcons = {
+        'paywall': 'PAYWALL',
+        'blocked': 'BLOCKED',
+        'empty': 'FAILED'
+    };
+    const errorLabel = errorIcons[errorType] || 'FAILED';
+
+    let html = '<div class="article-metadata-panel scrape-failure-panel">';
+
+    // Failure header
+    html += `
+        <div class="metadata-header">
+            <span class="metadata-header-label">Content Extraction Failed</span>
+            <button class="metadata-close-btn" onclick="hideScrapeFailure()" title="Close">\u00D7</button>
+        </div>
+    `;
+
+    // Error message section
+    html += `
+        <div class="scrape-failure-message">
+            <div class="scrape-failure-badge">${errorLabel}</div>
+            <p class="scrape-failure-text">${escapeHtml(errorMessage)}</p>
+        </div>
+    `;
+
+    // Source URL display
+    if (result.url) {
+        html += `
+            <div class="metadata-section article-info">
+                <div class="metadata-row url-row">
+                    <a href="${escapeHtml(result.url)}" target="_blank" rel="noopener" class="source-url-link">
+                        ${escapeHtml(domain || result.url)}
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                            <polyline points="15 3 21 3 21 9"/>
+                            <line x1="10" y1="14" x2="21" y2="3"/>
+                        </svg>
+                    </a>
+                </div>
+            </div>
+        `;
+    }
+
+    // Publication name if available
+    if (result.publication_name) {
+        html += `
+            <div class="metadata-section article-info">
+                <div class="metadata-row publication-row">
+                    <span class="publication-name">${escapeHtml(result.publication_name)}</span>
+                </div>
+            </div>
+        `;
+    }
+
+    // Credibility section (gathered even though scrape failed)
+    if (result.credibility && result.credibility.source !== 'unknown') {
+        html += buildCredibilitySection(result.credibility);
+    }
+
+    html += '</div>';
+
+    container.style.display = 'block';
+    container.innerHTML = html;
+
+    // Also update the URL status line
+    showUrlStatus('error', `Could not extract content from ${domain || 'URL'}`);
+
+    // Focus the textarea so user can start pasting immediately
+    if (htmlInput) {
+        htmlInput.placeholder = 'The article could not be fetched automatically. Please paste the article text here to continue analysis...';
+        htmlInput.focus();
+    }
+}
+
+/**
+ * Hide the scrape failure panel
+ */
+function hideScrapeFailure() {
+    const container = document.getElementById('articleMetadataContainer');
+    if (container) {
+        container.style.display = 'none';
+        container.innerHTML = '';
+    }
+
+    // Reset placeholder to default for current mode
+    if (htmlInput) {
+        updatePlaceholder(AppState.currentMode);
+    }
 }
 
 // ============================================
