@@ -47,24 +47,25 @@ function renderContentClassification(classification) {
         typeEl.textContent = formatContentType(classification.content_type);
     }
 
-    // Topic/Realm
-    const topicEl = document.getElementById('compContentTopic');
+    // Topic/Realm (HTML id: compContentRealm)
+    const topicEl = document.getElementById('compContentRealm');
     if (topicEl) {
         const realm = classification.realm || 'Unknown';
         const subRealm = classification.sub_realm;
         topicEl.textContent = subRealm ? `${capitalizeFirst(realm)} / ${capitalizeFirst(subRealm)}` : capitalizeFirst(realm);
     }
 
-    // Purpose
+    // Purpose (field: apparent_purpose)
     const purposeEl = document.getElementById('compContentPurpose');
     if (purposeEl) {
-        purposeEl.textContent = capitalizeFirst(classification.purpose || 'Unknown');
+        purposeEl.textContent = capitalizeFirst(classification.apparent_purpose || classification.purpose || 'Unknown');
     }
 
-    // Has Sources
-    const sourcesEl = document.getElementById('compHasSources');
+    // Has Sources (HTML id: compHasCitations, field: reference_count)
+    const sourcesEl = document.getElementById('compHasCitations');
     if (sourcesEl) {
-        sourcesEl.textContent = classification.contains_references ? 'Yes' : 'No';
+        const hasRefs = classification.contains_references || (classification.reference_count > 0);
+        sourcesEl.textContent = hasRefs ? 'Yes' : 'No';
     }
 }
 
@@ -88,35 +89,42 @@ function renderSourceCredibility(verification) {
 
     // Handle error cases
     if (verification.error || verification.status === 'no_url_to_verify') {
-        const tierEl = document.getElementById('compSourceTier');
+        const tierEl = document.getElementById('compCredTier');
         if (tierEl) tierEl.textContent = 'N/A';
+        const tierDescEl = document.getElementById('compCredTierDesc');
+        if (tierDescEl) tierDescEl.textContent = 'No source URL provided';
         return;
     }
 
-    // Trust Level / Tier
-    const tierEl = document.getElementById('compSourceTier');
+    // Trust Level / Tier (HTML ids: compCredTier + compCredTierDesc)
+    const tierEl = document.getElementById('compCredTier');
     if (tierEl) {
         const tier = verification.credibility_tier || 'Unknown';
-        const tierDesc = verification.tier_description || '';
-        tierEl.innerHTML = `<strong>Tier ${tier}</strong> - ${tierDesc}`;
+        tierEl.textContent = tier;
+        tierEl.className = 'tier-value tier-' + tier;
     }
 
-    // Publication name
-    const pubEl = document.getElementById('compSourcePublication');
+    const tierDescEl = document.getElementById('compCredTierDesc');
+    if (tierDescEl) {
+        tierDescEl.textContent = verification.tier_description || '';
+    }
+
+    // Publication name (HTML id: compPublicationName)
+    const pubEl = document.getElementById('compPublicationName');
     if (pubEl) {
-        pubEl.textContent = verification.domain || verification.publication_name || '—';
+        pubEl.textContent = verification.domain || verification.publication_name || 'â€”';
     }
 
-    // Bias Rating
-    const biasEl = document.getElementById('compSourceBias');
+    // Bias Rating (HTML id: compBiasRating)
+    const biasEl = document.getElementById('compBiasRating');
     if (biasEl) {
-        biasEl.textContent = verification.bias_rating || '—';
+        biasEl.textContent = verification.bias_rating || 'â€”';
     }
 
     // Accuracy Record
-    const accuracyEl = document.getElementById('compSourceAccuracy');
+    const accuracyEl = document.getElementById('compFactualRating');
     if (accuracyEl) {
-        accuracyEl.textContent = verification.factual_reporting || '—';
+        accuracyEl.textContent = verification.factual_reporting || 'â€”';
     }
 }
 
@@ -125,11 +133,11 @@ function renderSourceCredibility(verification) {
 // ============================================
 
 function renderModeRouting(routing) {
-    const checksEl = document.getElementById('compChecksPerformed');
+    const checksEl = document.getElementById('selectedModesGrid');
     if (!checksEl) return;
 
     if (!routing || !routing.selected_modes) {
-        checksEl.textContent = 'Mode selection pending...';
+        checksEl.innerHTML = '<span class="mode-pending">Mode selection pending...</span>';
         return;
     }
 
@@ -141,8 +149,14 @@ function renderModeRouting(routing) {
         'llm_output_verification': 'AI Citation Verification'
     };
 
-    const modes = routing.selected_modes.map(m => modeNames[m] || m).join(', ');
-    checksEl.textContent = modes || 'No modes selected';
+    if (routing.selected_modes.length === 0) {
+        checksEl.innerHTML = '<span class="mode-pending">No modes selected</span>';
+        return;
+    }
+
+    checksEl.innerHTML = routing.selected_modes
+        .map(m => `<span class="mode-badge">${modeNames[m] || m}</span>`)
+        .join('');
 }
 
 // ============================================
@@ -159,11 +173,11 @@ function renderModeReports(modeReports) {
     }
 
     const modeConfig = {
-        'key_claims_analysis': { title: '📊 Fact Check Results', renderer: renderFactCheckSummary },
-        'bias_analysis': { title: '⚖️ Bias Analysis', renderer: renderBiasSummary },
-        'manipulation_detection': { title: '🔍 Manipulation Detection', renderer: renderManipulationSummary },
-        'lie_detection': { title: '🎭 Deception Indicators', renderer: renderLieDetectionSummary },
-        'llm_output_verification': { title: '🤖 AI Citation Check', renderer: renderLLMVerificationSummary }
+        'key_claims_analysis': { title: 'ðŸ“Š Fact Check Results', renderer: renderFactCheckSummary },
+        'bias_analysis': { title: 'âš–ï¸ Bias Analysis', renderer: renderBiasSummary },
+        'manipulation_detection': { title: 'ðŸ” Manipulation Detection', renderer: renderManipulationSummary },
+        'lie_detection': { title: 'ðŸŽ­ Deception Indicators', renderer: renderLieDetectionSummary },
+        'llm_output_verification': { title: 'ðŸ¤– AI Citation Check', renderer: renderLLMVerificationSummary }
     };
 
     let html = '';
@@ -175,7 +189,7 @@ function renderModeReports(modeReports) {
             <div class="mode-report-card" data-mode="${modeKey}">
                 <div class="mode-report-header" onclick="toggleModeReport('${modeKey}')">
                     <span class="mode-title">${config.title}</span>
-                    <span class="mode-toggle">▼</span>
+                    <span class="mode-toggle">â–¼</span>
                 </div>
                 <div class="mode-report-content" id="modeContent_${modeKey}" style="display: none;">
                     ${config.renderer(report)}
@@ -195,7 +209,7 @@ function toggleModeReport(modeKey) {
     if (content) {
         const isVisible = content.style.display !== 'none';
         content.style.display = isVisible ? 'none' : 'block';
-        if (toggle) toggle.textContent = isVisible ? '▼' : '▲';
+        if (toggle) toggle.textContent = isVisible ? 'â–¼' : 'â–²';
     }
 }
 
@@ -356,25 +370,30 @@ function renderSynthesisReport(synthesis) {
     if (!synthesis) {
         console.log('No synthesis report yet');
         // Show loading state
-        const scoreEl = document.getElementById('compOverallScore');
-        if (scoreEl) scoreEl.textContent = '—';
+        const scoreCircleLoading = document.getElementById('compOverallScore');
+        if (scoreCircleLoading) {
+            const sv = scoreCircleLoading.querySelector('.score-value');
+            if (sv) sv.textContent = '--';
+        }
         return;
     }
 
-    // Overall Score (use new field names)
-    const scoreEl = document.getElementById('compOverallScore');
-    if (scoreEl) {
-        const score = synthesis.overall_score ?? synthesis.overall_credibility_score ?? '—';
-        scoreEl.textContent = score;
-
-        // Add color class based on score
-        scoreEl.className = 'score-value ' + getScoreClass(score);
+    // Overall Score - target the inner .score-value span inside the score-circle div
+    const scoreCircle = document.getElementById('compOverallScore');
+    if (scoreCircle) {
+        const score = synthesis.overall_score ?? synthesis.overall_credibility_score ?? '--';
+        const scoreValueEl = scoreCircle.querySelector('.score-value');
+        if (scoreValueEl) {
+            scoreValueEl.textContent = score;
+        }
+        // Add color class to the circle container
+        scoreCircle.className = 'score-circle ' + getScoreClass(score);
     }
 
     // Overall Rating
     const ratingEl = document.getElementById('compOverallRating');
     if (ratingEl) {
-        const rating = synthesis.overall_rating ?? synthesis.overall_credibility_rating ?? '—';
+        const rating = synthesis.overall_rating ?? synthesis.overall_credibility_rating ?? 'â€”';
         ratingEl.textContent = rating;
         ratingEl.className = 'rating-badge ' + getRatingClass(rating);
     }
@@ -451,7 +470,7 @@ function renderKeyConcerns(concerns) {
     section.style.display = 'block';
     container.innerHTML = concerns.map(concern => `
         <li class="concern-item">
-            <span class="concern-icon">⚠️</span>
+            <span class="concern-icon">âš ï¸</span>
             <span class="concern-text">${escapeHtml(concern)}</span>
         </li>
     `).join('');
@@ -470,7 +489,7 @@ function renderPositiveIndicators(positives) {
     section.style.display = 'block';
     container.innerHTML = positives.map(positive => `
         <li class="positive-item">
-            <span class="positive-icon">✅</span>
+            <span class="positive-icon">âœ…</span>
             <span class="positive-text">${escapeHtml(positive)}</span>
         </li>
     `).join('');
@@ -489,7 +508,7 @@ function renderRecommendations(recommendations) {
     section.style.display = 'block';
     container.innerHTML = recommendations.map(rec => `
         <li class="recommendation-item">
-            <span class="rec-icon">💡</span>
+            <span class="rec-icon">ðŸ’¡</span>
             <span class="rec-text">${escapeHtml(rec)}</span>
         </li>
     `).join('');
@@ -507,7 +526,7 @@ function renderAnalysisNotes(notes) {
     container.style.display = 'block';
     container.innerHTML = `
         <div class="analysis-notes">
-            <span class="notes-icon">ℹ️</span>
+            <span class="notes-icon">â„¹ï¸</span>
             <span class="notes-text">${escapeHtml(notes)}</span>
         </div>
     `;
@@ -519,17 +538,17 @@ function renderAnalysisNotes(notes) {
 
 function updateComprehensiveSessionInfo(data) {
     const sessionIdEl = document.getElementById('compSessionId');
-    const analysisTimeEl = document.getElementById('compAnalysisTime');
+    const analysisTimeEl = document.getElementById('compProcessingTime');
     const r2Link = document.getElementById('compR2Link');
     const r2Sep = document.getElementById('compR2Sep');
 
     if (sessionIdEl) {
-        sessionIdEl.textContent = data.session_id || '—';
+        sessionIdEl.textContent = data.session_id || 'â€”';
     }
 
     if (analysisTimeEl) {
         const time = data.processing_time || data.total_processing_time;
-        analysisTimeEl.textContent = time ? `${Math.round(time)}s` : '—';
+        analysisTimeEl.textContent = time ? `${Math.round(time)}s` : 'â€”';
     }
 
     if (r2Link && r2Sep) {
