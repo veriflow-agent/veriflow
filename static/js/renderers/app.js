@@ -304,9 +304,24 @@ async function runComprehensiveAnalysis(content) {
 async function streamComprehensiveProgress(jobId) {
     return new Promise((resolve, reject) => {
         const eventSource = new EventSource(`/api/job/${jobId}/stream`);
+        let settled = false;  // Prevent double resolve/reject
 
         // Store for cleanup
         AppState.activeEventSources.push(eventSource);
+
+        function settleWith(result) {
+            if (settled) return;
+            settled = true;
+            eventSource.close();
+            resolve(result);
+        }
+
+        function settleError(err) {
+            if (settled) return;
+            settled = true;
+            eventSource.close();
+            reject(err);
+        }
 
         eventSource.onmessage = (event) => {
             try {
@@ -342,19 +357,33 @@ async function streamComprehensiveProgress(jobId) {
 
                 // Handle completion
                 if (data.status === 'completed') {
-                    eventSource.close();
-
-                    // Store results
-                    AppState.currentComprehensiveResults = data.result;
-
-                    addProgress('Comprehensive analysis complete!');
-                    resolve(data.result);
+                    if (data.result) {
+                        // Result included in SSE event -- use it directly
+                        AppState.currentComprehensiveResults = data.result;
+                        addProgress('Comprehensive analysis complete!');
+                        settleWith(data.result);
+                    } else {
+                        // Result missing (e.g. SSE reconnect sent status without result)
+                        // Fetch full result from the job endpoint
+                        addProgress('Fetching results...');
+                        fetch(`/api/job/${jobId}`)
+                            .then(r => r.json())
+                            .then(job => {
+                                if (job.result) {
+                                    AppState.currentComprehensiveResults = job.result;
+                                    addProgress('Comprehensive analysis complete!');
+                                    settleWith(job.result);
+                                } else {
+                                    settleError(new Error('Analysis completed but results unavailable'));
+                                }
+                            })
+                            .catch(err => settleError(new Error('Failed to fetch results: ' + err.message)));
+                    }
                 }
 
                 // Handle failure
                 if (data.status === 'failed') {
-                    eventSource.close();
-                    reject(new Error(data.error || 'Analysis failed'));
+                    settleError(new Error(data.error || 'Analysis failed'));
                 }
 
             } catch (e) {
@@ -363,6 +392,7 @@ async function streamComprehensiveProgress(jobId) {
         };
 
         eventSource.onerror = (error) => {
+            if (settled) return;  // Already handled completion
             console.error('SSE error:', error);
             eventSource.close();
 
@@ -370,14 +400,18 @@ async function streamComprehensiveProgress(jobId) {
             fetch(`/api/job/${jobId}`)
                 .then(r => r.json())
                 .then(job => {
-                    if (job.status === 'completed') {
+                    if (job.status === 'completed' && job.result) {
                         AppState.currentComprehensiveResults = job.result;
-                        resolve(job.result);
+                        settleWith(job.result);
+                    } else if (job.status === 'completed') {
+                        settleError(new Error('Analysis completed but results unavailable'));
+                    } else if (job.status === 'failed') {
+                        settleError(new Error(job.error || 'Analysis failed'));
                     } else {
-                        reject(new Error('Connection lost'));
+                        settleError(new Error('Connection lost during analysis'));
                     }
                 })
-                .catch(() => reject(new Error('Connection lost')));
+                .catch(() => settleError(new Error('Connection lost')));
         };
     });
 }
@@ -599,7 +633,7 @@ function init() {
 
     // Set initial mode AND activate the mode card
     updatePlaceholder(AppState.currentMode);
-    switchMode(AppState.currentMode);  // ÃƒÂ¢Ã¢â‚¬Â Ã‚Â ADD THIS LINE
+    switchMode(AppState.currentMode);  // ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Ãƒâ€šÃ‚Â ADD THIS LINE
 
     console.log('VeriFlow initialized');
     console.log('Modules: config, utils, ui, modal, api, renderers');
