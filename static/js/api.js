@@ -2,10 +2,23 @@
 // VeriFlow Redesign - Minimalist Theme
 
 // ============================================
+// API ERROR HANDLING
+// ============================================
+
+/**
+ * Extract a human-readable error message from an API error response.
+ * Prefers 'message' over 'error' since message is more descriptive.
+ * Returns the error_type too for special handling (e.g., paywall_content).
+ */
+function parseApiError(errorBody, fallback = 'Request failed') {
+    return errorBody.message || errorBody.error || fallback;
+}
+
+// ============================================
 // UNIFIED STREAMING WITH AUTO-RECONNECTION
 // ============================================
 
-function streamJobProgress(jobId, emoji = '•', reconnectAttempts = 0) {
+function streamJobProgress(jobId, emoji = 'â€¢', reconnectAttempts = 0) {
     const maxReconnects = 3;
     const baseDelay = 2000;
 
@@ -167,13 +180,13 @@ async function runLLMVerification(content) {
 
         if (!response.ok) {
             const error = await response.json();
-            throw new Error(error.error || 'LLM verification failed');
+            throw new Error(parseApiError(error, 'LLM verification failed'));
         }
 
         const data = await response.json();
         AppState.currentJobIds.llmVerification = data.job_id;
 
-        const result = await streamJobProgress(data.job_id, '•');
+        const result = await streamJobProgress(data.job_id, 'â€¢');
         AppState.currentLLMVerificationResults = result;
         addProgress('LLM interpretation verification completed');
         return result;
@@ -221,13 +234,13 @@ async function runFactCheck(content) {
 
         if (!response.ok) {
             const error = await response.json();
-            throw new Error(error.error || 'Fact check failed');
+            throw new Error(parseApiError(error, 'Fact check failed'));
         }
 
         const data = await response.json();
         AppState.currentJobIds.factCheck = data.job_id;
 
-        const result = await streamJobProgress(data.job_id, '•');
+        const result = await streamJobProgress(data.job_id, 'â€¢');
         AppState.currentFactCheckResults = result;
         addProgress('Fact checking completed');
         return result;
@@ -272,13 +285,13 @@ async function runKeyClaimsCheck(content) {
 
         if (!response.ok) {
             const error = await response.json();
-            throw new Error(error.error || 'Key claims check failed');
+            throw new Error(parseApiError(error, 'Key claims check failed'));
         }
 
         const data = await response.json();
         AppState.currentJobIds.keyClaims = data.job_id;
 
-        const result = await streamJobProgress(data.job_id, '•');
+        const result = await streamJobProgress(data.job_id, 'â€¢');
         AppState.currentKeyClaimsResults = result;
         addProgress('Key claims analysis completed');
         return result;
@@ -323,13 +336,13 @@ async function runBiasCheck(content) {
 
         if (!response.ok) {
             const error = await response.json();
-            throw new Error(error.error || 'Bias check failed');
+            throw new Error(parseApiError(error, 'Bias check failed'));
         }
 
         const data = await response.json();
         AppState.currentJobIds.biasCheck = data.job_id;
 
-        const result = await streamJobProgress(data.job_id, '•');
+        const result = await streamJobProgress(data.job_id, 'â€¢');
         AppState.currentBiasResults = result;
         addProgress('Bias analysis completed');
         return result;
@@ -359,13 +372,13 @@ async function runLieDetection(content) {
 
         if (!response.ok) {
             const error = await response.json();
-            throw new Error(error.error || 'Lie detection failed');
+            throw new Error(parseApiError(error, 'Lie detection failed'));
         }
 
         const data = await response.json();
         AppState.currentJobIds.lieDetection = data.job_id;
 
-        const result = await streamJobProgress(data.job_id, '•');
+        const result = await streamJobProgress(data.job_id, 'â€¢');
         AppState.currentLieDetectionResults = result;
         addProgress('Deception detection completed');
         return result;
@@ -410,13 +423,13 @@ async function runManipulationCheck(content) {
 
         if (!response.ok) {
             const error = await response.json();
-            throw new Error(error.error || 'Manipulation check failed');
+            throw new Error(parseApiError(error, 'Manipulation check failed'));
         }
 
         const data = await response.json();
         AppState.currentJobIds.manipulation = data.job_id;
 
-        const result = await streamJobProgress(data.job_id, '•');
+        const result = await streamJobProgress(data.job_id, 'â€¢');
         AppState.currentManipulationResults = result;
         addProgress('Manipulation analysis completed');
         return result;

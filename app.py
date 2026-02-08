@@ -43,9 +43,9 @@ class Config:
             raise ValueError("OPENAI_API_KEY not set in environment")
 
         if not self.brave_api_key:
-            fact_logger.logger.warning("âš ï¸ BRAVE_API_KEY not set - web search pipeline will not work")
+            fact_logger.logger.warning("Ã¢Å¡Â Ã¯Â¸Â BRAVE_API_KEY not set - web search pipeline will not work")
 
-        fact_logger.logger.info("âœ… Configuration loaded successfully")
+        fact_logger.logger.info("Ã¢Å“â€¦ Configuration loaded successfully")
 
 config = Config()
 
@@ -53,9 +53,9 @@ config = Config()
 llm_interpretation_orchestrator: Optional[LLMInterpretationOrchestrator] = None
 try:
     llm_interpretation_orchestrator = LLMInterpretationOrchestrator(config)
-    fact_logger.logger.info("âœ… LLM Interpretation Orchestrator initialized successfully")
+    fact_logger.logger.info("Ã¢Å“â€¦ LLM Interpretation Orchestrator initialized successfully")
 except Exception as e:
-    fact_logger.logger.error(f"âŒ Failed to initialize LLM Interpretation Orchestrator: {e}")
+    fact_logger.logger.error(f"Ã¢ÂÅ’ Failed to initialize LLM Interpretation Orchestrator: {e}")
     llm_interpretation_orchestrator = None
 
 # 2. Web Search Orchestrator (for fact-checking any text via web search)
@@ -63,30 +63,30 @@ web_search_orchestrator: Optional[WebSearchOrchestrator] = None
 if config.brave_api_key:
     try:
         web_search_orchestrator = WebSearchOrchestrator(config)
-        fact_logger.logger.info("âœ… Web Search Orchestrator initialized successfully")
+        fact_logger.logger.info("Ã¢Å“â€¦ Web Search Orchestrator initialized successfully")
     except Exception as e:
-        fact_logger.logger.error(f"âŒ Failed to initialize Web Search Orchestrator: {e}")
-        fact_logger.logger.warning("âš ï¸ Web search pipeline will not be available")
+        fact_logger.logger.error(f"Ã¢ÂÅ’ Failed to initialize Web Search Orchestrator: {e}")
+        fact_logger.logger.warning("Ã¢Å¡Â Ã¯Â¸Â Web search pipeline will not be available")
         web_search_orchestrator = None
 else:
-    fact_logger.logger.warning("âš ï¸ BRAVE_API_KEY not set - web search will not work")
+    fact_logger.logger.warning("Ã¢Å¡Â Ã¯Â¸Â BRAVE_API_KEY not set - web search will not work")
 
 # 3. Bias Check Orchestrator (analyzes text for political/ideological bias)
 bias_orchestrator: Optional[BiasCheckOrchestrator] = None
 try:
     bias_orchestrator = BiasCheckOrchestrator(config)
-    fact_logger.logger.info("âœ… Bias Check Orchestrator initialized successfully")
+    fact_logger.logger.info("Ã¢Å“â€¦ Bias Check Orchestrator initialized successfully")
 except Exception as e:
-    fact_logger.logger.error(f"âŒ Failed to initialize Bias Check Orchestrator: {e}")
+    fact_logger.logger.error(f"Ã¢ÂÅ’ Failed to initialize Bias Check Orchestrator: {e}")
     bias_orchestrator = None
 
 # 4. Lie Detector Orchestrator (detects linguistic markers of deception)
 lie_detector_orchestrator: Optional[LieDetectorOrchestrator] = None
 try:
     lie_detector_orchestrator = LieDetectorOrchestrator(config)
-    fact_logger.logger.info("âœ… Lie Detector Orchestrator initialized successfully")
+    fact_logger.logger.info("Ã¢Å“â€¦ Lie Detector Orchestrator initialized successfully")
 except Exception as e:
-    fact_logger.logger.error(f"âŒ Failed to initialize Lie Detector Orchestrator: {e}")
+    fact_logger.logger.error(f"Ã¢ÂÅ’ Failed to initialize Lie Detector Orchestrator: {e}")
     lie_detector_orchestrator = None
 
 # 5. Key Claims Orchestrator (extracts and verifies 2-3 central thesis claims)
@@ -94,9 +94,9 @@ key_claims_orchestrator: Optional[KeyClaimsOrchestrator] = None
 if config.brave_api_key:
     try:
         key_claims_orchestrator = KeyClaimsOrchestrator(config)
-        fact_logger.logger.info("âœ… Key Claims Orchestrator initialized successfully")
+        fact_logger.logger.info("Ã¢Å“â€¦ Key Claims Orchestrator initialized successfully")
     except Exception as e:
-        fact_logger.logger.error(f"âŒ Failed to initialize Key Claims Orchestrator: {e}")
+        fact_logger.logger.error(f"Ã¢ÂÅ’ Failed to initialize Key Claims Orchestrator: {e}")
         key_claims_orchestrator = None
 
 # 6. Manipulation Detection Orchestrator (detects agenda-driven fact manipulation)
@@ -104,19 +104,19 @@ manipulation_orchestrator: Optional[ManipulationOrchestrator] = None
 if config.brave_api_key:
     try:
         manipulation_orchestrator = ManipulationOrchestrator(config)
-        fact_logger.logger.info("âœ… Manipulation Detection Orchestrator initialized successfully")
+        fact_logger.logger.info("Ã¢Å“â€¦ Manipulation Detection Orchestrator initialized successfully")
     except Exception as e:
-        fact_logger.logger.error(f"âŒ Failed to initialize Manipulation Orchestrator: {e}")
+        fact_logger.logger.error(f"Ã¢ÂÅ’ Failed to initialize Manipulation Orchestrator: {e}")
         manipulation_orchestrator = None
 else:
-    fact_logger.logger.warning("âš ï¸ Manipulation Detection requires BRAVE_API_KEY for fact verification")
+    fact_logger.logger.warning("Ã¢Å¡Â Ã¯Â¸Â Manipulation Detection requires BRAVE_API_KEY for fact verification")
 
 # Log summary
-fact_logger.logger.info("ðŸ“Š Orchestrator initialization complete:")
-fact_logger.logger.info(f"  - LLM Interpretation: {'âœ…' if llm_interpretation_orchestrator else 'âŒ'}")
-fact_logger.logger.info(f"  - Web Search: {'âœ…' if web_search_orchestrator else 'âŒ'}")
-fact_logger.logger.info(f"  - Bias Check: {'âœ…' if bias_orchestrator else 'âŒ'}")
-fact_logger.logger.info(f"  - Lie Detection: {'âœ…' if lie_detector_orchestrator else 'âŒ'}")
+fact_logger.logger.info("Ã°Å¸â€œÅ  Orchestrator initialization complete:")
+fact_logger.logger.info(f"  - LLM Interpretation: {'Ã¢Å“â€¦' if llm_interpretation_orchestrator else 'Ã¢ÂÅ’'}")
+fact_logger.logger.info(f"  - Web Search: {'Ã¢Å“â€¦' if web_search_orchestrator else 'Ã¢ÂÅ’'}")
+fact_logger.logger.info(f"  - Bias Check: {'Ã¢Å“â€¦' if bias_orchestrator else 'Ã¢ÂÅ’'}")
+fact_logger.logger.info(f"  - Lie Detection: {'Ã¢Å“â€¦' if lie_detector_orchestrator else 'Ã¢ÂÅ’'}")
 
 def detect_input_format(content: str) -> str:
     """
@@ -141,11 +141,97 @@ def detect_input_format(content: str) -> str:
     has_multiple_urls = len(url_matches) >= 2
 
     if has_html_tags or has_html_links or has_markdown_refs or has_markdown_inline or has_multiple_urls:
-        fact_logger.logger.info("ðŸ“‹ Detected HTML/Markdown input format (LLM output with links)")
+        fact_logger.logger.info("Ã°Å¸â€œâ€¹ Detected HTML/Markdown input format (LLM output with links)")
         return 'html'
     else:
-        fact_logger.logger.info("ðŸ“„ Detected plain text input format (no links)")
+        fact_logger.logger.info("Ã°Å¸â€œâ€ž Detected plain text input format (no links)")
         return 'text'
+
+
+def detect_paywall_content(content: str) -> Optional[dict]:
+    """
+    Detect if user-pasted content is paywall/subscription page noise
+    rather than actual article content.
+
+    Returns None if content looks fine, or a dict with error details if paywall detected.
+
+    Checks for:
+    1. High density of subscription/paywall keywords
+    2. Pricing patterns (e.g., "$X/month", "X per month")
+    3. Plan names (Trial, Standard, Premium, etc.)
+    4. Very low ratio of substantive content vs. subscription noise
+    """
+    content_lower = content.lower()
+    content_length = len(content.strip())
+
+    # --- Keyword density check ---
+    paywall_keywords = [
+        'subscribe', 'subscription', 'sign in to read', 'register to unlock',
+        'become a member', 'premium content', 'premium digital',
+        'standard digital', 'unlock this article', 'to read this article',
+        'articles remaining', 'free articles', 'trial',
+        'select a plan', 'choose a plan', 'explore our', 'explore more offers',
+        'cancel anytime', 'full range of subscriptions',
+        'digital access', 'complete digital access',
+        'gift articles to share', 'curated newsletters',
+        'monthly gift articles', 'premium newsletters',
+        'per month', 'per year', 'billed annually',
+        'save now', 'save %',
+        'for individuals', 'for multiple readers', 'for organisations',
+        'why the ft', 'why subscribe', 'find out why',
+        'terms & conditions apply', 'terms and conditions apply',
+    ]
+
+    keyword_hits = sum(1 for kw in paywall_keywords if kw in content_lower)
+
+    # --- Pricing pattern check ---
+    pricing_patterns = [
+        r'[\$\u20ac\u00a3]\d+[\.,]?\d*\s*/?\s*(?:per\s+)?month',  # $69/month, EUR69 per month
+        r'\d+[\.,]?\d*\s*(?:per|/)\s*(?:month|year|annum)',         # 69 per month
+        r'save\s+\d+\s*%',                                          # Save 40%
+        r'then\s+[\$\u20ac\u00a3]?\d+',                             # Then $69
+    ]
+    pricing_hits = sum(1 for p in pricing_patterns if re.search(p, content_lower))
+
+    # --- Plan name check ---
+    plan_names = ['trial', 'standard digital', 'premium digital', 'basic plan',
+                  'pro plan', 'enterprise', 'professional', 'complete coverage']
+    plan_hits = sum(1 for p in plan_names if p in content_lower)
+
+    # --- Decision logic ---
+    # Strong signal: many keywords + pricing patterns = almost certainly a paywall page
+    total_signals = keyword_hits + (pricing_hits * 3) + (plan_hits * 2)
+
+    # For short content (<2000 chars), lower threshold since there's less room for real content
+    if content_length < 2000:
+        threshold = 6
+    else:
+        threshold = 10
+
+    if total_signals >= threshold:
+        fact_logger.logger.warning(
+            f"Paywall content detected in user-pasted text "
+            f"(signals: {total_signals}, keywords: {keyword_hits}, "
+            f"pricing: {pricing_hits}, plans: {plan_hits}, "
+            f"length: {content_length})"
+        )
+        return {
+            "error": "paywall_content",
+            "error_type": "paywall_content",
+            "message": (
+                "This looks like a paywall or subscription page rather than "
+                "the actual article content. Please copy the article text itself "
+                "(not the subscription page) and paste it here for analysis."
+            ),
+            "signals": {
+                "keyword_hits": keyword_hits,
+                "pricing_hits": pricing_hits,
+                "plan_hits": plan_hits,
+                "total_score": total_signals
+            }
+        }
+
+    return None
 
 
 @app.route('/')
@@ -178,11 +264,16 @@ def check_facts():
         if not content:
             return jsonify({"error": "No content provided"}), 400
 
+        # Check if user pasted paywall/subscription page content
+        paywall_check = detect_paywall_content(content)
+        if paywall_check:
+            return jsonify(paywall_check), 422
+
         # Check for explicit input_type from frontend
         explicit_type = request_json.get('input_type')
 
         fact_logger.logger.info(
-            "ðŸ“¥ Received fact-check request",
+            "Ã°Å¸â€œÂ¥ Received fact-check request",
             extra={
                 "content_length": len(content),
                 "explicit_type": explicit_type
@@ -192,10 +283,10 @@ def check_facts():
         # Determine input format: use explicit type if provided, otherwise auto-detect
         if explicit_type in ['html', 'text']:
             input_format = explicit_type
-            fact_logger.logger.info(f"ðŸ“‹ Using explicit input type: {input_format}")
+            fact_logger.logger.info(f"Ã°Å¸â€œâ€¹ Using explicit input type: {input_format}")
         else:
             input_format = detect_input_format(content)
-            fact_logger.logger.info(f"ðŸ“‹ Auto-detected input type: {input_format}")
+            fact_logger.logger.info(f"Ã°Å¸â€œâ€¹ Auto-detected input type: {input_format}")
 
         # Type-safe check for web search orchestrator
         if input_format == 'text' and web_search_orchestrator is None:
@@ -206,7 +297,7 @@ def check_facts():
 
         # Create job
         job_id = job_manager.create_job(content)
-        fact_logger.logger.info(f"âœ… Created job: {job_id} (format: {input_format})")
+        fact_logger.logger.info(f"Ã¢Å“â€¦ Created job: {job_id} (format: {input_format})")
 
         # Start background processing
         threading.Thread(
@@ -262,6 +353,11 @@ def start_comprehensive_analysis():
         if not content:
             return jsonify({"error": "Content is required"}), 400
 
+        # Check if user pasted paywall/subscription page content
+        paywall_check = detect_paywall_content(content)
+        if paywall_check:
+            return jsonify(paywall_check), 422
+
         # Optional parameters
         source_url = data.get('source_url', '').strip() or None
         user_preferences = data.get('user_preferences', {})
@@ -270,7 +366,7 @@ def start_comprehensive_analysis():
         job_id = job_manager.create_job(content=content)
 
         fact_logger.logger.info(
-            f"ðŸ”¬ Starting comprehensive analysis job: {job_id}",
+            f"Ã°Å¸â€Â¬ Starting comprehensive analysis job: {job_id}",
             extra={
                 "job_id": job_id,
                 "content_length": len(content),
@@ -293,7 +389,7 @@ def start_comprehensive_analysis():
                     )
                     return result
                 except Exception as e:
-                    fact_logger.logger.error(f"âŒ Comprehensive analysis error: {e}")
+                    fact_logger.logger.error(f"Ã¢ÂÅ’ Comprehensive analysis error: {e}")
                     import traceback
                     fact_logger.logger.error(f"Traceback: {traceback.format_exc()}")
                     job_manager.fail_job(job_id, str(e))
@@ -322,7 +418,7 @@ def start_comprehensive_analysis():
         })
 
     except Exception as e:
-        fact_logger.logger.error(f"âŒ Failed to start comprehensive analysis: {e}")
+        fact_logger.logger.error(f"Ã¢ÂÅ’ Failed to start comprehensive analysis: {e}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/key-claims', methods=['POST'])
@@ -363,6 +459,11 @@ def check_key_claims():
         if not content:
             return jsonify({"error": "No content provided"}), 400
 
+        # Check if user pasted paywall/subscription page content
+        paywall_check = detect_paywall_content(content)
+        if paywall_check:
+            return jsonify(paywall_check), 422
+
         if key_claims_orchestrator is None:
             return jsonify({
                 "error": "Key claims pipeline not available",
@@ -370,7 +471,7 @@ def check_key_claims():
             }), 503
 
         fact_logger.logger.info(
-            "ðŸŽ¯ Received key claims request",
+            "Ã°Å¸Å½Â¯ Received key claims request",
             extra={
                 "content_length": len(content),
                 "has_source_context": source_context is not None,
@@ -379,7 +480,7 @@ def check_key_claims():
         )
 
         job_id = job_manager.create_job(content)
-        fact_logger.logger.info(f"âœ… Created key claims job: {job_id}")
+        fact_logger.logger.info(f"Ã¢Å“â€¦ Created key claims job: {job_id}")
 
         # Start background processing with new parameters
         threading.Thread(
@@ -418,7 +519,7 @@ def run_key_claims_task(
             raise ValueError("Key claims orchestrator not initialized")
 
         fact_logger.logger.info(
-            f"ðŸŽ¯ Job {job_id}: Starting key claims analysis",
+            f"Ã°Å¸Å½Â¯ Job {job_id}: Starting key claims analysis",
             extra={
                 "has_source_context": source_context is not None,
                 "has_credibility": source_credibility is not None
@@ -435,7 +536,7 @@ def run_key_claims_task(
         )
 
         # Note: job completion handled inside process_with_progress
-        fact_logger.logger.info(f"âœ… Key claims job {job_id} completed")
+        fact_logger.logger.info(f"Ã¢Å“â€¦ Key claims job {job_id} completed")
 
     except Exception as e:
         fact_logger.log_component_error(f"Key Claims Job {job_id}", e)
@@ -471,6 +572,11 @@ def check_bias():
         if not text:
             return jsonify({"error": "No text provided"}), 400
 
+        # Check if user pasted paywall/subscription page content
+        paywall_check = detect_paywall_content(text)
+        if paywall_check:
+            return jsonify(paywall_check), 422
+
         if not bias_orchestrator:
             return jsonify({
                 "error": "Bias analysis not available",
@@ -478,7 +584,7 @@ def check_bias():
             }), 503
 
         fact_logger.logger.info(
-            "ðŸ“¥ Received bias check request",
+            "Ã°Å¸â€œÂ¥ Received bias check request",
             extra={
                 "text_length": len(text),
                 "publication_url": publication_url  # NEW
@@ -487,7 +593,7 @@ def check_bias():
 
         # Create job
         job_id = job_manager.create_job(text)
-        fact_logger.logger.info(f"âœ… Created bias check job: {job_id}")
+        fact_logger.logger.info(f"Ã¢Å“â€¦ Created bias check job: {job_id}")
 
         # Start background processing
         threading.Thread(
@@ -569,6 +675,11 @@ def check_lie_detection():
         if not text:
             return jsonify({"error": "No text provided"}), 400
 
+        # Check if user pasted paywall/subscription page content
+        paywall_check = detect_paywall_content(text)
+        if paywall_check:
+            return jsonify(paywall_check), 422
+
         if not lie_detector_orchestrator:
             return jsonify({
                 "error": "Lie detection not available",
@@ -576,7 +687,7 @@ def check_lie_detection():
             }), 503
 
         fact_logger.logger.info(
-            "ðŸ•µï¸ Received lie detection request",
+            "Ã°Å¸â€¢ÂµÃ¯Â¸Â Received lie detection request",
             extra={
                 "text_length": len(text),
                 "has_source": bool(article_source),
@@ -588,7 +699,7 @@ def check_lie_detection():
 
         # Create job
         job_id = job_manager.create_job(text)
-        fact_logger.logger.info(f"âœ… Created lie detection job: {job_id}")
+        fact_logger.logger.info(f"Ã¢Å“â€¦ Created lie detection job: {job_id}")
 
         # Start background processing
         threading.Thread(
@@ -646,6 +757,11 @@ def check_manipulation():
         if not content:
             return jsonify({"error": "No content provided"}), 400
 
+        # Check if user pasted paywall/subscription page content
+        paywall_check = detect_paywall_content(content)
+        if paywall_check:
+            return jsonify(paywall_check), 422
+
         if manipulation_orchestrator is None:
             return jsonify({
                 "error": "Manipulation detection not available",
@@ -653,7 +769,7 @@ def check_manipulation():
             }), 503
 
         fact_logger.logger.info(
-            "ðŸŽ­ Received manipulation detection request",
+            "Ã°Å¸Å½Â­ Received manipulation detection request",
             extra={
                 "content_length": len(content),
                 "source_info": source_info,
@@ -663,7 +779,7 @@ def check_manipulation():
 
         # Create job
         job_id = job_manager.create_job(content)
-        fact_logger.logger.info(f"âœ… Created manipulation detection job: {job_id}")
+        fact_logger.logger.info(f"Ã¢Å“â€¦ Created manipulation detection job: {job_id}")
 
         # Start background processing with source_credibility
         threading.Thread(
@@ -708,7 +824,7 @@ def run_lie_detection_task(
             raise ValueError("Lie detector orchestrator not initialized")
 
         fact_logger.logger.info(
-            f"ðŸ•µï¸ Job {job_id}: Starting lie detection analysis",
+            f"Ã°Å¸â€¢ÂµÃ¯Â¸Â Job {job_id}: Starting lie detection analysis",
             extra={
                 "has_source": bool(article_source),
                 "has_credibility": source_credibility is not None
@@ -726,7 +842,7 @@ def run_lie_detection_task(
         )
 
         # Note: job completion is handled inside process_with_progress
-        fact_logger.logger.info(f"âœ… Lie detection job {job_id} completed successfully")
+        fact_logger.logger.info(f"Ã¢Å“â€¦ Lie detection job {job_id} completed successfully")
 
     except Exception as e:
         fact_logger.log_component_error(f"Lie Detection Job {job_id}", e)
@@ -755,7 +871,7 @@ def run_manipulation_task(
             raise ValueError("Manipulation orchestrator not initialized")
 
         fact_logger.logger.info(
-            f"ðŸŽ­ Job {job_id}: Starting manipulation detection",
+            f"Ã°Å¸Å½Â­ Job {job_id}: Starting manipulation detection",
             extra={
                 "source_info": source_info,
                 "has_credibility": source_credibility is not None
@@ -772,7 +888,7 @@ def run_manipulation_task(
         )
 
         # Note: job completion handled inside process_with_progress
-        fact_logger.logger.info(f"âœ… Manipulation detection job {job_id} completed")
+        fact_logger.logger.info(f"Ã¢Å“â€¦ Manipulation detection job {job_id} completed")
 
     except Exception as e:
         fact_logger.log_component_error(f"Manipulation Job {job_id}", e)
@@ -785,33 +901,33 @@ def run_async_task(job_id: str, content: str, input_format: str):
     """
     Background task runner for fact checking.
     Routes to appropriate orchestrator based on input format:
-    - 'html' â†’ LLM Interpretation Orchestrator (checks if LLM interpreted sources correctly)
-    - 'text' â†’ Web Search Orchestrator (fact-checks via web search)
+    - 'html' Ã¢â€ â€™ LLM Interpretation Orchestrator (checks if LLM interpreted sources correctly)
+    - 'text' Ã¢â€ â€™ Web Search Orchestrator (fact-checks via web search)
     """
     try:
         if input_format == 'html':
-            # LLM output with sources â†’ Interpretation verification
+            # LLM output with sources Ã¢â€ â€™ Interpretation verification
             if llm_interpretation_orchestrator is None:
                 raise ValueError("LLM Interpretation orchestrator not initialized")
 
-            fact_logger.logger.info(f"ðŸ” Job {job_id}: LLM Interpretation Verification pipeline")
+            fact_logger.logger.info(f"Ã°Å¸â€Â Job {job_id}: LLM Interpretation Verification pipeline")
             result = run_async_in_thread(
                 llm_interpretation_orchestrator.process_with_progress(content, job_id)
             )
 
         else:  # input_format == 'text'
-            # Plain text â†’ Fact-checking via web search
+            # Plain text Ã¢â€ â€™ Fact-checking via web search
             if web_search_orchestrator is None:
                 raise ValueError("Web search orchestrator not initialized - BRAVE_API_KEY may be missing")
 
-            fact_logger.logger.info(f"ðŸ”Ž Job {job_id}: Web Search Fact-Checking pipeline")
+            fact_logger.logger.info(f"Ã°Å¸â€Å½ Job {job_id}: Web Search Fact-Checking pipeline")
             result = run_async_in_thread(
                 web_search_orchestrator.process_with_progress(content, job_id)
             )
 
         # Store successful result
         job_manager.complete_job(job_id, result)
-        fact_logger.logger.info(f"âœ… Job {job_id} completed successfully")
+        fact_logger.logger.info(f"Ã¢Å“â€¦ Job {job_id} completed successfully")
 
     except Exception as e:
         fact_logger.log_component_error(f"Job {job_id}", e)
@@ -832,7 +948,7 @@ def run_bias_task(
             raise ValueError("Bias orchestrator not initialized")
 
         fact_logger.logger.info(
-            f"ðŸ“Š Job {job_id}: Starting bias analysis",
+            f"Ã°Å¸â€œÅ  Job {job_id}: Starting bias analysis",
             extra={
                 "has_publication_url": bool(publication_url),
                 "has_credibility": source_credibility is not None
@@ -848,7 +964,7 @@ def run_bias_task(
         )
 
         job_manager.complete_job(job_id, _)
-        fact_logger.logger.info(f"âœ… Bias check job {job_id} completed successfully")
+        fact_logger.logger.info(f"Ã¢Å“â€¦ Bias check job {job_id} completed successfully")
 
     except Exception as e:
         fact_logger.log_component_error(f"Bias Job {job_id}", e)
@@ -1007,7 +1123,7 @@ def scrape_url():
         run_mbfc_if_missing = request_json.get('run_mbfc_if_missing', True)
 
         fact_logger.logger.info(
-            "ðŸ”— Received enriched scrape request",
+            "Ã°Å¸â€â€” Received enriched scrape request",
             extra={
                 "url": url,
                 "extract_metadata": extract_metadata,
@@ -1018,7 +1134,7 @@ def scrape_url():
 
         # Create job
         job_id = job_manager.create_job(url)
-        fact_logger.logger.info(f"âœ… Created scrape job: {job_id}")
+        fact_logger.logger.info(f"Ã¢Å“â€¦ Created scrape job: {job_id}")
 
         # Start background processing
         threading.Thread(
@@ -1055,7 +1171,7 @@ def run_scrape_task(
     MBFC lookups work here and populate Supabase for future requests.
     """
     try:
-        job_manager.add_progress(job_id, f"ðŸ”— Starting enriched scrape for {url}")
+        job_manager.add_progress(job_id, f"Ã°Å¸â€â€” Starting enriched scrape for {url}")
 
         # Run everything in one async function to keep single event loop
         async def do_enriched_scrape():
@@ -1073,7 +1189,7 @@ def run_scrape_task(
             # ============================================
             # STEP 1: Scrape content
             # ============================================
-            job_manager.add_progress(job_id, "ðŸ“„ Scraping article content...")
+            job_manager.add_progress(job_id, "Ã°Å¸â€œâ€ž Scraping article content...")
 
             scraper = BrowserlessScraper(config)
             content = ""
@@ -1303,10 +1419,10 @@ def run_scrape_task(
         # Run everything in one thread with one event loop
         result = run_async_in_thread(do_enriched_scrape())
 
-        job_manager.add_progress(job_id, "âœ… Enriched scrape complete!")
+        job_manager.add_progress(job_id, "Ã¢Å“â€¦ Enriched scrape complete!")
         job_manager.complete_job(job_id, result)
 
-        fact_logger.logger.info(f"âœ… Scrape job {job_id} completed successfully")
+        fact_logger.logger.info(f"Ã¢Å“â€¦ Scrape job {job_id} completed successfully")
 
     except Exception as e:
         fact_logger.log_component_error(f"Scrape Job {job_id}", e)
@@ -1458,5 +1574,5 @@ if __name__ == '__main__':
     port = int(os.getenv('PORT', 5000))
     debug = os.getenv('FLASK_ENV') == 'development'
 
-    fact_logger.logger.info(f"ðŸš€ Starting Flask app on port {port}")
+    fact_logger.logger.info(f"Ã°Å¸Å¡â‚¬ Starting Flask app on port {port}")
     app.run(host='0.0.0.0', port=port, debug=debug, threaded=True)
