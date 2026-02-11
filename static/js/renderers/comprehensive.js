@@ -1,6 +1,6 @@
 // static/js/renderers/comprehensive.js
 // VeriFlow - Comprehensive Analysis Mode Renderer
-// CLEAN REWRITE - All results arrive at once from HTTP fetch
+// UPDATED with redesigned metadata rendering
 
 // ============================================
 // COMPREHENSIVE RESULTS RENDERER
@@ -37,10 +37,10 @@ function renderComprehensiveResults(data) {
     }
     panel.style.display = 'block';
 
-    // Render each section
-    renderContentClassification(data.content_classification);
-    renderSourceCredibility(data.source_verification);
-    renderModeRouting(data.mode_routing);
+    // Render redesigned metadata section (replaces old renderContentClassification + renderSourceCredibility)
+    renderRedesignedMetadata(data);
+
+    // Render mode reports and synthesis (unchanged)
     renderModeReports(data.mode_reports);
     renderSynthesisReport(data.synthesis_report);
 
@@ -49,131 +49,277 @@ function renderComprehensiveResults(data) {
 }
 
 // ============================================
-// STAGE 1: CONTENT CLASSIFICATION
+// REDESIGNED METADATA RENDERING
 // ============================================
 
-function renderContentClassification(classification) {
+/**
+ * Main function to render redesigned metadata panel
+ * Replaces old renderContentClassification() and renderSourceCredibility()
+ */
+function renderRedesignedMetadata(data) {
+    if (!data) return;
+
+    console.log('[Metadata] Rendering redesigned metadata');
+
+    // Render each section
+    renderSummaryCard(data);
+    renderContentClassificationSection(data.content_classification);
+    renderSourceDetailsSection(data.source_verification);
+    renderChecksPerformed(data.mode_routing);
+}
+
+/**
+ * Render the primary summary card (most important info)
+ */
+function renderSummaryCard(data) {
+    var verification = data.source_verification || {};
+    var synthesis = data.synthesis_report || {};
+
+    // Trust Score
+    var trustScore = synthesis.trust_score || verification.credibility_tier || '--';
+    var trustScoreBadge = document.getElementById('trustScoreBadge');
+    if (trustScoreBadge) {
+        trustScoreBadge.textContent = trustScore;
+    }
+
+    // Source Domain
+    var domain = verification.domain || 'Unknown Source';
+    var sourceDomain = document.getElementById('sourceDomain');
+    if (sourceDomain) {
+        sourceDomain.textContent = domain;
+    }
+
+    // Source URL Link
+    var sourceUrl = data.source_url || verification.url;
+    var sourceUrlLink = document.getElementById('sourceUrlLink');
+    if (sourceUrlLink && sourceUrl) {
+        sourceUrlLink.href = sourceUrl;
+        sourceUrlLink.style.display = 'inline-flex';
+
+        var sourceUrlText = document.getElementById('sourceUrlText');
+        if (sourceUrlText) {
+            sourceUrlText.textContent = sourceUrl.length > 50 ? 
+                sourceUrl.substring(0, 50) + '...' : sourceUrl;
+        }
+    }
+
+    // Credibility Tier
+    var tier = verification.credibility_tier || '--';
+    var credTierValue = document.getElementById('credTierValue');
+    if (credTierValue) {
+        credTierValue.textContent = tier !== '--' ? 'Tier ' + tier : '--';
+    }
+
+    // Bias Rating
+    var biasRating = verification.bias_rating || '--';
+    var biasRatingValue = document.getElementById('biasRatingValue');
+    if (biasRatingValue) {
+        biasRatingValue.textContent = formatBiasRating(biasRating);
+    }
+
+    // Factual Reporting
+    var factualReporting = verification.factual_reporting || '--';
+    var factualReportingValue = document.getElementById('factualReportingValue');
+    if (factualReportingValue) {
+        factualReportingValue.textContent = formatFactualReporting(factualReporting);
+    }
+}
+
+/**
+ * Render content classification section
+ */
+function renderContentClassificationSection(classification) {
     if (!classification) {
-        console.log('[Comprehensive] No content classification data');
+        console.log('[Metadata] No content classification data');
         return;
     }
 
     // Content Type
-    var typeEl = document.getElementById('compContentType');
-    if (typeEl) {
-        typeEl.textContent = formatContentType(classification.content_type);
+    var contentType = classification.content_type || 'Unknown';
+    var contentTypeValue = document.getElementById('contentTypeValue');
+    if (contentTypeValue) {
+        contentTypeValue.textContent = formatContentType(contentType);
+        contentTypeValue.className = 'info-field-value badge ' + getContentTypeClass(contentType);
     }
 
-    // Topic/Realm
-    var topicEl = document.getElementById('compContentRealm');
-    if (topicEl) {
-        var realm = classification.realm || 'Unknown';
-        var subRealm = classification.sub_realm;
-        topicEl.textContent = subRealm ? capitalizeFirst(realm) + ' / ' + capitalizeFirst(subRealm) : capitalizeFirst(realm);
+    // Topic / Realm
+    var realm = classification.realm || 'Unknown';
+    var subRealm = classification.sub_realm;
+    var contentRealmValue = document.getElementById('contentRealmValue');
+    if (contentRealmValue) {
+        contentRealmValue.textContent = subRealm ? 
+            capitalizeFirst(realm) + ' / ' + capitalizeFirst(subRealm) : 
+            capitalizeFirst(realm);
     }
 
-    // Purpose
-    var purposeEl = document.getElementById('compContentPurpose');
-    if (purposeEl) {
-        purposeEl.textContent = capitalizeFirst(classification.apparent_purpose || classification.purpose || 'Unknown');
+    // Apparent Purpose
+    var purpose = classification.apparent_purpose || classification.purpose || 'Unknown';
+    var contentPurposeValue = document.getElementById('contentPurposeValue');
+    if (contentPurposeValue) {
+        contentPurposeValue.textContent = capitalizeFirst(purpose);
     }
 
-    // Has Sources
-    var sourcesEl = document.getElementById('compHasCitations');
-    if (sourcesEl) {
-        var hasRefs = classification.contains_references || (classification.reference_count > 0);
-        sourcesEl.textContent = hasRefs ? 'Yes' : 'No';
+    // Contains Citations
+    var hasCitations = classification.contains_references || (classification.reference_count > 0);
+    var hasCitationsValue = document.getElementById('hasCitationsValue');
+    if (hasCitationsValue) {
+        hasCitationsValue.textContent = hasCitations ? 'Yes' : 'No';
+        hasCitationsValue.className = 'info-field-value ' + (hasCitations ? 'yes' : 'no');
     }
 }
+
+/**
+ * Render source details section
+ */
+function renderSourceDetailsSection(verification) {
+    if (!verification) {
+        console.log('[Metadata] No source verification data');
+        return;
+    }
+
+    // Publication Name
+    var publicationName = verification.domain || verification.publication_name || 'Unknown';
+    var publicationNameValue = document.getElementById('publicationNameValue');
+    if (publicationNameValue) {
+        publicationNameValue.textContent = publicationName;
+    }
+
+    // Verification Source
+    var verificationSource = verification.verification_source || 'Unknown';
+    var verificationSourceValue = document.getElementById('verificationSourceValue');
+    if (verificationSourceValue) {
+        verificationSourceValue.textContent = verificationSource;
+    }
+
+    // Is Propaganda
+    var isPropaganda = verification.is_propaganda;
+    var isPropagandaValue = document.getElementById('isPropagandaValue');
+    if (isPropagandaValue) {
+        var propagandaText = isPropaganda === true ? 'Yes' : 
+                              isPropaganda === false ? 'No' : 
+                              'Unknown';
+        isPropagandaValue.textContent = propagandaText;
+        isPropagandaValue.className = 'info-field-value ' + 
+            (isPropaganda === true ? 'warning' : isPropaganda === false ? 'yes' : '');
+    }
+
+    // Is Satire
+    var isSatire = verification.is_satire;
+    var isSatireValue = document.getElementById('isSatireValue');
+    if (isSatireValue) {
+        var satireText = isSatire === true ? 'Yes' : 
+                          isSatire === false ? 'No' : 
+                          'Unknown';
+        isSatireValue.textContent = satireText;
+        isSatireValue.className = 'info-field-value ' + 
+            (isSatire === true ? 'warning' : isSatire === false ? 'yes' : '');
+    }
+
+    // Tier Description (if available)
+    var tierDesc = verification.tier_description;
+    var tierDescriptionBlock = document.getElementById('tierDescriptionBlock');
+    var tierDescriptionText = document.getElementById('tierDescriptionText');
+    if (tierDesc && tierDescriptionBlock && tierDescriptionText) {
+        tierDescriptionText.textContent = tierDesc;
+        tierDescriptionBlock.style.display = 'block';
+    }
+}
+
+/**
+ * Render checks performed badges
+ */
+function renderChecksPerformed(modeRouting) {
+    var checksContainer = document.getElementById('checksPerformed');
+    if (!checksContainer) return;
+
+    if (!modeRouting) {
+        checksContainer.innerHTML = '<span class="check-badge">No analysis performed yet</span>';
+        return;
+    }
+
+    var checks = [];
+
+    if (modeRouting.fact_check) {
+        checks.push({ name: 'Fact Checking', active: true });
+    }
+    if (modeRouting.bias_check) {
+        checks.push({ name: 'Bias Detection', active: true });
+    }
+    if (modeRouting.manipulation_check) {
+        checks.push({ name: 'Manipulation Analysis', active: true });
+    }
+    if (modeRouting.lie_detection) {
+        checks.push({ name: 'Lie Detection', active: true });
+    }
+    if (modeRouting.llm_verification) {
+        checks.push({ name: 'LLM Output Verification', active: true });
+    }
+
+    if (checks.length === 0) {
+        checksContainer.innerHTML = '<span class="check-badge">Content Classification Only</span>';
+        return;
+    }
+
+    var html = '';
+    checks.forEach(function(check) {
+        html += '<span class="check-badge' + (check.active ? ' active' : '') + '">';
+        html += '<span class="check-icon"></span>';
+        html += check.name;
+        html += '</span>';
+    });
+
+    checksContainer.innerHTML = html;
+}
+
+// ============================================
+// METADATA HELPER FUNCTIONS
+// ============================================
 
 function formatContentType(type) {
     if (!type) return 'Unknown';
     return type
         .split('_')
-        .map(function(word) { return word.charAt(0).toUpperCase() + word.slice(1); })
+        .map(function(word) { 
+            return word.charAt(0).toUpperCase() + word.slice(1); 
+        })
         .join(' ');
 }
 
-// ============================================
-// STAGE 1: SOURCE CREDIBILITY
-// ============================================
+function getContentTypeClass(type) {
+    if (!type) return '';
 
-function renderSourceCredibility(verification) {
-    if (!verification) {
-        console.log('[Comprehensive] No source verification data');
-        return;
-    }
+    var lowerType = type.toLowerCase();
+    if (lowerType.includes('news')) return 'content-type-news';
+    if (lowerType.includes('opinion')) return 'content-type-opinion';
+    if (lowerType.includes('analysis')) return 'content-type-analysis';
 
-    // Handle error/no-URL cases
-    if (verification.error || verification.status === 'no_url_to_verify') {
-        var tierEl = document.getElementById('compCredTier');
-        if (tierEl) tierEl.textContent = 'N/A';
-        var tierDescEl = document.getElementById('compCredTierDesc');
-        if (tierDescEl) tierDescEl.textContent = 'No source URL provided';
-        return;
-    }
-
-    // Trust Level / Tier
-    var tierEl2 = document.getElementById('compCredTier');
-    if (tierEl2) {
-        var tier = verification.credibility_tier || 'Unknown';
-        tierEl2.textContent = tier;
-        tierEl2.className = 'tier-value tier-' + tier;
-    }
-
-    var tierDescEl2 = document.getElementById('compCredTierDesc');
-    if (tierDescEl2) {
-        tierDescEl2.textContent = verification.tier_description || '';
-    }
-
-    // Publication name
-    var pubEl = document.getElementById('compPublicationName');
-    if (pubEl) {
-        pubEl.textContent = verification.domain || verification.publication_name || '--';
-    }
-
-    // Bias Rating
-    var biasEl = document.getElementById('compBiasRating');
-    if (biasEl) {
-        biasEl.textContent = verification.bias_rating || '--';
-    }
-
-    // Accuracy Record
-    var accuracyEl = document.getElementById('compFactualRating');
-    if (accuracyEl) {
-        accuracyEl.textContent = verification.factual_reporting || '--';
-    }
+    return '';
 }
 
-// ============================================
-// MODE ROUTING (WHAT WE CHECKED)
-// ============================================
+function formatBiasRating(rating) {
+    if (!rating) return 'Unknown';
 
-function renderModeRouting(routing) {
-    var checksEl = document.getElementById('selectedModesGrid');
-    if (!checksEl) return;
+    var lowerRating = rating.toLowerCase();
 
-    if (!routing || !routing.selected_modes) {
-        checksEl.innerHTML = '<span class="mode-pending">Mode selection pending...</span>';
-        return;
-    }
+    if (lowerRating.includes('least')) return 'Least Biased';
+    if (lowerRating.includes('left')) return 'Leans Left';
+    if (lowerRating.includes('right')) return 'Leans Right';
+    if (lowerRating.includes('center')) return 'Center';
 
-    var modeNames = {
-        'key_claims_analysis': 'Fact Checking',
-        'bias_analysis': 'Bias Detection',
-        'manipulation_detection': 'Manipulation Analysis',
-        'lie_detection': 'Deception Indicators',
-        'llm_output_verification': 'AI Citation Verification'
-    };
+    return rating;
+}
 
-    if (routing.selected_modes.length === 0) {
-        checksEl.innerHTML = '<span class="mode-pending">No modes selected</span>';
-        return;
-    }
+function formatFactualReporting(reporting) {
+    if (!reporting) return 'Unknown';
 
-    checksEl.innerHTML = routing.selected_modes
-        .map(function(m) { return '<span class="mode-badge">' + (modeNames[m] || m) + '</span>'; })
-        .join('');
+    var lowerReporting = reporting.toLowerCase();
+
+    if (lowerReporting.includes('high')) return 'High';
+    if (lowerReporting.includes('mostly')) return 'Mostly Factual';
+    if (lowerReporting.includes('mixed')) return 'Mixed';
+    if (lowerReporting.includes('low')) return 'Low';
+
+    return reporting;
 }
 
 // ============================================
