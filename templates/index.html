@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>VeriFlow - AI Content Analyzer</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/comprehensive-metadata.css') }}">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -84,7 +85,7 @@
                             <span class="mode-label">Full Fact-Check</span>
                             <span class="mode-desc">Coming soon</span>
                         </div>
-                    </button
+                    </button>
                 </div>
             </section>
 
@@ -110,7 +111,7 @@
                     <div id="urlFetchStatus" class="url-fetch-status" style="display: none;"></div>
                 </div>
 
-                <!-- ADD THIS NEW SECTION - Article Metadata (shown after URL fetch) -->
+                <!-- Article Metadata (shown after URL fetch) -->
                 <div id="articleMetadataContainer" class="article-metadata-container" style="display: none;"></div>
 
                 <!-- Text Input -->
@@ -146,92 +147,91 @@
                 </div>
             </section>
 
-                    <!-- Mode Instructions (shown contextually based on selected mode) -->
+            <!-- Mode Instructions (shown contextually based on selected mode) -->
 
-
-                    <!-- LLM Output Instructions -->
-                    <div id="llmOutputInstructions" class="mode-instructions" style="display: none;">
-                        <div class="instructions-card">
-                            <h3>How to Verify AI-Generated Content</h3>
-                            <div class="instructions-steps">
-                                <div class="step">
-                                    <span class="step-number">1</span>
-                                    <span class="step-text">Go to <strong>ChatGPT</strong>, <strong>Perplexity</strong>, or any AI chat</span>
-                                </div>
-                                <div class="step">
-                                    <span class="step-number">2</span>
-                                    <span class="step-text">Get a response that includes <strong>source links</strong></span>
-                                </div>
-                                <div class="step">
-                                    <span class="step-number">3</span>
-                                    <span class="step-text">Click the <strong>Copy button</strong> on the AI response</span>
-                                </div>
-                                <div class="step">
-                                    <span class="step-number">4</span>
-                                    <span class="step-text">Paste it below and click <strong>Analyze</strong></span>
-                                </div>
-                            </div>
-                            <div class="instructions-note">
-                                <span>The copy button preserves source links needed for verification</span>
-                            </div>
+            <!-- LLM Output Instructions -->
+            <div id="llmOutputInstructions" class="mode-instructions" style="display: none;">
+                <div class="instructions-card">
+                    <h3>How to Verify AI-Generated Content</h3>
+                    <div class="instructions-steps">
+                        <div class="step">
+                            <span class="step-number">1</span>
+                            <span class="step-text">Go to <strong>ChatGPT</strong>, <strong>Perplexity</strong>, or any AI chat</span>
+                        </div>
+                        <div class="step">
+                            <span class="step-number">2</span>
+                            <span class="step-text">Get a response that includes <strong>source links</strong></span>
+                        </div>
+                        <div class="step">
+                            <span class="step-number">3</span>
+                            <span class="step-text">Click the <strong>Copy button</strong> on the AI response</span>
+                        </div>
+                        <div class="step">
+                            <span class="step-number">4</span>
+                            <span class="step-text">Paste it below and click <strong>Analyze</strong></span>
                         </div>
                     </div>
-
-                    <!-- Key Claims Instructions -->
-                    <div id="keyClaimsInstructions" class="mode-instructions" style="display: none;">
-                        <div class="instructions-card">
-                            <h3>Key Claims Analysis</h3>
-                            <p>We identify the 2-3 most important claims and verify each one thoroughly.</p>
-                            <div class="instructions-note">
-                                <span>Best for: "Is the main point of this article actually true?"</span>
-                            </div>
-                        </div>
+                    <div class="instructions-note">
+                        <span>The copy button preserves source links needed for verification</span>
                     </div>
+                </div>
+            </div>
 
-                    <!-- Bias Analysis Instructions -->
-                    <div id="biasAnalysisInstructions" class="mode-instructions" style="display: none;">
-                        <div class="instructions-card">
-                            <h3>Bias Analysis</h3>
-                            <p>We detect political slant, loaded language, and one-sided framing.</p>
-                            <div class="instructions-note">
-                                <span>Best for news articles, opinion pieces, and political content</span>
-                            </div>
-                        </div>
+            <!-- Key Claims Instructions -->
+            <div id="keyClaimsInstructions" class="mode-instructions" style="display: none;">
+                <div class="instructions-card">
+                    <h3>Key Claims Analysis</h3>
+                    <p>We identify the 2-3 most important claims and verify each one thoroughly.</p>
+                    <div class="instructions-note">
+                        <span>Best for: "Is the main point of this article actually true?"</span>
                     </div>
+                </div>
+            </div>
 
-                    <!-- Lie Detection Instructions -->
-                    <div id="lieDetectionInstructions" class="mode-instructions" style="display: none;">
-                        <div class="instructions-card">
-                            <h3>Deception Detection</h3>
-                            <p>We analyze linguistic patterns commonly associated with misleading communication.</p>
-                            <div class="instructions-note">
-                                <span>Best for statements, interviews, and press releases</span>
-                            </div>
-                        </div>
+            <!-- Bias Analysis Instructions -->
+            <div id="biasAnalysisInstructions" class="mode-instructions" style="display: none;">
+                <div class="instructions-card">
+                    <h3>Bias Analysis</h3>
+                    <p>We detect political slant, loaded language, and one-sided framing.</p>
+                    <div class="instructions-note">
+                        <span>Best for news articles, opinion pieces, and political content</span>
                     </div>
+                </div>
+            </div>
 
-                    <!-- Manipulation Instructions -->
-                    <div id="manipulationInstructions" class="mode-instructions" style="display: none;">
-                        <div class="instructions-card">
-                            <h3>Manipulation Check</h3>
-                            <p>We look for facts taken out of context, cherry-picked data, and misleading framing.</p>
-                            <div class="instructions-note">
-                                <span>Best for opinion pieces and advocacy content</span>
-                            </div>
-                        </div>
+            <!-- Lie Detection Instructions -->
+            <div id="lieDetectionInstructions" class="mode-instructions" style="display: none;">
+                <div class="instructions-card">
+                    <h3>Deception Detection</h3>
+                    <p>We analyze linguistic patterns commonly associated with misleading communication.</p>
+                    <div class="instructions-note">
+                        <span>Best for statements, interviews, and press releases</span>
                     </div>
+                </div>
+            </div>
 
-                    <!-- Text Fact-check Instructions -->
-                    <div id="textFactcheckInstructions" class="mode-instructions" style="display: none;">
-                        <div class="instructions-card">
-                            <h3>Full Fact-Check</h3>
-                            <p>Comprehensive verification of all claims using web search.</p>
-                            <div class="instructions-note">
-                                <span class="note-icon"></span>
-                                <span>Coming soon</span>
-                            </div>
-                        </div>
+            <!-- Manipulation Instructions -->
+            <div id="manipulationInstructions" class="mode-instructions" style="display: none;">
+                <div class="instructions-card">
+                    <h3>Manipulation Check</h3>
+                    <p>We look for facts taken out of context, cherry-picked data, and misleading framing.</p>
+                    <div class="instructions-note">
+                        <span>Best for opinion pieces and advocacy content</span>
                     </div>
+                </div>
+            </div>
+
+            <!-- Text Fact-check Instructions -->
+            <div id="textFactcheckInstructions" class="mode-instructions" style="display: none;">
+                <div class="instructions-card">
+                    <h3>Full Fact-Check</h3>
+                    <p>Comprehensive verification of all claims using web search.</p>
+                    <div class="instructions-note">
+                        <span class="note-icon"></span>
+                        <span>Coming soon</span>
+                    </div>
+                </div>
+            </div>
 
             <!-- Plain Text Modal -->
             <div id="plainTextModal" class="modal" style="display: none;">
@@ -311,87 +311,123 @@
                 </div>
 
                 <!-- Results Content Container -->
-                <!-- Results Content Container -->
                 <div class="results-content">
 
                     <!-- Comprehensive Analysis Results -->
                     <div id="comprehensiveResults" class="results-panel" style="display: none;">
 
-                        <!-- What We Found Section -->
+                        <!-- What We Found Section - REDESIGNED METADATA -->
                         <div class="comprehensive-section">
                             <h3 class="section-title">
                                 <span class="section-icon"></span>
                                 What We Found
                             </h3>
 
-                            <!-- Content Type Card -->
-                            <div id="contentClassificationCard" class="info-card">
-                                <div class="info-card-header">
-                                    <span class="info-card-title">About This Content</span>
+                            <!-- PRIMARY SUMMARY CARD - Most Important Info at a Glance -->
+                            <div class="metadata-summary-card">
+                                <div class="summary-card-header">
+                                    <span class="summary-title">Source Assessment</span>
+                                    <span id="trustScoreBadge" class="trust-score-badge">--</span>
                                 </div>
-                                <div class="info-card-body">
+
+                                <div class="summary-source">
+                                    <div id="sourceDomain" class="source-domain">--</div>
+                                    <a id="sourceUrlLink" href="#" target="_blank" rel="noopener" class="source-url-link" style="display: none;">
+                                        <span id="sourceUrlText">View Source</span>
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                                            <polyline points="15 3 21 3 21 9"/>
+                                            <line x1="10" y1="14" x2="21" y2="3"/>
+                                        </svg>
+                                    </a>
+                                </div>
+
+                                <div class="summary-grid">
+                                    <div class="summary-metric">
+                                        <div class="metric-label">Credibility Tier</div>
+                                        <div id="credTierValue" class="metric-value">--</div>
+                                    </div>
+                                    <div class="summary-metric">
+                                        <div class="metric-label">Bias Rating</div>
+                                        <div id="biasRatingValue" class="metric-value">--</div>
+                                    </div>
+                                    <div class="summary-metric">
+                                        <div class="metric-label">Factual Reporting</div>
+                                        <div id="factualReportingValue" class="metric-value">--</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- CONTENT CLASSIFICATION SECTION -->
+                            <div class="metadata-info-section">
+                                <div class="info-section-header">
+                                    <span class="info-section-title">Content Classification</span>
+                                    <button class="info-toggle-btn" onclick="toggleMetadataSection('contentClassification')">Hide</button>
+                                </div>
+                                <div id="contentClassificationBody" class="info-section-body">
                                     <div class="info-grid">
-                                        <div class="info-item">
-                                            <span class="info-label">Type</span>
-                                            <span id="compContentType" class="info-value">--</span>
+                                        <div class="info-field">
+                                            <span class="info-field-label">Content Type</span>
+                                            <span id="contentTypeValue" class="info-field-value badge">--</span>
                                         </div>
-                                        <div class="info-item">
-                                            <span class="info-label">Topic</span>
-                                            <span id="compContentRealm" class="info-value">--</span>
+                                        <div class="info-field">
+                                            <span class="info-field-label">Topic / Realm</span>
+                                            <span id="contentRealmValue" class="info-field-value">--</span>
                                         </div>
-                                        <div class="info-item">
-                                            <span class="info-label">Appears to be</span>
-                                            <span id="compContentPurpose" class="info-value">--</span>
+                                        <div class="info-field">
+                                            <span class="info-field-label">Apparent Purpose</span>
+                                            <span id="contentPurposeValue" class="info-field-value">--</span>
                                         </div>
-                                        <div class="info-item">
-                                            <span class="info-label">Has Sources</span>
-                                            <span id="compHasCitations" class="info-value">--</span>
+                                        <div class="info-field">
+                                            <span class="info-field-label">Contains Citations</span>
+                                            <span id="hasCitationsValue" class="info-field-value">--</span>
                                         </div>
                                     </div>
-                                    <div id="compClassificationNotes" class="info-notes" style="display: none;"></div>
                                 </div>
                             </div>
 
-                            <!-- Source Credibility Card -->
-                            <div id="sourceCredibilityCard" class="info-card">
-                                <div class="info-card-header">
-                                    <span class="info-card-title">Source Reputation</span>
+                            <!-- SOURCE DETAILS SECTION -->
+                            <div class="metadata-info-section">
+                                <div class="info-section-header">
+                                    <span class="info-section-title">Source Details</span>
+                                    <button class="info-toggle-btn" onclick="toggleMetadataSection('sourceDetails')">Hide</button>
                                 </div>
-                                <div class="info-card-body">
-                                    <div class="credibility-display">
-                                        <div class="credibility-tier">
-                                            <span class="tier-label">Trust Level</span>
-                                            <span id="compCredTier" class="tier-value tier-3">3</span>
-                                            <span id="compCredTierDesc" class="tier-desc">Mixed</span>
+                                <div id="sourceDetailsBody" class="info-section-body">
+                                    <div class="info-grid">
+                                        <div class="info-field">
+                                            <span class="info-field-label">Publication</span>
+                                            <span id="publicationNameValue" class="info-field-value">--</span>
                                         </div>
-                                        <div class="credibility-details">
-                                            <div class="info-item">
-                                                <span class="info-label">Publication</span>
-                                                <span id="compPublicationName" class="info-value">--</span>
-                                            </div>
-                                            <div class="info-item">
-                                                <span class="info-label">Political Lean</span>
-                                                <span id="compBiasRating" class="info-value">--</span>
-                                            </div>
-                                            <div class="info-item">
-                                                <span class="info-label">Accuracy Record</span>
-                                                <span id="compFactualRating" class="info-value">--</span>
-                                            </div>
+                                        <div class="info-field">
+                                            <span class="info-field-label">Verification Source</span>
+                                            <span id="verificationSourceValue" class="info-field-value">--</span>
+                                        </div>
+                                        <div class="info-field">
+                                            <span class="info-field-label">Propaganda Outlet</span>
+                                            <span id="isPropagandaValue" class="info-field-value">--</span>
+                                        </div>
+                                        <div class="info-field">
+                                            <span class="info-field-label">Satire Site</span>
+                                            <span id="isSatireValue" class="info-field-value">--</span>
                                         </div>
                                     </div>
-                                    <div id="compCredibilityFlags" class="flags-container" style="display: none;"></div>
+
+                                    <!-- Tier Description -->
+                                    <div id="tierDescriptionBlock" class="metadata-alert info" style="display: none; margin-top: 16px;">
+                                        <div class="alert-title">About This Tier</div>
+                                        <div id="tierDescriptionText" class="alert-message">--</div>
+                                    </div>
                                 </div>
                             </div>
 
-                            <!-- What We Checked Card -->
-                            <div id="modeRoutingCard" class="info-card">
-                                <div class="info-card-header">
-                                    <span class="info-card-icon"></span>
-                                    <span class="info-card-title">Checks We Performed</span>
+                            <!-- ANALYSIS PERFORMED SECTION -->
+                            <div class="metadata-info-section">
+                                <div class="info-section-header">
+                                    <span class="info-section-title">Checks Performed</span>
                                 </div>
-                                <div class="info-card-body">
-                                    <div id="selectedModesGrid" class="modes-grid">
-                                        <!-- Populated by JS -->
+                                <div class="info-section-body">
+                                    <div id="checksPerformed" class="checks-performed">
+                                        <!-- Dynamically populated based on mode_routing -->
                                     </div>
                                 </div>
                             </div>
@@ -685,5 +721,22 @@
     <script src="{{ url_for('static', filename='js/renderers/manipulation.js') }}"></script>
     <script src="{{ url_for('static', filename='js/renderers/comprehensive.js') }}"></script>
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+
+    <script>
+    // Toggle function for metadata sections
+    function toggleMetadataSection(sectionId) {
+        const bodyId = sectionId + 'Body';
+        const body = document.getElementById(bodyId);
+        const btn = body.previousElementSibling.querySelector('.info-toggle-btn');
+
+        if (body.classList.contains('collapsed')) {
+            body.classList.remove('collapsed');
+            btn.textContent = 'Hide';
+        } else {
+            body.classList.add('collapsed');
+            btn.textContent = 'Show';
+        }
+    }
+    </script>
 </body>
 </html>
