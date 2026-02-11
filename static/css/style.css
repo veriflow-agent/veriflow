@@ -217,8 +217,8 @@ body {
 }
 
 .mode-card.active {
-    background: var(--color-black);
-    border-color: var(--color-black);
+    background: var(--color-dark-grey);  /* Uses #36382E - lighter than black */
+    border-color: var(--color-dark-grey);
 }
 
 .mode-card.active .mode-label,
