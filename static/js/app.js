@@ -1,13 +1,14 @@
 // static/js/app.js - Main Application Entry Point
 // VeriFlow Redesign - Minimalist Theme
+// REWRITTEN: Comprehensive mode uses SSE for progress only, HTTP fetch for results
 
 // ============================================
 // ANALYZE HANDLER
 // ============================================
 
 async function handleAnalyze() {
-    let content = htmlInput ? htmlInput.value.trim() : '';
-    const url = articleUrl ? articleUrl.value.trim() : '';
+    var content = htmlInput ? htmlInput.value.trim() : '';
+    var url = articleUrl ? articleUrl.value.trim() : '';
 
     // If URL is provided but content is empty, fetch from URL first
     if (url && isValidUrl(url) && !content) {
@@ -20,7 +21,7 @@ async function handleAnalyze() {
             clearProgressLog();
             addProgress('Fetching article from URL...');
 
-            const result = await fetchArticleFromUrl(url);
+            var result = await fetchArticleFromUrl(url);
 
             // Check if scraping failed (but we may still have credibility data)
             if (result && result.scrape_failed) {
@@ -54,15 +55,13 @@ async function handleAnalyze() {
     // Hide URL status when starting analysis
     hideUrlStatus();
 
-    // Mode-specific validation and processing
-    const mode = AppState.currentMode;
+    var mode = AppState.currentMode;
 
     if (mode === 'comprehensive') {
-        // Comprehensive mode handles everything
         processContent(content, 'comprehensive');
 
     } else if (mode === 'llm-output') {
-        const links = hasHTMLLinks(content);
+        var links = hasHTMLLinks(content);
 
         if (!links) {
             AppState.pendingContent = content;
@@ -184,7 +183,6 @@ function displayCombinedResults(type) {
                     hasModeReports: !!AppState.currentComprehensiveResults.mode_reports,
                     modeReportKeys: AppState.currentComprehensiveResults.mode_reports ? Object.keys(AppState.currentComprehensiveResults.mode_reports) : [],
                     hasSynthesis: !!AppState.currentComprehensiveResults.synthesis_report,
-                    synthesisKeys: AppState.currentComprehensiveResults.synthesis_report ? Object.keys(AppState.currentComprehensiveResults.synthesis_report) : [],
                     sessionId: AppState.currentComprehensiveResults.session_id,
                     processingTime: AppState.currentComprehensiveResults.processing_time
                 });
@@ -233,9 +231,9 @@ function displayCombinedResults(type) {
 // ============================================
 
 function exportResults() {
-    const mode = AppState.currentMode;
-    let data = null;
-    let filename = 'veriflow-results';
+    var mode = AppState.currentMode;
+    var data = null;
+    var filename = 'veriflow-results';
 
     switch (mode) {
         case 'comprehensive':
@@ -266,249 +264,263 @@ function exportResults() {
     }
 
     if (data) {
-        const timestamp = new Date().toISOString().slice(0, 10);
-        downloadAsJson(data, `${filename}-${timestamp}.json`);
+        var timestamp = new Date().toISOString().slice(0, 10);
+        downloadAsJson(data, filename + '-' + timestamp + '.json');
     } else {
         console.warn('No results to export');
     }
 }
 
 // ============================================
-// COMPREHENSIVE ANALYSIS
+// COMPREHENSIVE ANALYSIS (REWRITTEN)
 // ============================================
 
+/**
+ * Start comprehensive analysis and wait for completion.
+ *
+ * Flow:
+ * 1. POST to /api/comprehensive-analysis -> get job_id
+ * 2. Open SSE stream for progress messages only (no result data)
+ * 3. When SSE signals done, fetch full result via HTTP GET
+ * 4. Store result in AppState
+ */
 async function runComprehensiveAnalysis(content) {
     try {
         addProgress('Initiating comprehensive analysis pipeline...');
 
-        const response = await fetch('/api/comprehensive-analysis', {
+        var sourceUrl = articleUrl ? articleUrl.value.trim() : '';
+
+        var response = await fetch('/api/comprehensive-analysis', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 content: content,
+                source_url: sourceUrl || undefined,
                 input_type: 'text'
             })
         });
 
         if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error || 'Comprehensive analysis failed to start');
+            var errBody = await response.json().catch(function() { return {}; });
+            throw new Error(errBody.error || 'Comprehensive analysis failed to start');
         }
 
-        const data = await response.json();
+        var data = await response.json();
+        var jobId = data.job_id;
 
         // Store job ID
-        AppState.currentJobIds.comprehensive = data.job_id;
+        AppState.currentJobIds.comprehensive = jobId;
 
-        addProgress('Stage 1: Pre-analysis starting...');
+        addProgress('Analysis started (job: ' + jobId.slice(0, 8) + '...)');
 
-        // Stream progress
-        await streamComprehensiveProgress(data.job_id);
+        // Step 1: Stream progress messages via SSE
+        await streamComprehensiveProgress(jobId);
+
+        // Step 2: Fetch the full result via HTTP
+        addProgress('Loading results...');
+        var result = await fetchComprehensiveResult(jobId);
+
+        // Step 3: Store the result
+        AppState.currentComprehensiveResults = result;
+        addProgress('Comprehensive analysis complete!');
 
     } catch (error) {
-        console.error('Comprehensive analysis error:', error);
-        addProgress(`Analysis failed: ${error.message}`, 'error');
+        console.error('[Comprehensive] Analysis error:', error);
+        addProgress('Analysis failed: ' + error.message, 'error');
         throw error;
     }
 }
 
 /**
- * Fetch comprehensive result from job endpoint with retry logic.
- * The SSE completion event often doesn't include the result payload,
- * so this fetch is the primary way we get the final data.
+ * Stream progress messages via SSE.
+ * This ONLY handles progress text -- no result data.
+ * Resolves when the backend signals completion.
+ * Rejects on error or if the connection drops and the job hasn't finished.
  */
-async function fetchComprehensiveResult(jobId, attempt = 0) {
-    const maxAttempts = 3;
-    const retryDelay = 1000; // 1s between retries
-
-    try {
-        const response = await fetch(`/api/job/${jobId}`);
-        if (!response.ok) {
-            throw new Error(`Job fetch failed: HTTP ${response.status}`);
-        }
-
-        const job = await response.json();
-        console.log('[Comprehensive] Job fetch result:', {
-            status: job.status,
-            hasResult: !!job.result,
-            hasSynthesis: !!(job.result && job.result.synthesis_report),
-            resultKeys: job.result ? Object.keys(job.result) : []
-        });
-
-        if (job.result) {
-            // Validate that synthesis_report exists
-            if (!job.result.synthesis_report) {
-                console.warn('[Comprehensive] Result missing synthesis_report');
-            }
-            return job.result;
-        }
-
-        // Result not available yet -- retry if we have attempts left
-        if (attempt < maxAttempts - 1) {
-            console.log(`[Comprehensive] Result not ready, retrying in ${retryDelay}ms (attempt ${attempt + 1}/${maxAttempts})`);
-            await new Promise(resolve => setTimeout(resolve, retryDelay));
-            return fetchComprehensiveResult(jobId, attempt + 1);
-        }
-
-        throw new Error('Analysis completed but results unavailable after retries');
-    } catch (err) {
-        if (attempt < maxAttempts - 1) {
-            console.log(`[Comprehensive] Fetch error, retrying: ${err.message}`);
-            await new Promise(resolve => setTimeout(resolve, retryDelay));
-            return fetchComprehensiveResult(jobId, attempt + 1);
-        }
-        throw err;
-    }
-}
-
-async function streamComprehensiveProgress(jobId) {
-    return new Promise((resolve, reject) => {
-        const eventSource = new EventSource(`/api/job/${jobId}/stream`);
-        let settled = false;  // Prevent double resolve/reject
+function streamComprehensiveProgress(jobId) {
+    return new Promise(function(resolve, reject) {
+        var eventSource = new EventSource('/api/job/' + jobId + '/stream');
+        var settled = false;
 
         // Store for cleanup
         AppState.activeEventSources.push(eventSource);
 
-        function settleWith(result) {
+        function settle(fn, arg) {
             if (settled) return;
             settled = true;
             eventSource.close();
-            resolve(result);
+            fn(arg);
         }
 
-        function settleError(err) {
-            if (settled) return;
-            settled = true;
-            eventSource.close();
-            reject(err);
-        }
-
-        eventSource.onmessage = (event) => {
+        eventSource.onmessage = function(event) {
             try {
-                const data = JSON.parse(event.data);
+                var data = JSON.parse(event.data);
 
-                // Handle heartbeat
+                // Heartbeat -- ignore
                 if (data.heartbeat) return;
 
-                // Extract details (stage and partial_result are nested inside details)
-                const details = data.details || {};
-
-                // Handle progress updates with stage info
-                if (details.stage) {
-                    const stageMessages = {
-                        'content_classification': 'Classifying content type...',
-                        'source_verification': 'Verifying source credibility...',
-                        'author_research': 'Researching author...',
-                        'mode_routing': 'Selecting analysis modes...',
-                        'mode_execution': 'Running selected modes...',
-                        'synthesis': 'Synthesizing final report...'
-                    };
-                    addProgress(stageMessages[details.stage] || data.message || `Stage: ${details.stage}`);
-                }
-
-                if (data.message && !details.stage) {
+                // Progress message -- show in log
+                if (data.message) {
                     addProgress(data.message);
                 }
 
-                // Handle partial results (for progressive UI updates)
-                if (details.partial_result) {
-                    updateComprehensivePartialResults(details.partial_result);
+                // Completion signal
+                if (data.status === 'completed') {
+                    // We do NOT use data.result here.
+                    // The result will be fetched via HTTP in runComprehensiveAnalysis.
+                    settle(resolve);
+                    return;
                 }
 
-                // Handle completion (check both 'status' and 'done' fields)
-                if (data.status === 'completed' || (data.done && data.status === 'completed')) {
-                    if (data.result) {
-                        // Result included in SSE event -- use it directly
-                        AppState.currentComprehensiveResults = data.result;
-                        addProgress('Comprehensive analysis complete!');
-                        settleWith(data.result);
-                    } else {
-                        // Result not in SSE event -- fetch from job endpoint
-                        addProgress('Fetching results...');
-                        console.log('[Comprehensive] SSE completed without result, fetching from /api/job/' + jobId);
-                        fetchComprehensiveResult(jobId, 0)
-                            .then(result => {
-                                AppState.currentComprehensiveResults = result;
-                                addProgress('Comprehensive analysis complete!');
-                                settleWith(result);
-                            })
-                            .catch(err => {
-                                console.error('[Comprehensive] Failed to fetch result:', err);
-                                settleError(err);
-                            });
-                    }
-                }
-
-                // Handle failure
+                // Failure signal
                 if (data.status === 'failed') {
-                    settleError(new Error(data.error || 'Analysis failed'));
+                    settle(reject, new Error(data.error || 'Analysis failed'));
+                    return;
+                }
+
+                // Cancelled
+                if (data.status === 'cancelled') {
+                    settle(reject, new Error('Analysis cancelled'));
+                    return;
                 }
 
             } catch (e) {
-                console.error('Error parsing SSE data:', e);
+                console.error('[Comprehensive] Error parsing SSE:', e);
             }
         };
 
-        eventSource.onerror = (error) => {
-            if (settled) return;  // Already handled completion
-            console.error('SSE error:', error);
+        eventSource.onerror = function() {
+            if (settled) return;
+
+            console.log('[Comprehensive] SSE connection lost, checking job status...');
             eventSource.close();
 
-            // Check if job completed despite stream error
-            console.log('[Comprehensive] SSE connection lost, checking job status...');
-            fetchComprehensiveResult(jobId, 0)
-                .then(result => {
-                    AppState.currentComprehensiveResults = result;
-                    addProgress('Analysis complete (recovered from connection loss)');
-                    settleWith(result);
+            // Connection dropped -- check if job finished despite the drop
+            fetch('/api/job/' + jobId)
+                .then(function(r) { return r.json(); })
+                .then(function(job) {
+                    if (job.status === 'completed') {
+                        // Job finished, SSE just dropped. We'll fetch result in the caller.
+                        settle(resolve);
+                    } else if (job.status === 'failed') {
+                        settle(reject, new Error(job.error || 'Analysis failed'));
+                    } else {
+                        // Job still running but SSE died.
+                        // Start polling instead of giving up.
+                        console.log('[Comprehensive] Job still running, switching to polling...');
+                        pollForCompletion(jobId)
+                            .then(function() { settle(resolve); })
+                            .catch(function(err) { settle(reject, err); });
+                    }
                 })
-                .catch(fetchErr => {
-                    // Also try a simple status check
-                    fetch(`/api/job/${jobId}`)
-                        .then(r => r.json())
-                        .then(job => {
-                            if (job.status === 'completed' && job.result) {
-                                AppState.currentComprehensiveResults = job.result;
-                                settleWith(job.result);
-                            } else if (job.status === 'failed') {
-                                settleError(new Error(job.error || 'Analysis failed'));
-                            } else {
-                                settleError(new Error('Connection lost during analysis'));
-                            }
-                        })
-                        .catch(() => settleError(new Error('Connection lost')));
+                .catch(function() {
+                    settle(reject, new Error('Connection lost during analysis'));
                 });
         };
     });
 }
 
-function updateComprehensivePartialResults(partial) {
-    // Update DOM values silently during analysis.
-    // Do NOT show the results panel yet -- it will be shown by
-    // displayCombinedResults() once the full analysis completes.
-    // This prevents the panel from appearing prematurely with
-    // empty placeholders for sections that haven't run yet.
+/**
+ * Poll job status when SSE connection drops mid-analysis.
+ * Checks every 5 seconds, up to 60 attempts (5 minutes).
+ */
+function pollForCompletion(jobId) {
+    return new Promise(function(resolve, reject) {
+        var attempts = 0;
+        var maxAttempts = 60;
+        var interval = 5000;
 
-    // Cache partial data so renderComprehensiveResults has it on completion
-    if (!AppState.currentComprehensiveResults) {
-        AppState.currentComprehensiveResults = {};
-    }
+        function check() {
+            attempts++;
+            fetch('/api/job/' + jobId)
+                .then(function(r) { return r.json(); })
+                .then(function(job) {
+                    if (job.status === 'completed') {
+                        resolve();
+                    } else if (job.status === 'failed') {
+                        reject(new Error(job.error || 'Analysis failed'));
+                    } else if (job.status === 'cancelled') {
+                        reject(new Error('Analysis cancelled'));
+                    } else if (attempts >= maxAttempts) {
+                        reject(new Error('Analysis timed out'));
+                    } else {
+                        // Show latest progress if available
+                        var log = job.progress_log || [];
+                        if (log.length > 0) {
+                            var latest = log[log.length - 1];
+                            if (latest.message) {
+                                addProgress(latest.message);
+                            }
+                        }
+                        setTimeout(check, interval);
+                    }
+                })
+                .catch(function() {
+                    if (attempts >= maxAttempts) {
+                        reject(new Error('Connection lost'));
+                    } else {
+                        setTimeout(check, interval);
+                    }
+                });
+        }
 
-    if (partial.content_classification) {
-        AppState.currentComprehensiveResults.content_classification = partial.content_classification;
-        renderContentClassification(partial.content_classification);
-    }
-    if (partial.source_verification) {
-        AppState.currentComprehensiveResults.source_verification = partial.source_verification;
-        renderSourceCredibility(partial.source_verification);
-    }
-    if (partial.mode_routing) {
-        AppState.currentComprehensiveResults.mode_routing = partial.mode_routing;
-        renderModeRouting(partial.mode_routing);
-    }
+        check();
+    });
 }
+
+/**
+ * Fetch the full result from the job endpoint via HTTP.
+ * Retries up to 3 times with 2-second delays.
+ * This is the ONLY path for getting comprehensive results.
+ */
+function fetchComprehensiveResult(jobId) {
+    var maxAttempts = 4;
+    var retryDelay = 2000;
+
+    function attempt(n) {
+        return fetch('/api/job/' + jobId)
+            .then(function(response) {
+                if (!response.ok) {
+                    throw new Error('Job fetch failed: HTTP ' + response.status);
+                }
+                return response.json();
+            })
+            .then(function(job) {
+                console.log('[Comprehensive] Fetch attempt ' + n + ':', {
+                    status: job.status,
+                    hasResult: !!job.result,
+                    resultKeys: job.result ? Object.keys(job.result) : [],
+                    hasSynthesis: !!(job.result && job.result.synthesis_report)
+                });
+
+                if (job.result) {
+                    return job.result;
+                }
+
+                // Result not ready yet (maybe complete_job hasn't finished storing)
+                if (n < maxAttempts) {
+                    console.log('[Comprehensive] Result not ready, retry in ' + retryDelay + 'ms');
+                    return new Promise(function(resolve) {
+                        setTimeout(function() { resolve(attempt(n + 1)); }, retryDelay);
+                    });
+                }
+
+                throw new Error('Analysis completed but results unavailable after retries');
+            })
+            .catch(function(err) {
+                if (n < maxAttempts) {
+                    console.log('[Comprehensive] Fetch error, retry: ' + err.message);
+                    return new Promise(function(resolve) {
+                        setTimeout(function() { resolve(attempt(n + 1)); }, retryDelay);
+                    });
+                }
+                throw err;
+            });
+    }
+
+    return attempt(1);
+}
+
 
 // ============================================
 // EVENT LISTENERS
@@ -516,8 +528,8 @@ function updateComprehensivePartialResults(partial) {
 
 function initEventListeners() {
     // Mode card selection
-    modeCards.forEach(card => {
-        card.addEventListener('click', () => {
+    modeCards.forEach(function(card) {
+        card.addEventListener('click', function() {
             if (card.classList.contains('disabled')) return;
             switchMode(card.dataset.mode);
         });
@@ -530,7 +542,7 @@ function initEventListeners() {
 
     // Clear button
     if (clearBtn) {
-        clearBtn.addEventListener('click', () => {
+        clearBtn.addEventListener('click', function() {
             if (htmlInput) htmlInput.value = '';
             if (publicationUrl) publicationUrl.value = '';
             clearUrlInput();
@@ -542,7 +554,7 @@ function initEventListeners() {
 
     // Stop button
     if (stopBtn) {
-        stopBtn.addEventListener('click', () => {
+        stopBtn.addEventListener('click', function() {
             AppState.closeAllStreams();
             addProgress('Analysis stopped by user', 'warning');
             setLoadingState(false);
@@ -552,7 +564,7 @@ function initEventListeners() {
 
     // New check button
     if (newCheckBtn) {
-        newCheckBtn.addEventListener('click', () => {
+        newCheckBtn.addEventListener('click', function() {
             hideAllSections();
             if (htmlInput) htmlInput.value = '';
             if (publicationUrl) publicationUrl.value = '';
@@ -564,7 +576,7 @@ function initEventListeners() {
 
     // Retry button
     if (retryBtn) {
-        retryBtn.addEventListener('click', () => {
+        retryBtn.addEventListener('click', function() {
             hideAllSections();
             if (htmlInput && htmlInput.value.trim()) {
                 handleAnalyze();
@@ -578,7 +590,7 @@ function initEventListeners() {
     }
 
     // Result tab switching
-    const resultTabs = [
+    var resultTabs = [
         { tab: factCheckTab, name: 'fact-check' },
         { tab: keyClaimsTab, name: 'key-claims' },
         { tab: biasAnalysisTab, name: 'bias-analysis' },
@@ -587,19 +599,19 @@ function initEventListeners() {
         { tab: comprehensiveTab, name: 'comprehensive' }
     ];
 
-    resultTabs.forEach(({ tab, name }) => {
-        if (tab) {
-            tab.addEventListener('click', () => switchResultTab(name));
+    resultTabs.forEach(function(item) {
+        if (item.tab) {
+            item.tab.addEventListener('click', function() { switchResultTab(item.name); });
         }
     });
 
     // Content input change detection (for LLM output mode)
     if (htmlInput) {
-        htmlInput.addEventListener('input', debounce(() => {
+        htmlInput.addEventListener('input', debounce(function() {
             if (AppState.currentMode === 'llm-output') {
-                const content = htmlInput.value;
+                var content = htmlInput.value;
                 if (content.length > 50) {
-                    const linkCount = countLinks(content);
+                    var linkCount = countLinks(content);
                     showContentFormatIndicator(linkCount > 0, linkCount);
                 } else {
                     hideContentFormatIndicator();
@@ -616,8 +628,8 @@ function initEventListeners() {
 function initUrlInputListeners() {
     // Toggle URL/Text input
     if (toggleUrlBtn) {
-        toggleUrlBtn.addEventListener('click', () => {
-            const isUrlVisible = urlInputContainer && urlInputContainer.style.display !== 'none';
+        toggleUrlBtn.addEventListener('click', function() {
+            var isUrlVisible = urlInputContainer && urlInputContainer.style.display !== 'none';
 
             if (isUrlVisible) {
                 showTextInput();
@@ -629,8 +641,8 @@ function initUrlInputListeners() {
 
     // Fetch URL button
     if (fetchUrlBtn && articleUrl) {
-        fetchUrlBtn.addEventListener('click', async () => {
-            const url = articleUrl.value.trim();
+        fetchUrlBtn.addEventListener('click', async function() {
+            var url = articleUrl.value.trim();
 
             if (!url) {
                 showUrlStatus('error', 'Please enter a URL');
@@ -651,19 +663,15 @@ function initUrlInputListeners() {
                 clearProgressLog();
                 addProgress('Fetching article from URL...');
 
-                const result = await fetchArticleFromUrl(url);
+                var result = await fetchArticleFromUrl(url);
 
                 // Hide progress section after fetch completes
                 hideAllSections();
 
                 // Check if scraping failed
                 if (result && result.scrape_failed) {
-                    // Show the scrape failure UI with reason and paste prompt
                     showScrapeFailure(result);
-
-                    // Switch to text view so user can paste
                     showTextInput();
-
                     return;
                 }
 
@@ -671,7 +679,7 @@ function initUrlInputListeners() {
                     htmlInput.value = result.content;
                 }
 
-                showUrlStatus('success', `Fetched: ${result.title || result.domain}`, result);
+                showUrlStatus('success', 'Fetched: ' + (result.title || result.domain), result);
 
                 // Show the metadata panel
                 showArticleMetadata(result);
@@ -686,7 +694,7 @@ function initUrlInputListeners() {
         });
 
         // Enter key in URL input
-        articleUrl.addEventListener('keypress', (e) => {
+        articleUrl.addEventListener('keypress', function(e) {
             if (e.key === 'Enter') {
                 fetchUrlBtn.click();
             }
@@ -707,7 +715,7 @@ function init() {
 
     // Set initial mode AND activate the mode card
     updatePlaceholder(AppState.currentMode);
-    switchMode(AppState.currentMode);  // ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚ ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ADD THIS LINE
+    switchMode(AppState.currentMode);
 
     console.log('VeriFlow initialized');
     console.log('Modules: config, utils, ui, modal, api, renderers');

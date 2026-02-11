@@ -38,7 +38,7 @@
                     <button class="mode-card mode-card-comprehensive active" data-mode="comprehensive">
                         <div class="mode-content">
                             <span class="mode-label">Comprehensive Analysis</span>
-                            <span class="mode-desc">Full verification â€” checks source, author & content quality</span>
+                            <span class="mode-desc">Full verification -- checks source, author & content quality</span>
                         </div>
                     </button>
 
@@ -227,7 +227,7 @@
                             <h3>Full Fact-Check</h3>
                             <p>Comprehensive verification of all claims using web search.</p>
                             <div class="instructions-note">
-                                <span class="note-icon">â±ï¸</span>
+                                <span class="note-icon"></span>
                                 <span>Coming soon</span>
                             </div>
                         </div>
@@ -266,7 +266,7 @@
                     </div>
                     <div class="modal-footer-improved">
                         <button id="continueAnyway" class="btn-text-link">
-                            Continue with LLM mode anyway â†’
+                            Continue with LLM mode anyway 
                         </button>
                     </div>
                 </div>
@@ -333,19 +333,19 @@
                                     <div class="info-grid">
                                         <div class="info-item">
                                             <span class="info-label">Type</span>
-                                            <span id="compContentType" class="info-value">â€”</span>
+                                            <span id="compContentType" class="info-value">--</span>
                                         </div>
                                         <div class="info-item">
                                             <span class="info-label">Topic</span>
-                                            <span id="compContentRealm" class="info-value">â€”</span>
+                                            <span id="compContentRealm" class="info-value">--</span>
                                         </div>
                                         <div class="info-item">
                                             <span class="info-label">Appears to be</span>
-                                            <span id="compContentPurpose" class="info-value">â€”</span>
+                                            <span id="compContentPurpose" class="info-value">--</span>
                                         </div>
                                         <div class="info-item">
                                             <span class="info-label">Has Sources</span>
-                                            <span id="compHasCitations" class="info-value">â€”</span>
+                                            <span id="compHasCitations" class="info-value">--</span>
                                         </div>
                                     </div>
                                     <div id="compClassificationNotes" class="info-notes" style="display: none;"></div>
@@ -367,15 +367,15 @@
                                         <div class="credibility-details">
                                             <div class="info-item">
                                                 <span class="info-label">Publication</span>
-                                                <span id="compPublicationName" class="info-value">â€”</span>
+                                                <span id="compPublicationName" class="info-value">--</span>
                                             </div>
                                             <div class="info-item">
                                                 <span class="info-label">Political Lean</span>
-                                                <span id="compBiasRating" class="info-value">â€”</span>
+                                                <span id="compBiasRating" class="info-value">--</span>
                                             </div>
                                             <div class="info-item">
                                                 <span class="info-label">Accuracy Record</span>
-                                                <span id="compFactualRating" class="info-value">â€”</span>
+                                                <span id="compFactualRating" class="info-value">--</span>
                                             </div>
                                         </div>
                                     </div>
@@ -386,7 +386,7 @@
                             <!-- What We Checked Card -->
                             <div id="modeRoutingCard" class="info-card">
                                 <div class="info-card-header">
-                                    <span class="info-card-icon">âœ…</span>
+                                    <span class="info-card-icon"></span>
                                     <span class="info-card-title">Checks We Performed</span>
                                 </div>
                                 <div class="info-card-body">
@@ -419,7 +419,7 @@
                             <div class="synthesis-assessment">
                                 <div class="assessment-score">
                                     <div class="score-circle" id="compOverallScore">
-                                        <span class="score-value">â€”</span>
+                                        <span class="score-value">--</span>
                                         <span class="score-label">Trust Score</span>
                                     </div>
                                     <span id="compOverallRating" class="overall-rating">Analysis in progress...</span>
@@ -435,7 +435,7 @@
 
                             <!-- THE MAIN OUTPUT: Human-readable summary -->
                             <div id="synthesisSummarySection" class="synthesis-summary-section">
-                                <h4 class="subsection-title">ðŸ“‹ Analysis Summary</h4>
+                                <h4 class="subsection-title">Analysis Summary</h4>
                                 <div id="synthesisSummaryContainer" class="synthesis-summary-content">
                                     <p class="placeholder-text">Analysis in progress...</p>
                                 </div>
@@ -465,9 +465,9 @@
 
                         <!-- Session Info -->
                         <div class="session-info">
-                            <span>Report ID: <code id="compSessionId">â€”</code></span>
+                            <span>Report ID: <code id="compSessionId">--</code></span>
                             <span class="separator">|</span>
-                            <span>Analysis time: <span id="compProcessingTime">â€”</span></span>
+                            <span>Analysis time: <span id="compProcessingTime">--</span></span>
                             <span id="compR2Sep" class="separator" style="display: none;">|</span>
                             <a id="compR2Link" href="#" target="_blank" style="display: none;">Download Full Report</a>
                         </div>
@@ -591,9 +591,9 @@
                         <!-- Session Info -->
                         <div class="session-info lie-session-info">
                             Session ID: <code id="lieSessionId">-</code>
-                            <span class="separator">â€¢</span>
+                            <span class="separator">|</span>
                             Processing Time: <span id="lieProcessingTime">0s</span>
-                            <span class="separator" id="lieR2Sep" style="display: none;">â€¢</span>
+                            <span class="separator" id="lieR2Sep" style="display: none;">|</span>
                             <a href="#" id="lieR2Link" target="_blank" style="display: none;">View Full Report</a>
                         </div>
                     </div>
@@ -634,9 +634,9 @@
                     <!-- Session Info -->
                     <div class="session-info">
                         Session ID: <code id="sessionId">-</code>
-                        <span class="separator">â€¢</span>
+                        <span class="separator">|</span>
                         Processing Time: <span id="processingTime">0s</span>
-                        <span class="separator" id="r2Sep" style="display: none;">â€¢</span>
+                        <span class="separator" id="r2Sep" style="display: none;">|</span>
                         <a href="#" id="r2Link" target="_blank" style="display: none;">View Full Report</a>
                     </div>
                 </div>

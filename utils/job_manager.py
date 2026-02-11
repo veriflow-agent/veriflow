@@ -40,12 +40,12 @@ class JobManager:
             'result': None,
             'error': None,
             'progress_log': [],
-            'cancelled': False  # ✅ NEW: Track cancellation flag
+            'cancelled': False  # NEW: Track cancellation flag
         }
         self.progress_queues[job_id] = queue.Queue()
         return job_id
 
-    def add_progress(self, job_id: str, message: str, details: dict = None):
+    def add_progress(self, job_id: str, message: str, details: Optional[dict] = None):
         """
         Add progress update to job
 
@@ -105,7 +105,7 @@ class JobManager:
             self.jobs[job_id]['status'] = 'completed'
             self.jobs[job_id]['result'] = result
             self.jobs[job_id]['completed_at'] = datetime.now()
-            self.add_progress(job_id, "✅ Fact-checking complete!")
+            self.add_progress(job_id, "Fact-checking complete!")
 
     def fail_job(self, job_id: str, error: str):
         """
@@ -119,7 +119,7 @@ class JobManager:
             self.jobs[job_id]['status'] = 'failed'
             self.jobs[job_id]['error'] = error
             self.jobs[job_id]['failed_at'] = datetime.now()
-            self.add_progress(job_id, f"❌ Error: {error}")
+            self.add_progress(job_id, f" Error: {error}")
 
     def get_job(self, job_id: str) -> Optional[dict]:
         """
@@ -146,7 +146,7 @@ class JobManager:
         job = self.jobs.get(job_id)
         return job['status'] if job else None
 
-    def cleanup_old_jobs(self, max_age_hours: int = None):
+    def cleanup_old_jobs(self, max_age_hours: Optional[int] = None):
         """
         Remove old completed/failed jobs
 
@@ -173,7 +173,7 @@ class JobManager:
 
             if jobs_to_remove:
                 from utils.logger import fact_logger
-                fact_logger.logger.info(f"🗑️ Cleaned up {len(jobs_to_remove)} old jobs")
+                fact_logger.logger.info(f" Cleaned up {len(jobs_to_remove)} old jobs")
 
     def get_all_jobs(self) -> List[dict]:
         """
@@ -194,7 +194,7 @@ class JobManager:
 
     def cancel_job(self, job_id: str) -> bool:
         """
-        ✅ ENHANCED: Cancel a job at any stage (pending or running)
+         ENHANCED: Cancel a job at any stage (pending or running)
 
         Sets a cancellation flag that orchestrators should check periodically.
         Returns True if cancellation was successful, False otherwise.
@@ -209,7 +209,7 @@ class JobManager:
             return False
 
         job = self.jobs[job_id]
-        
+
         # Can't cancel already completed/failed jobs
         if job['status'] in ['completed', 'failed']:
             return False
@@ -218,13 +218,13 @@ class JobManager:
         job['cancelled'] = True
         job['status'] = 'cancelled'
         job['cancelled_at'] = datetime.now()
-        self.add_progress(job_id, "🛑 Cancellation requested by user...")
+        self.add_progress(job_id, " Cancellation requested by user...")
 
         return True
 
     def is_cancelled(self, job_id: str) -> bool:
         """
-        ✅ NEW: Check if a job has been cancelled
+         NEW: Check if a job has been cancelled
 
         Orchestrators should call this periodically during processing.
 
@@ -236,7 +236,7 @@ class JobManager:
         """
         if job_id not in self.jobs:
             return False
-        
+
         return self.jobs[job_id].get('cancelled', False)
 
 # Global job manager instance

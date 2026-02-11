@@ -231,11 +231,6 @@ class ComprehensiveOrchestrator:
 
             metadata_blocks.append(cc_block)
 
-            # Send partial result for real-time UI update
-            job_manager.add_progress(job_id, "Content classification complete", details={
-                "partial_result": {"content_classification": content_classification_data}
-            })
-
             # -----------------------------------------------------------------
             # Step 1b: Source Verification
             # -----------------------------------------------------------------
@@ -289,11 +284,6 @@ class ComprehensiveOrchestrator:
 
             metadata_blocks.append(sv_block)
 
-            # Send partial result for real-time UI update
-            job_manager.add_progress(job_id, "Source verification complete", details={
-                "partial_result": {"source_verification": source_verification_data}
-            })
-
             # -----------------------------------------------------------------
             # Step 1c: (Future checks go here)
             # Each new check:
@@ -333,11 +323,6 @@ class ComprehensiveOrchestrator:
                     "excluded_modes": [],
                     "routing_reasoning": "Default selection due to routing error"
                 }
-
-            # Send partial result
-            job_manager.add_progress(job_id, "Mode routing complete", details={
-                "partial_result": {"mode_routing": mode_routing}
-            })
 
             return {
                 # The new scalable path

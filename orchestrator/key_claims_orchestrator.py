@@ -149,25 +149,25 @@ class KeyClaimsOrchestrator:
 
                 job_manager.add_progress(
                     job_id, 
-                    f"ðŸ“Š Source context: Tier {tier} | {bias} bias | {factual} factual reporting"
+                    f"Source context: Tier {tier} | {bias} bias | {factual} factual reporting"
                 )
 
                 if credibility_tier and credibility_tier >= 4:
                     job_manager.add_progress(
                         job_id,
-                        "âš ï¸ Low credibility source - claims require extra verification"
+                        "Low credibility source - claims require extra verification"
                     )
             elif source_context and source_context.get('publication_name'):
                 job_manager.add_progress(
                     job_id,
-                    f"ðŸ“° Analyzing: {source_context.get('publication_name')}"
+                    f"Analyzing: {source_context.get('publication_name')}"
                 )
 
 
             # ================================================================
             # STAGE 1: Extract Key Claims (Sequential - single LLM call)
             # ================================================================
-            job_manager.add_progress(job_id, "ðŸ“„ Extracting key claims from text...")
+            job_manager.add_progress(job_id, "Extracting key claims from text...")
             self._check_cancellation(job_id)
 
             # Prepare parsed content for extractor
@@ -220,7 +220,7 @@ class KeyClaimsOrchestrator:
 
             # Log content analysis results
             fact_logger.logger.info(
-                "ðŸ“Š Content Analysis:",
+                "Content Analysis:",
                 extra={
                     "content_type": broad_context.content_type,
                     "credibility": broad_context.credibility_assessment,
@@ -252,7 +252,7 @@ class KeyClaimsOrchestrator:
             # ================================================================
             # STAGE 2: Generate Search Queries (âœ… PARALLEL)
             # ================================================================
-            job_manager.add_progress(job_id, "ðŸ” Generating search queries in parallel...")
+            job_manager.add_progress(job_id, "Generating search queries in parallel...")
             self._check_cancellation(job_id)
 
             query_gen_start = time.time()
@@ -301,7 +301,7 @@ class KeyClaimsOrchestrator:
             # ================================================================
             # STAGE 3: Execute Web Searches (âœ… PARALLEL)
             # ================================================================
-            job_manager.add_progress(job_id, "ðŸŒ Searching the web in parallel...")
+            job_manager.add_progress(job_id, "Searching the web in parallel...")
             self._check_cancellation(job_id)
 
             search_start = time.time()
@@ -354,13 +354,13 @@ class KeyClaimsOrchestrator:
             search_duration = time.time() - search_start
             job_manager.add_progress(
                 job_id, 
-                f"ðŸ“Š Found {total_results} potential sources in {search_duration:.1f}s"
+                f"Found {total_results} potential sources in {search_duration:.1f}s"
             )
 
             # ================================================================
             # STAGE 4: Filter by Credibility (âœ… PARALLEL)
             # ================================================================
-            job_manager.add_progress(job_id, "ðŸ† Filtering sources by credibility in parallel...")
+            job_manager.add_progress(job_id, "Filtering sources by credibility in parallel...")
             self._check_cancellation(job_id)
 
             filter_start = time.time()
@@ -420,7 +420,7 @@ class KeyClaimsOrchestrator:
             # ================================================================
             # STAGE 5: Scrape Sources (âœ… PARALLEL)
             # ================================================================
-            job_manager.add_progress(job_id, f"ðŸŒ Scraping {total_credible} credible sources in parallel...")
+            job_manager.add_progress(job_id, f"Scraping {total_credible} credible sources in parallel...")
             self._check_cancellation(job_id)
 
             scrape_start = time.time()
@@ -574,7 +574,7 @@ class KeyClaimsOrchestrator:
             processing_time = time.time() - start_time
 
             # Save search audit
-            job_manager.add_progress(job_id, "ðŸ“‹ Saving search audit...")
+            job_manager.add_progress(job_id, "Saving search audit...")
 
             audit_file_path = save_search_audit(
                 session_audit=session_audit,
@@ -690,7 +690,7 @@ class KeyClaimsOrchestrator:
         except Exception as e:
             error_msg = str(e)
             if "cancelled" in error_msg.lower():
-                job_manager.add_progress(job_id, "ðŸ›‘ Verification cancelled")
+                job_manager.add_progress(job_id, "Verification cancelled")
                 if standalone:
                     job_manager.fail_job(job_id, "Cancelled by user")
                 return {
