@@ -527,7 +527,7 @@ class KeyClaimsOrchestrator:
                     )
 
                     # Progress update
-                    score_emoji = "âœ…" if result.match_score >= 0.9 else "âš ï¸" if result.match_score >= 0.7 else "âŒ"
+                    score_emoji = "" if result.match_score >= 0.9 else " " if result.match_score >= 0.7 else ""
                     job_manager.add_progress(
                         job_id,
                         f"{score_emoji} {claim.id}: {result.match_score:.0%} verified"
@@ -536,7 +536,7 @@ class KeyClaimsOrchestrator:
                     return result
 
                 except Exception as e:
-                    fact_logger.logger.error(f"âŒ Verification error for {claim.id}: {e}")
+                    fact_logger.logger.error(f" Verification error for {claim.id}: {e}")
                     return FactCheckResult(
                         fact_id=claim.id,
                         statement=claim.statement,
@@ -552,7 +552,7 @@ class KeyClaimsOrchestrator:
             final_results = []
             for result in results:
                 if isinstance(result, BaseException):
-                    fact_logger.logger.error(f"âŒ Verification exception: {result}")
+                    fact_logger.logger.error(f" Verification exception: {result}")
                     continue
                 final_results.append(result)
 
@@ -609,7 +609,7 @@ class KeyClaimsOrchestrator:
 
             # Log performance metrics
             fact_logger.logger.info(
-                "âš¡ Key Claims Pipeline Performance",
+                " Key Claims Pipeline Performance",
                 extra={
                     "total_time": round(processing_time, 2),
                     "query_gen_time": round(query_gen_duration, 2),
