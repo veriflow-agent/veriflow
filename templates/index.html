@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>VeriFlow - AI Content Analyzer</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/metadata-panel.css') }}">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -39,10 +38,10 @@
                     <button class="mode-card mode-card-comprehensive active" data-mode="comprehensive">
                         <div class="mode-content">
                             <span class="mode-label">Comprehensive Analysis</span>
-                            <span class="mode-desc">Full verification — checks source, author & content quality</span>
+                            <span class="mode-desc">Full verification â€” checks source, author & content quality</span>
                         </div>
                     </button>
-                    
+
                     <!-- Row 1: 3 cards -->
                     <button class="mode-card" data-mode="key-claims">
                         <div class="mode-content">
@@ -228,7 +227,7 @@
                             <h3>Full Fact-Check</h3>
                             <p>Comprehensive verification of all claims using web search.</p>
                             <div class="instructions-note">
-                                <span class="note-icon">⏱️</span>
+                                <span class="note-icon">â±ï¸</span>
                                 <span>Coming soon</span>
                             </div>
                         </div>
@@ -267,7 +266,7 @@
                     </div>
                     <div class="modal-footer-improved">
                         <button id="continueAnyway" class="btn-text-link">
-                            Continue with LLM mode anyway →
+                            Continue with LLM mode anyway â†’
                         </button>
                     </div>
                 </div>
@@ -334,19 +333,19 @@
                                     <div class="info-grid">
                                         <div class="info-item">
                                             <span class="info-label">Type</span>
-                                            <span id="compContentType" class="info-value">—</span>
+                                            <span id="compContentType" class="info-value">â€”</span>
                                         </div>
                                         <div class="info-item">
                                             <span class="info-label">Topic</span>
-                                            <span id="compContentRealm" class="info-value">—</span>
+                                            <span id="compContentRealm" class="info-value">â€”</span>
                                         </div>
                                         <div class="info-item">
                                             <span class="info-label">Appears to be</span>
-                                            <span id="compContentPurpose" class="info-value">—</span>
+                                            <span id="compContentPurpose" class="info-value">â€”</span>
                                         </div>
                                         <div class="info-item">
                                             <span class="info-label">Has Sources</span>
-                                            <span id="compHasCitations" class="info-value">—</span>
+                                            <span id="compHasCitations" class="info-value">â€”</span>
                                         </div>
                                     </div>
                                     <div id="compClassificationNotes" class="info-notes" style="display: none;"></div>
@@ -368,15 +367,15 @@
                                         <div class="credibility-details">
                                             <div class="info-item">
                                                 <span class="info-label">Publication</span>
-                                                <span id="compPublicationName" class="info-value">—</span>
+                                                <span id="compPublicationName" class="info-value">â€”</span>
                                             </div>
                                             <div class="info-item">
                                                 <span class="info-label">Political Lean</span>
-                                                <span id="compBiasRating" class="info-value">—</span>
+                                                <span id="compBiasRating" class="info-value">â€”</span>
                                             </div>
                                             <div class="info-item">
                                                 <span class="info-label">Accuracy Record</span>
-                                                <span id="compFactualRating" class="info-value">—</span>
+                                                <span id="compFactualRating" class="info-value">â€”</span>
                                             </div>
                                         </div>
                                     </div>
@@ -387,7 +386,7 @@
                             <!-- What We Checked Card -->
                             <div id="modeRoutingCard" class="info-card">
                                 <div class="info-card-header">
-                                    <span class="info-card-icon">✅</span>
+                                    <span class="info-card-icon">âœ…</span>
                                     <span class="info-card-title">Checks We Performed</span>
                                 </div>
                                 <div class="info-card-body">
@@ -420,7 +419,7 @@
                             <div class="synthesis-assessment">
                                 <div class="assessment-score">
                                     <div class="score-circle" id="compOverallScore">
-                                        <span class="score-value">—</span>
+                                        <span class="score-value">â€”</span>
                                         <span class="score-label">Trust Score</span>
                                     </div>
                                     <span id="compOverallRating" class="overall-rating">Analysis in progress...</span>
@@ -436,7 +435,7 @@
 
                             <!-- THE MAIN OUTPUT: Human-readable summary -->
                             <div id="synthesisSummarySection" class="synthesis-summary-section">
-                                <h4 class="subsection-title">📋 Analysis Summary</h4>
+                                <h4 class="subsection-title">ðŸ“‹ Analysis Summary</h4>
                                 <div id="synthesisSummaryContainer" class="synthesis-summary-content">
                                     <p class="placeholder-text">Analysis in progress...</p>
                                 </div>
@@ -466,14 +465,14 @@
 
                         <!-- Session Info -->
                         <div class="session-info">
-                            <span>Report ID: <code id="compSessionId">—</code></span>
+                            <span>Report ID: <code id="compSessionId">â€”</code></span>
                             <span class="separator">|</span>
-                            <span>Analysis time: <span id="compProcessingTime">—</span></span>
+                            <span>Analysis time: <span id="compProcessingTime">â€”</span></span>
                             <span id="compR2Sep" class="separator" style="display: none;">|</span>
                             <a id="compR2Link" href="#" target="_blank" style="display: none;">Download Full Report</a>
                         </div>
                     </div>
-                    
+
                     <!-- Fact Check Results -->
                     <div id="factCheckResults" class="results-panel active">
                         <div class="results-summary">
@@ -592,9 +591,9 @@
                         <!-- Session Info -->
                         <div class="session-info lie-session-info">
                             Session ID: <code id="lieSessionId">-</code>
-                            <span class="separator">•</span>
+                            <span class="separator">â€¢</span>
                             Processing Time: <span id="lieProcessingTime">0s</span>
-                            <span class="separator" id="lieR2Sep" style="display: none;">•</span>
+                            <span class="separator" id="lieR2Sep" style="display: none;">â€¢</span>
                             <a href="#" id="lieR2Link" target="_blank" style="display: none;">View Full Report</a>
                         </div>
                     </div>
@@ -635,9 +634,9 @@
                     <!-- Session Info -->
                     <div class="session-info">
                         Session ID: <code id="sessionId">-</code>
-                        <span class="separator">•</span>
+                        <span class="separator">â€¢</span>
                         Processing Time: <span id="processingTime">0s</span>
-                        <span class="separator" id="r2Sep" style="display: none;">•</span>
+                        <span class="separator" id="r2Sep" style="display: none;">â€¢</span>
                         <a href="#" id="r2Link" target="_blank" style="display: none;">View Full Report</a>
                     </div>
                 </div>

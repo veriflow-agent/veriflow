@@ -177,7 +177,20 @@ function displayCombinedResults(type) {
         case 'comprehensive':
             if (comprehensiveTab) comprehensiveTab.style.display = 'block';
             if (AppState.currentComprehensiveResults) {
+                console.log('[Comprehensive] Rendering final results:', {
+                    hasClassification: !!AppState.currentComprehensiveResults.content_classification,
+                    hasSourceVerification: !!AppState.currentComprehensiveResults.source_verification,
+                    hasModeRouting: !!AppState.currentComprehensiveResults.mode_routing,
+                    hasModeReports: !!AppState.currentComprehensiveResults.mode_reports,
+                    modeReportKeys: AppState.currentComprehensiveResults.mode_reports ? Object.keys(AppState.currentComprehensiveResults.mode_reports) : [],
+                    hasSynthesis: !!AppState.currentComprehensiveResults.synthesis_report,
+                    synthesisKeys: AppState.currentComprehensiveResults.synthesis_report ? Object.keys(AppState.currentComprehensiveResults.synthesis_report) : [],
+                    sessionId: AppState.currentComprehensiveResults.session_id,
+                    processingTime: AppState.currentComprehensiveResults.processing_time
+                });
                 renderComprehensiveResults(AppState.currentComprehensiveResults);
+            } else {
+                console.warn('[Comprehensive] No results to render!');
             }
             switchResultTab('comprehensive');
             break;
@@ -301,6 +314,55 @@ async function runComprehensiveAnalysis(content) {
     }
 }
 
+/**
+ * Fetch comprehensive result from job endpoint with retry logic.
+ * The SSE completion event often doesn't include the result payload,
+ * so this fetch is the primary way we get the final data.
+ */
+async function fetchComprehensiveResult(jobId, attempt = 0) {
+    const maxAttempts = 3;
+    const retryDelay = 1000; // 1s between retries
+
+    try {
+        const response = await fetch(`/api/job/${jobId}`);
+        if (!response.ok) {
+            throw new Error(`Job fetch failed: HTTP ${response.status}`);
+        }
+
+        const job = await response.json();
+        console.log('[Comprehensive] Job fetch result:', {
+            status: job.status,
+            hasResult: !!job.result,
+            hasSynthesis: !!(job.result && job.result.synthesis_report),
+            resultKeys: job.result ? Object.keys(job.result) : []
+        });
+
+        if (job.result) {
+            // Validate that synthesis_report exists
+            if (!job.result.synthesis_report) {
+                console.warn('[Comprehensive] Result missing synthesis_report');
+            }
+            return job.result;
+        }
+
+        // Result not available yet -- retry if we have attempts left
+        if (attempt < maxAttempts - 1) {
+            console.log(`[Comprehensive] Result not ready, retrying in ${retryDelay}ms (attempt ${attempt + 1}/${maxAttempts})`);
+            await new Promise(resolve => setTimeout(resolve, retryDelay));
+            return fetchComprehensiveResult(jobId, attempt + 1);
+        }
+
+        throw new Error('Analysis completed but results unavailable after retries');
+    } catch (err) {
+        if (attempt < maxAttempts - 1) {
+            console.log(`[Comprehensive] Fetch error, retrying: ${err.message}`);
+            await new Promise(resolve => setTimeout(resolve, retryDelay));
+            return fetchComprehensiveResult(jobId, attempt + 1);
+        }
+        throw err;
+    }
+}
+
 async function streamComprehensiveProgress(jobId) {
     return new Promise((resolve, reject) => {
         const eventSource = new EventSource(`/api/job/${jobId}/stream`);
@@ -355,29 +417,27 @@ async function streamComprehensiveProgress(jobId) {
                     updateComprehensivePartialResults(details.partial_result);
                 }
 
-                // Handle completion
-                if (data.status === 'completed') {
+                // Handle completion (check both 'status' and 'done' fields)
+                if (data.status === 'completed' || (data.done && data.status === 'completed')) {
                     if (data.result) {
                         // Result included in SSE event -- use it directly
                         AppState.currentComprehensiveResults = data.result;
                         addProgress('Comprehensive analysis complete!');
                         settleWith(data.result);
                     } else {
-                        // Result missing (e.g. SSE reconnect sent status without result)
-                        // Fetch full result from the job endpoint
+                        // Result not in SSE event -- fetch from job endpoint
                         addProgress('Fetching results...');
-                        fetch(`/api/job/${jobId}`)
-                            .then(r => r.json())
-                            .then(job => {
-                                if (job.result) {
-                                    AppState.currentComprehensiveResults = job.result;
-                                    addProgress('Comprehensive analysis complete!');
-                                    settleWith(job.result);
-                                } else {
-                                    settleError(new Error('Analysis completed but results unavailable'));
-                                }
+                        console.log('[Comprehensive] SSE completed without result, fetching from /api/job/' + jobId);
+                        fetchComprehensiveResult(jobId, 0)
+                            .then(result => {
+                                AppState.currentComprehensiveResults = result;
+                                addProgress('Comprehensive analysis complete!');
+                                settleWith(result);
                             })
-                            .catch(err => settleError(new Error('Failed to fetch results: ' + err.message)));
+                            .catch(err => {
+                                console.error('[Comprehensive] Failed to fetch result:', err);
+                                settleError(err);
+                            });
                     }
                 }
 
@@ -397,41 +457,55 @@ async function streamComprehensiveProgress(jobId) {
             eventSource.close();
 
             // Check if job completed despite stream error
-            fetch(`/api/job/${jobId}`)
-                .then(r => r.json())
-                .then(job => {
-                    if (job.status === 'completed' && job.result) {
-                        AppState.currentComprehensiveResults = job.result;
-                        settleWith(job.result);
-                    } else if (job.status === 'completed') {
-                        settleError(new Error('Analysis completed but results unavailable'));
-                    } else if (job.status === 'failed') {
-                        settleError(new Error(job.error || 'Analysis failed'));
-                    } else {
-                        settleError(new Error('Connection lost during analysis'));
-                    }
+            console.log('[Comprehensive] SSE connection lost, checking job status...');
+            fetchComprehensiveResult(jobId, 0)
+                .then(result => {
+                    AppState.currentComprehensiveResults = result;
+                    addProgress('Analysis complete (recovered from connection loss)');
+                    settleWith(result);
                 })
-                .catch(() => settleError(new Error('Connection lost')));
+                .catch(fetchErr => {
+                    // Also try a simple status check
+                    fetch(`/api/job/${jobId}`)
+                        .then(r => r.json())
+                        .then(job => {
+                            if (job.status === 'completed' && job.result) {
+                                AppState.currentComprehensiveResults = job.result;
+                                settleWith(job.result);
+                            } else if (job.status === 'failed') {
+                                settleError(new Error(job.error || 'Analysis failed'));
+                            } else {
+                                settleError(new Error('Connection lost during analysis'));
+                            }
+                        })
+                        .catch(() => settleError(new Error('Connection lost')));
+                });
         };
     });
 }
 
 function updateComprehensivePartialResults(partial) {
-    // Show comprehensive results panel progressively during analysis
-    const panel = document.getElementById('comprehensiveResults');
-    if (panel) panel.style.display = 'block';
+    // Update DOM values silently during analysis.
+    // Do NOT show the results panel yet -- it will be shown by
+    // displayCombinedResults() once the full analysis completes.
+    // This prevents the panel from appearing prematurely with
+    // empty placeholders for sections that haven't run yet.
 
-    // Also make sure the results section is visible
-    if (resultsSection) showSection(resultsSection);
+    // Cache partial data so renderComprehensiveResults has it on completion
+    if (!AppState.currentComprehensiveResults) {
+        AppState.currentComprehensiveResults = {};
+    }
 
-    // Update UI progressively as stages complete
     if (partial.content_classification) {
+        AppState.currentComprehensiveResults.content_classification = partial.content_classification;
         renderContentClassification(partial.content_classification);
     }
     if (partial.source_verification) {
+        AppState.currentComprehensiveResults.source_verification = partial.source_verification;
         renderSourceCredibility(partial.source_verification);
     }
     if (partial.mode_routing) {
+        AppState.currentComprehensiveResults.mode_routing = partial.mode_routing;
         renderModeRouting(partial.mode_routing);
     }
 }
@@ -633,7 +707,7 @@ function init() {
 
     // Set initial mode AND activate the mode card
     updatePlaceholder(AppState.currentMode);
-    switchMode(AppState.currentMode);  // ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Ãƒâ€šÃ‚Â ADD THIS LINE
+    switchMode(AppState.currentMode);  // ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚ ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ADD THIS LINE
 
     console.log('VeriFlow initialized');
     console.log('Modules: config, utils, ui, modal, api, renderers');
