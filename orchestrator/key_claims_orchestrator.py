@@ -3,7 +3,7 @@
 Key Claims Orchestrator - WITH PARALLEL PROCESSING
 Extracts and verifies ONLY the 2-3 central thesis claims from text
 
-âœ… OPTIMIZED: Full parallel processing for all stages
+OPTIMIZED: Full parallel processing for all stages
    - Parallel query generation
    - Parallel web searches (paid Brave account)
    - Parallel credibility filtering
@@ -13,11 +13,11 @@ Extracts and verifies ONLY the 2-3 central thesis claims from text
 
 Pipeline:
 1. Extract 2-3 key claims (central thesis statements)
-2. Generate search queries for each key claim (âœ… PARALLEL)
-3. Execute web searches via Brave (âœ… PARALLEL)
-4. Filter results by source credibility (âœ… PARALLEL)
-5. Scrape credible sources (âœ… PARALLEL)
-6. Verify each key claim against sources (âœ… PARALLEL)
+2. Generate search queries for each key claim (PARALLEL)
+3. Execute web searches via Brave (PARALLEL)
+4. Filter results by source credibility (PARALLEL)
+5. Scrape credible sources (PARALLEL)
+6. Verify each key claim against sources (PARALLEL)
 7. Generate detailed verification report
 8. Save comprehensive search audit
 """
@@ -59,7 +59,7 @@ class KeyClaimsOrchestrator:
 
     Extracts only 2-3 central thesis claims and verifies them thoroughly.
 
-    âœ… OPTIMIZED: Uses parallel processing for all claim operations
+    OPTIMIZED: Uses parallel processing for all claim operations
     """
 
     def __init__(self, config):
@@ -83,11 +83,11 @@ class KeyClaimsOrchestrator:
             from utils.r2_uploader import R2Uploader
             self.r2_uploader = R2Uploader()
             self.r2_enabled = True
-            fact_logger.logger.info("âœ… R2 uploader initialized for search audits")
+            fact_logger.logger.info("R2 uploader initialized for search audits")
         except Exception as e:
             self.r2_enabled = False
             self.r2_uploader = None
-            fact_logger.logger.warning(f"âš ï¸ R2 not available for audits: {e}")
+            fact_logger.logger.warning(f"R2 not available for audits: {e}")
 
         fact_logger.log_component_start(
             "KeyClaimsOrchestrator",
@@ -127,7 +127,7 @@ class KeyClaimsOrchestrator:
         """
         Complete key claims verification pipeline with parallel processing
 
-        âœ… OPTIMIZED: All claim operations run in parallel
+        OPTIMIZED: All claim operations run in parallel
         """
         session_id = self.file_manager.create_session()
         # Track credibility usage
@@ -179,7 +179,7 @@ class KeyClaimsOrchestrator:
 
             claims, all_sources, content_location, broad_context, media_sources, query_instructions = await self.extractor.extract(parsed_content)
 
-            # âœ… NEW: Check if no claims were extracted
+            # NEW: Check if no claims were extracted
             if not claims or len(claims) == 0:
                 processing_time = time.time() - start_time
 
@@ -188,7 +188,7 @@ class KeyClaimsOrchestrator:
                 if broad_context and hasattr(broad_context, 'reasoning') and broad_context.reasoning:
                     reason = broad_context.reasoning
 
-                job_manager.add_progress(job_id, f"â„¹ï¸ {reason}")
+                job_manager.add_progress(job_id, f"{reason}")
 
                 result = {
                     "success": True,  # Not an error, just no claims
@@ -211,7 +211,7 @@ class KeyClaimsOrchestrator:
                         "country": content_location.country if content_location else "international",
                         "language": content_location.language if content_location else "english"
                     },
-                    "no_claims_found": True  # âœ… Flag for frontend
+                    "no_claims_found": True  # Flag for frontend
                 }
 
                 if standalone:
@@ -230,7 +230,7 @@ class KeyClaimsOrchestrator:
             )
 
             if not claims:
-                job_manager.add_progress(job_id, "âš ï¸ No key claims found")
+                job_manager.add_progress(job_id, "No key claims found")
                 return {
                     "success": True,
                     "session_id": session_id,
@@ -239,7 +239,7 @@ class KeyClaimsOrchestrator:
                     "processing_time": time.time() - start_time
                 }
 
-            job_manager.add_progress(job_id, f"âœ… Found {len(claims)} key claims")
+            job_manager.add_progress(job_id, f"Found {len(claims)} key claims")
 
             # Initialize session audit with content location
             session_audit = build_session_search_audit(
@@ -250,14 +250,14 @@ class KeyClaimsOrchestrator:
             )
 
             # ================================================================
-            # STAGE 2: Generate Search Queries (âœ… PARALLEL)
+            # STAGE 2: Generate Search Queries (PARALLEL)
             # ================================================================
             job_manager.add_progress(job_id, "Generating search queries in parallel...")
             self._check_cancellation(job_id)
 
             query_gen_start = time.time()
 
-            # âœ… Create query generation tasks for ALL claims
+            # Create query generation tasks for ALL claims
             async def generate_queries_for_claim(claim):
                 """Generate queries for a single claim"""
                 fact_like = type('Fact', (), {
@@ -285,7 +285,7 @@ class KeyClaimsOrchestrator:
 
             for result in query_results:
                 if isinstance(result, BaseException):
-                    fact_logger.logger.error(f"âŒ Query generation error: {result}")
+                    fact_logger.logger.error(f"Query generation error: {result}")
                     continue
                 claim_id, queries = result
                 all_queries_by_claim[claim_id] = queries
@@ -295,18 +295,18 @@ class KeyClaimsOrchestrator:
             total_queries = sum(len(q.all_queries) for q in all_queries_by_claim.values())
             job_manager.add_progress(
                 job_id, 
-                f"âœ… Generated {total_queries} queries in {query_gen_duration:.1f}s"
+                f"Generated {total_queries} queries in {query_gen_duration:.1f}s"
             )
 
             # ================================================================
-            # STAGE 3: Execute Web Searches (âœ… PARALLEL)
+            # STAGE 3: Execute Web Searches (PARALLEL)
             # ================================================================
             job_manager.add_progress(job_id, "Searching the web in parallel...")
             self._check_cancellation(job_id)
 
             search_start = time.time()
 
-            # âœ… Create search tasks for ALL claims
+            # Create search tasks for ALL claims
             async def search_for_claim(claim):
                 """Execute all searches for a single claim"""
                 queries = all_queries_by_claim.get(claim.id)
@@ -316,7 +316,7 @@ class KeyClaimsOrchestrator:
                 search_results = await self.searcher.search_multiple(
                     queries=queries.all_queries,
                     search_depth="advanced",
-                    max_concurrent=3,  # âœ… Aggressive with paid Brave
+                    max_concurrent=3,  # Aggressive with paid Brave
                     freshness=None
                 )
 
@@ -343,7 +343,7 @@ class KeyClaimsOrchestrator:
 
             for result in search_results_list:
                 if isinstance(result, BaseException):
-                    fact_logger.logger.error(f"âŒ Search error: {result}")
+                    fact_logger.logger.error(f"Search error: {result}")
                     continue
                 claim_id, search_results, query_audits = result
                 search_results_by_claim[claim_id] = search_results
@@ -358,14 +358,14 @@ class KeyClaimsOrchestrator:
             )
 
             # ================================================================
-            # STAGE 4: Filter by Credibility (âœ… PARALLEL)
+            # STAGE 4: Filter by Credibility (PARALLEL)
             # ================================================================
             job_manager.add_progress(job_id, "Filtering sources by credibility in parallel...")
             self._check_cancellation(job_id)
 
             filter_start = time.time()
 
-            # âœ… Create credibility filter tasks for ALL claims
+            # Create credibility filter tasks for ALL claims
             async def filter_sources_for_claim(claim):
                 """Filter sources for a single claim"""
                 search_results = search_results_by_claim.get(claim.id, {})
@@ -403,7 +403,7 @@ class KeyClaimsOrchestrator:
 
             for result in filter_results:
                 if isinstance(result, BaseException):
-                    fact_logger.logger.error(f"âŒ Credibility filter error: {result}")
+                    fact_logger.logger.error(f"Credibility filter error: {result}")
                     continue
                 claim_id, credible_urls, source_metadata, cred_results = result
                 credible_urls_by_claim[claim_id] = credible_urls
@@ -414,21 +414,21 @@ class KeyClaimsOrchestrator:
             total_credible = sum(len(urls) for urls in credible_urls_by_claim.values())
             job_manager.add_progress(
                 job_id, 
-                f"âœ… Found {total_credible} credible sources in {filter_duration:.1f}s"
+                f"Found {total_credible} credible sources in {filter_duration:.1f}s"
             )
 
             # ================================================================
-            # STAGE 5: Scrape Sources (âœ… PARALLEL)
+            # STAGE 5: Scrape Sources (PARALLEL)
             # ================================================================
             job_manager.add_progress(job_id, f"Scraping {total_credible} credible sources in parallel...")
             self._check_cancellation(job_id)
 
             scrape_start = time.time()
 
-            # âœ… Create scraper in async context (correct event loop)
+            # Create scraper in async context (correct event loop)
             scraper = BrowserlessScraper(self.config)
 
-            # âœ… Collect ALL URLs to scrape across all claims
+            # Collect ALL URLs to scrape across all claims
             all_urls_to_scrape = []
             url_to_claim_map = {}  # Track which claim each URL belongs to
 
@@ -440,7 +440,7 @@ class KeyClaimsOrchestrator:
                         url_to_claim_map[url] = []
                     url_to_claim_map[url].append(claim.id)
 
-            # âœ… Scrape all URLs at once (browser pool handles concurrency)
+            # Scrape all URLs at once (browser pool handles concurrency)
             all_scraped_content = await scraper.scrape_urls_for_facts(all_urls_to_scrape)
 
             # Organize scraped content by claim
@@ -469,7 +469,7 @@ class KeyClaimsOrchestrator:
             successful_scrapes = len([v for v in all_scraped_content.values() if v])
             job_manager.add_progress(
                 job_id, 
-                f"âœ… Scraped {successful_scrapes}/{len(all_urls_to_scrape)} sources in {scrape_duration:.1f}s"
+                f"Scraped {successful_scrapes}/{len(all_urls_to_scrape)} sources in {scrape_duration:.1f}s"
             )
 
             # Build claim search audits
@@ -485,14 +485,14 @@ class KeyClaimsOrchestrator:
                 session_audit.add_fact_audit(claim_audit)
 
             # ================================================================
-            # STAGE 6: Verify Claims (âœ… PARALLEL)
+            # STAGE 6: Verify Claims (PARALLEL)
             # ================================================================
-            job_manager.add_progress(job_id, f"âš–ï¸ Verifying {len(claims)} key claims in parallel...")
+            job_manager.add_progress(job_id, f"Verifying {len(claims)} key claims in parallel...")
             self._check_cancellation(job_id)
 
             verify_start = time.time()
 
-            # âœ… Create verification tasks for ALL claims
+            # Create verification tasks for ALL claims
             async def verify_single_claim(claim):
                 """Verify a single claim"""
                 try:
@@ -559,7 +559,7 @@ class KeyClaimsOrchestrator:
             verify_duration = time.time() - verify_start
             job_manager.add_progress(
                 job_id, 
-                f"âœ… Verification complete in {verify_duration:.1f}s"
+                f"Verification complete in {verify_duration:.1f}s"
             )
 
             # Clean up scraper
@@ -593,7 +593,7 @@ class KeyClaimsOrchestrator:
                     pipeline_type="key-claims"
                 )
 
-            job_manager.add_progress(job_id, f"âœ… Complete in {processing_time:.1f}s")
+            job_manager.add_progress(job_id, f"Complete in {processing_time:.1f}s")
 
             # Build summary with keys that frontend expects
             frontend_summary = {
@@ -622,7 +622,7 @@ class KeyClaimsOrchestrator:
                 }
             )
 
-            # âœ… BUILD RESULT DICT
+            # BUILD RESULT DICT
             result = {
                 "success": True,
                 "session_id": session_id,
@@ -703,7 +703,7 @@ class KeyClaimsOrchestrator:
             fact_logger.logger.error(f"Key claims orchestrator error: {e}")
             import traceback
             fact_logger.logger.error(f"Traceback: {traceback.format_exc()}")
-            job_manager.add_progress(job_id, f"âŒ Error: {error_msg}")
+            job_manager.add_progress(job_id, f"Error: {error_msg}")
 
             # Try to save partial audit even on error
             if session_audit and session_audit.total_facts > 0:

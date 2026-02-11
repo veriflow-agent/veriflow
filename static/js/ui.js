@@ -496,7 +496,7 @@ function buildCredibilitySection(credibility) {
     if (credibility.is_propaganda) {
         html += `
             <div class="credibility-warning propaganda-warning">
-                âš ï¸ Identified as propaganda source
+                Identified as propaganda source
             </div>
         `;
     }

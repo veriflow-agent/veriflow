@@ -43,7 +43,7 @@ from utils.logger import fact_logger
 
 class CleanedArticle(BaseModel):
     """Cleaned article content with metadata"""
-    
+
     # Core content
     title: Optional[str] = Field(
         default=None,
@@ -61,13 +61,13 @@ class CleanedArticle(BaseModel):
         default=None,
         description="Publication date as found in article"
     )
-    
+
     # Main content
     body: str = Field(
         default="",
         description="Clean article body text"
     )
-    
+
     # Optional elements
     lead_paragraph: Optional[str] = Field(
         default=None,
@@ -77,7 +77,7 @@ class CleanedArticle(BaseModel):
         default_factory=list,
         description="Image captions if relevant to content"
     )
-    
+
     # Metadata
     word_count: int = Field(
         default=0,
@@ -231,45 +231,47 @@ Return ONLY valid JSON."""
 class ArticleContentCleaner:
     """
     AI-powered article content cleaner.
-    
+
     Uses GPT-4o-mini to intelligently extract only the actual article content
     from noisy web page scrapes, removing all promotional, navigation, and
     subscription-related noise.
     """
-    
+
     # Processing limits
     MAX_INPUT_LENGTH = 100000  # Max chars to send to AI (~1M token context)
     MIN_CONTENT_LENGTH = 100  # Min chars to attempt cleaning
-    
+
     def __init__(self, config=None):
         """
         Initialize the cleaner.
-        
+
         Args:
             config: Configuration object with API keys
         """
         self.config = config
-        
+
         # Initialize LLM - Gemini 2.0 Flash: 1M context, fast, cheap
+        # NOTE: Using synchronous client due to async issues in langchain-google-genai
+        # See: https://github.com/langchain-ai/langchain-google/issues/357
         self.llm = ChatGoogleGenerativeAI(
             model="gemini-2.0-flash",
             temperature=0,
             max_output_tokens=4096,
             google_api_key=os.environ.get("GOOGLE_API_KEY"),
-            timeout=55,  # HTTP-level timeout
+            # NOTE: timeout parameter doesn't work reliably, using asyncio.wait_for wrapper instead
         )
-        
+
         # Build prompt template
         self.prompt = ChatPromptTemplate.from_messages([
             ("system", SYSTEM_PROMPT),
             ("user", USER_PROMPT)
         ])
-        
+
         # In-memory cache
         self.cache: Dict[str, CleanedArticle] = {}
-        
+
         fact_logger.logger.info("ArticleContentCleaner initialized (gemini-2.0-flash)")
-    
+
     async def clean(
         self,
         url: str,
@@ -278,17 +280,17 @@ class ArticleContentCleaner:
     ) -> CleaningResult:
         """
         Clean scraped article content.
-        
+
         Args:
             url: Article URL (for context)
             content: Raw scraped content
             use_cache: Whether to use cached results
-            
+
         Returns:
             CleaningResult with cleaned article
         """
         from urllib.parse import urlparse
-        
+
         # Check cache
         if use_cache and url in self.cache:
             cached = self.cache[url]
@@ -299,7 +301,7 @@ class ArticleContentCleaner:
                 cleaned_length=len(cached.body),
                 reduction_percent=self._calc_reduction(len(content), len(cached.body))
             )
-        
+
         # Validate input
         if not content or len(content) < self.MIN_CONTENT_LENGTH:
             return CleaningResult(
@@ -307,7 +309,7 @@ class ArticleContentCleaner:
                 error="Content too short to clean",
                 original_length=len(content) if content else 0
             )
-        
+
         # Extract domain
         try:
             parsed = urlparse(url)
@@ -316,30 +318,52 @@ class ArticleContentCleaner:
                 domain = domain[4:]
         except Exception:
             domain = "unknown"
-        
+
         # Truncate if too long
         content_to_clean = content[:self.MAX_INPUT_LENGTH]
-        
+
         try:
             fact_logger.logger.info(
                 f"Cleaning article from {domain}",
                 extra={"url": url, "input_length": len(content)}
             )
-            
-            # Run AI cleaning
+
+            # Run AI cleaning with timeout wrapper
+            # Using synchronous invoke() due to ainvoke() issues with ChatGoogleGenerativeAI
+            # Wrap in asyncio.to_thread() to make it non-blocking
+            # See: https://github.com/langchain-ai/langchain-google/issues/357
             chain = self.prompt | self.llm
-            result = await chain.ainvoke({
-                "url": url,
-                "domain": domain,
-                "content": content_to_clean
-            })
-            
+
+            import asyncio
+
+            # Create a function that runs the sync invoke
+            def run_sync_invoke():
+                return chain.invoke({
+                    "url": url,
+                    "domain": domain,
+                    "content": content_to_clean
+                })
+
+            # Run with timeout (60 seconds)
+            try:
+                result = await asyncio.wait_for(
+                    asyncio.to_thread(run_sync_invoke),
+                    timeout=60.0
+                )
+            except asyncio.TimeoutError:
+                fact_logger.logger.error(f"[LOG] Gemini cleaning timed out after 60s for {domain}")
+                return CleaningResult(
+                    success=False,
+                    error="AI cleaning timed out",
+                    original_length=len(content)
+                )
+
             # Parse response - strip markdown fences if present
             raw_text = result.content.strip()
             raw_text = re.sub(r'^```(?:json)?\s*', '', raw_text)
             raw_text = re.sub(r'\s*```$', '', raw_text)
             extracted = json.loads(raw_text)
-            
+
             # Build cleaned article
             cleaned = CleanedArticle(
                 title=extracted.get('title'),
@@ -355,18 +379,18 @@ class ArticleContentCleaner:
                 is_truncated=extracted.get('is_truncated', False),
                 truncation_reason=extracted.get('truncation_reason')
             )
-            
+
             # Recalculate word count if not provided
             if cleaned.word_count == 0 and cleaned.body:
                 cleaned.word_count = len(cleaned.body.split())
-            
+
             # Cache result
             self.cache[url] = cleaned
-            
+
             # Calculate reduction
             cleaned_length = len(cleaned.body)
             reduction = self._calc_reduction(len(content), cleaned_length)
-            
+
             fact_logger.logger.info(
                 f"Cleaned article: {len(content)} -> {cleaned_length} chars ({reduction:.0f}% reduction)",
                 extra={
@@ -378,7 +402,7 @@ class ArticleContentCleaner:
                     "confidence": cleaned.cleaning_confidence
                 }
             )
-            
+
             return CleaningResult(
                 success=True,
                 cleaned=cleaned,
@@ -386,7 +410,7 @@ class ArticleContentCleaner:
                 cleaned_length=cleaned_length,
                 reduction_percent=reduction
             )
-            
+
         except json.JSONDecodeError as e:
             fact_logger.logger.error(f"[LOG] JSON parse error in cleaning: {e}")
             return CleaningResult(
@@ -401,13 +425,13 @@ class ArticleContentCleaner:
                 error=str(e),
                 original_length=len(content)
             )
-    
+
     def _calc_reduction(self, original: int, cleaned: int) -> float:
         """Calculate percentage reduction"""
         if original == 0:
             return 0.0
         return ((original - cleaned) / original) * 100
-    
+
     async def clean_batch(
         self,
         articles: Dict[str, str],
@@ -415,37 +439,37 @@ class ArticleContentCleaner:
     ) -> Dict[str, CleaningResult]:
         """
         Clean multiple articles.
-        
+
         Args:
             articles: Dict mapping URL to raw content
             use_cache: Whether to use cached results
-            
+
         Returns:
             Dict mapping URL to CleaningResult
         """
         import asyncio
-        
+
         results = {}
-        
+
         # Process in parallel with semaphore to limit concurrency
         semaphore = asyncio.Semaphore(5)  # Max 5 concurrent AI calls
-        
+
         async def clean_with_semaphore(url: str, content: str):
             async with semaphore:
                 return url, await self.clean(url, content, use_cache)
-        
+
         tasks = [
             clean_with_semaphore(url, content)
             for url, content in articles.items()
         ]
-        
+
         for coro in asyncio.as_completed(tasks):
             try:
                 url, result = await coro
                 results[url] = result
             except Exception as e:
                 fact_logger.logger.error(f"[LOG] Batch cleaning error: {e}")
-        
+
         return results
 
 
@@ -464,13 +488,13 @@ def get_article_cleaner(config=None) -> ArticleContentCleaner:
 
 if __name__ == "__main__":
     import asyncio
-    
+
     # Sample noisy content (like the Le Monde example)
     test_content = """
     Cet article vous est offert Pour lire gratuitement cet article reserve aux abonnes, connectez-vous Se connecter Vous n'etes pas inscrit sur Le Monde ? Inscrivez-vous gratuitement
-    
+
     # Plainte contre Thierry Mariani pour -> provocation -> la discrimination au logement ->
-    
+
     Thierry Mariani, depute europeen du Rassemblement national (RN) et candidat a la Mairie de Paris, devant le marche couvert des Batignolles, dans le 17 arrondissement de Paris, le 11 janvier 2026. KIRAN RIDLEY/AFP
 
     Thierry Mariani, candidat Rassemblement national (RN) a la Mairie de Paris et depute europeen, est vise par une plainte de l'association La Maison des potes pour " provocation a la discrimination au logement ", en raison de sa promesse de campagne d'instaurer la priorite nationale, a declare vendredi la plaignante a l'Agence France-Presse (AFP).
@@ -478,24 +502,24 @@ if __name__ == "__main__":
     L'association estime qu'avec cet argument Thierry Mariani " appelle explicitement tous ceux qui seront candidats sur sa liste " a " l'instauration d'une politique municipale fondee sur un critere de nationalite, lequel est prohibe par la loi ".
 
     Cette plainte, transmise au parquet de Paris recemment, mentionne le site Internet de la candidature de M. Mariani.
-    
+
     Lecture du Monde en cours sur un autre appareil.
     Vous pouvez lire Le Monde sur un seul appareil a la fois
     Continuer a lire ici
     Ce message s'affichera sur l'autre appareil.
-    
+
     Votre abonnement n'autorise pas la lecture de cet article
     Pour plus d'informations, merci de contacter notre service commercial.
     """
-    
+
     async def test():
         cleaner = ArticleContentCleaner()
-        
+
         result = await cleaner.clean(
             url="https://www.lemonde.fr/politique/article/2026/01/30/plainte-contre-thierry-mariani",
             content=test_content
         )
-        
+
         if result.success:
             print("[LOG] Cleaning successful!")
             print(f"\nTitle: {result.cleaned.title}")
@@ -509,5 +533,5 @@ if __name__ == "__main__":
             print(f"\nReduction: {result.original_length} -> {result.cleaned_length} ({result.reduction_percent:.0f}%)")
         else:
             print(f"[LOG] Failed: {result.error}")
-    
+
     asyncio.run(test())
