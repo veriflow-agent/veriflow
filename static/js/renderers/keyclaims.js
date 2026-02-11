@@ -17,7 +17,7 @@ function displayKeyClaimsResults() {
     const claims = data.key_claims || [];
     const summary = data.summary || {};
 
-    // ✅ Check for no claims found scenario FIRST
+    //  Check for no claims found scenario FIRST
     if (data.no_claims_found || claims.length === 0) {
         displayNoClaimsMessage(data);
         return;
@@ -109,7 +109,7 @@ function displayNoClaimsMessage(data) {
     if (keyClaimsContainer) {
         keyClaimsContainer.innerHTML = `
             <div class="no-claims-state">
-                <div class="no-claims-icon">📋</div>
+                <div class="no-claims-icon"></div>
                 <h3 class="no-claims-title">No Verifiable Claims Found</h3>
                 <p class="no-claims-message">${escapeHtml(message)}</p>
                 <div class="no-claims-reasons">
@@ -122,7 +122,7 @@ function displayNoClaimsMessage(data) {
                     </ul>
                 </div>
                 <div class="no-claims-suggestion">
-                    <p>💡 <strong>Tip:</strong> Try providing content that contains specific facts, statistics, quotes, or claims about events.</p>
+                    <p> <strong>Tip:</strong> Try providing content that contains specific facts, statistics, quotes, or claims about events.</p>
                 </div>
             </div>
         `;

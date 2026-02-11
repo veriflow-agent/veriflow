@@ -105,7 +105,7 @@ function displayManipulationResults() {
             const rightDiv = document.createElement('div');
             rightDiv.className = 'manipulation-got-right';
             rightDiv.innerHTML = `
-                <h4>✓ What the Article Got Right</h4>
+                <h4>What the Article Got Right</h4>
                 <ul>
                     ${gotRight.map(item => `<li>${escapeHtml(item)}</li>`).join('')}
                 </ul>
@@ -119,7 +119,7 @@ function displayManipulationResults() {
             const misleadingDiv = document.createElement('div');
             misleadingDiv.className = 'manipulation-misleading';
             misleadingDiv.innerHTML = `
-                <h4>⚠ Key Misleading Elements</h4>
+                <h4>Key Misleading Elements</h4>
                 <ul>
                     ${misleading.map(item => `<li>${escapeHtml(item)}</li>`).join('')}
                 </ul>
@@ -137,7 +137,7 @@ function displayManipulationResults() {
     if (recommendationElement && recommendation) {
         recommendationElement.innerHTML = `
             <div class="recommendation-box">
-                <strong>📋 Reader Recommendation:</strong>
+                <strong>Reader Recommendation:</strong>
                 <p>${escapeHtml(recommendation)}</p>
             </div>
         `;
@@ -267,8 +267,8 @@ function createManipulationFactCard(finding, number) {
             <span class="fact-number">#${number}</span>
             <span class="fact-id">${escapeHtml(finding.fact_id || '')}</span>
             ${isManipulated ? 
-                `<span class="severity-badge ${severityClass}">⚠ ${capitalizeFirst(severity)} Manipulation</span>` : 
-                `<span class="severity-badge severity-none">✓ No Manipulation</span>`
+                `<span class="severity-badge ${severityClass}">${capitalizeFirst(severity)} Manipulation</span>` : 
+                `<span class="severity-badge severity-none">No Manipulation</span>`
             }
         </div>
         <div class="fact-statement">
