@@ -34,11 +34,30 @@ function streamJobProgress(jobId, emoji = '', reconnectAttempts = 0) {
                 return;
             }
 
-            // Handle completion
+            // Handle completion - FIXED: fetch result from job endpoint
             if (data.status === 'completed') {
                 addProgress('Analysis complete');
                 eventSource.close();
-                resolve(data.result);
+
+                // SSE only sends status, not the full result
+                // Fetch the actual result from the job endpoint
+                fetch('/api/job/' + jobId)
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error('Failed to fetch job result');
+                        }
+                        return response.json();
+                    })
+                    .then(job => {
+                        if (job.result) {
+                            resolve(job.result);
+                        } else {
+                            reject(new Error('No result in completed job'));
+                        }
+                    })
+                    .catch(error => {
+                        reject(new Error('Failed to fetch job result: ' + error.message));
+                    });
                 return;
             }
 
@@ -130,7 +149,7 @@ async function fetchArticleFromUrl(url, options = {}) {
             throw new Error('No job ID returned from server');
         }
 
-        // Step 2: Stream progress via SSE (no timeout, consistent with all other endpoints)
+        // Step 2: Stream progress via SSE (fetches result when complete)
         const result = await streamJobProgress(jobId);
 
         // Store for later use -- even on scrape failure, we may have credibility data

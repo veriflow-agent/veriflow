@@ -520,7 +520,7 @@ if __name__ == "__main__":
             content=test_content
         )
 
-        if result.success:
+        if result.success and result.cleaned:
             print("[LOG] Cleaning successful!")
             print(f"\nTitle: {result.cleaned.title}")
             print(f"Author: {result.cleaned.author}")
