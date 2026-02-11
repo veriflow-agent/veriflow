@@ -515,7 +515,7 @@ function buildCredibilitySection(credibility) {
         html += `
             <div class="mbfc-link">
                 <a href="${escapeHtml(credibility.mbfc_url)}" target="_blank" rel="noopener">
-                    View MBFC Report â†’
+                    View MBFC Report’
                 </a>
             </div>
         `;
