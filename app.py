@@ -878,16 +878,41 @@ def get_job_status(job_id: str):
         raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
 
     # Build response - omit progress_log to keep payload smaller
+    result = job.get('result')
+
+    # DIAGNOSTIC: Log what we're returning
+    if result is not None:
+        fact_logger.logger.info(f"DIAGNOSTIC GET /api/job/{job_id}: result has {len(result)} keys: {list(result.keys())}")
+        for k in ['content_classification', 'source_verification', 'synthesis_report', 'mode_reports', 'mode_routing']:
+            v = result.get(k)
+            if v is None:
+                fact_logger.logger.info(f"  DIAGNOSTIC: result['{k}'] = None")
+            elif isinstance(v, dict):
+                fact_logger.logger.info(f"  DIAGNOSTIC: result['{k}'] = dict with {len(v)} keys: {list(v.keys())[:5]}")
+            elif isinstance(v, list):
+                fact_logger.logger.info(f"  DIAGNOSTIC: result['{k}'] = list with {len(v)} items")
+            else:
+                fact_logger.logger.info(f"  DIAGNOSTIC: result['{k}'] = {type(v).__name__}: {str(v)[:80]}")
+    else:
+        fact_logger.logger.info(f"DIAGNOSTIC GET /api/job/{job_id}: result is None, status={job.get('status')}")
+
     response_data = {
         "job_id": job_id,
         "status": job.get('status', 'unknown'),
-        "result": job.get('result'),
+        "result": result,
         "error": job.get('error')
     }
 
     # Use json.dumps with _safe_json to handle datetime/Pydantic/set/bytes
     try:
         json_str = json.dumps(response_data, default=_safe_json)
+        fact_logger.logger.info(f"DIAGNOSTIC: Serialized JSON size: {len(json_str)} bytes")
+        # Log a sample to verify content_classification is in the output
+        if 'content_classification' in json_str:
+            idx = json_str.index('content_classification')
+            fact_logger.logger.info(f"DIAGNOSTIC: content_classification excerpt: ...{json_str[idx:idx+200]}...")
+        else:
+            fact_logger.logger.info("DIAGNOSTIC: 'content_classification' NOT FOUND in serialized JSON")
         return Response(json_str, mimetype='application/json')
     except Exception as e:
         fact_logger.logger.error(f"Job result serialization failed: {e}")

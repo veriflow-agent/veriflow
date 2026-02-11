@@ -859,6 +859,18 @@ class ComprehensiveOrchestrator:
             }
 
             # Complete the job
+            # DIAGNOSTIC: Log what we're storing
+            fact_logger.logger.info("DIAGNOSTIC: Final result structure before complete_job:")
+            for k, v in final_result.items():
+                if v is None:
+                    fact_logger.logger.info(f"  DIAGNOSTIC: {k} = None")
+                elif isinstance(v, dict):
+                    fact_logger.logger.info(f"  DIAGNOSTIC: {k} = dict with {len(v)} keys: {list(v.keys())[:5]}")
+                elif isinstance(v, list):
+                    fact_logger.logger.info(f"  DIAGNOSTIC: {k} = list with {len(v)} items")
+                else:
+                    fact_logger.logger.info(f"  DIAGNOSTIC: {k} = {type(v).__name__}: {str(v)[:100]}")
+
             job_manager.complete_job(job_id, final_result)
 
             fact_logger.logger.info(
