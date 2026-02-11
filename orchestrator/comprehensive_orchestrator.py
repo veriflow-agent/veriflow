@@ -231,6 +231,11 @@ class ComprehensiveOrchestrator:
 
             metadata_blocks.append(cc_block)
 
+            # Send partial result for real-time UI update
+            job_manager.add_progress(job_id, "Content classification complete", details={
+                "partial_result": {"content_classification": content_classification_data}
+            })
+
             # -----------------------------------------------------------------
             # Step 1b: Source Verification
             # -----------------------------------------------------------------
@@ -284,6 +289,11 @@ class ComprehensiveOrchestrator:
 
             metadata_blocks.append(sv_block)
 
+            # Send partial result for real-time UI update
+            job_manager.add_progress(job_id, "Source verification complete", details={
+                "partial_result": {"source_verification": source_verification_data}
+            })
+
             # -----------------------------------------------------------------
             # Step 1c: (Future checks go here)
             # Each new check:
@@ -323,6 +333,11 @@ class ComprehensiveOrchestrator:
                     "excluded_modes": [],
                     "routing_reasoning": "Default selection due to routing error"
                 }
+
+            # Send partial result
+            job_manager.add_progress(job_id, "Mode routing complete", details={
+                "partial_result": {"mode_routing": mode_routing}
+            })
 
             return {
                 # The new scalable path
@@ -372,7 +387,8 @@ class ComprehensiveOrchestrator:
                     text_content=content,
                     job_id=job_id,
                     source_context=source_context,
-                    source_credibility=source_credibility
+                    source_credibility=source_credibility,
+                    standalone=False  # Prevent overwriting comprehensive result
                 )
                 return (mode_id, result, None)
 
@@ -384,7 +400,8 @@ class ComprehensiveOrchestrator:
                     text=content,
                     publication_name=publication_name,
                     source_credibility=source_credibility if source_credibility else None,
-                    job_id=job_id
+                    job_id=job_id,
+                    standalone=False  # Prevent overwriting comprehensive result
                 )
                 return (mode_id, result, None)
 
@@ -395,7 +412,8 @@ class ComprehensiveOrchestrator:
                     content=content,
                     job_id=job_id,
                     source_info=source_credibility.get("domain", "Unknown"),
-                    source_credibility=source_credibility if source_credibility else None
+                    source_credibility=source_credibility if source_credibility else None,
+                    standalone=False  # Prevent overwriting comprehensive result
                 )
                 return (mode_id, result, None)
 
@@ -405,7 +423,8 @@ class ComprehensiveOrchestrator:
                 result = await orchestrator.process_with_progress(
                     text=content,
                     job_id=job_id,
-                    source_credibility=source_credibility if source_credibility else None
+                    source_credibility=source_credibility if source_credibility else None,
+                    standalone=False  # Prevent overwriting comprehensive result
                 )
                 return (mode_id, result, None)
 
@@ -859,18 +878,6 @@ class ComprehensiveOrchestrator:
             }
 
             # Complete the job
-            # DIAGNOSTIC: Log what we're storing
-            fact_logger.logger.info("DIAGNOSTIC: Final result structure before complete_job:")
-            for k, v in final_result.items():
-                if v is None:
-                    fact_logger.logger.info(f"  DIAGNOSTIC: {k} = None")
-                elif isinstance(v, dict):
-                    fact_logger.logger.info(f"  DIAGNOSTIC: {k} = dict with {len(v)} keys: {list(v.keys())[:5]}")
-                elif isinstance(v, list):
-                    fact_logger.logger.info(f"  DIAGNOSTIC: {k} = list with {len(v)} items")
-                else:
-                    fact_logger.logger.info(f"  DIAGNOSTIC: {k} = {type(v).__name__}: {str(v)[:100]}")
-
             job_manager.complete_job(job_id, final_result)
 
             fact_logger.logger.info(
