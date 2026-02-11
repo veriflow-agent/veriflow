@@ -28,8 +28,11 @@ from typing import Optional, Dict, Any
 from pydantic import BaseModel, Field
 import json
 
+import os
+import re
+
 from langchain.prompts import ChatPromptTemplate
-from langchain_openai import ChatOpenAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 
 from utils.logger import fact_logger
 
@@ -235,7 +238,7 @@ class ArticleContentCleaner:
     """
     
     # Processing limits
-    MAX_INPUT_LENGTH = 50000  # Max chars to send to AI
+    MAX_INPUT_LENGTH = 100000  # Max chars to send to AI (~1M token context)
     MIN_CONTENT_LENGTH = 100  # Min chars to attempt cleaning
     
     def __init__(self, config=None):
@@ -247,12 +250,14 @@ class ArticleContentCleaner:
         """
         self.config = config
         
-        # Initialize LLM - using gpt-4o-mini for speed and cost
-        self.llm = ChatOpenAI(
-            model="gpt-4o-mini",
+        # Initialize LLM - Gemini 2.0 Flash: 1M context, fast, cheap
+        self.llm = ChatGoogleGenerativeAI(
+            model="gemini-2.0-flash",
             temperature=0,
-            max_tokens=8000  # Allow for longer cleaned articles
-        ).bind(response_format={"type": "json_object"})
+            max_output_tokens=4096,
+            google_api_key=os.environ.get("GOOGLE_API_KEY"),
+            timeout=55,  # HTTP-level timeout
+        )
         
         # Build prompt template
         self.prompt = ChatPromptTemplate.from_messages([
@@ -263,7 +268,7 @@ class ArticleContentCleaner:
         # In-memory cache
         self.cache: Dict[str, CleanedArticle] = {}
         
-        fact_logger.logger.info("✅ ArticleContentCleaner initialized")
+        fact_logger.logger.info("ArticleContentCleaner initialized (gemini-2.0-flash)")
     
     async def clean(
         self,
@@ -317,7 +322,7 @@ class ArticleContentCleaner:
         
         try:
             fact_logger.logger.info(
-                f"🧹 Cleaning article from {domain}",
+                f"Cleaning article from {domain}",
                 extra={"url": url, "input_length": len(content)}
             )
             
@@ -329,8 +334,11 @@ class ArticleContentCleaner:
                 "content": content_to_clean
             })
             
-            # Parse response
-            extracted = json.loads(result.content)
+            # Parse response - strip markdown fences if present
+            raw_text = result.content.strip()
+            raw_text = re.sub(r'^```(?:json)?\s*', '', raw_text)
+            raw_text = re.sub(r'\s*```$', '', raw_text)
+            extracted = json.loads(raw_text)
             
             # Build cleaned article
             cleaned = CleanedArticle(
@@ -360,7 +368,7 @@ class ArticleContentCleaner:
             reduction = self._calc_reduction(len(content), cleaned_length)
             
             fact_logger.logger.info(
-                f"✅ Cleaned article: {len(content)} → {cleaned_length} chars ({reduction:.0f}% reduction)",
+                f"Cleaned article: {len(content)} -> {cleaned_length} chars ({reduction:.0f}% reduction)",
                 extra={
                     "url": url,
                     "original_length": len(content),
@@ -380,14 +388,14 @@ class ArticleContentCleaner:
             )
             
         except json.JSONDecodeError as e:
-            fact_logger.logger.error(f"❌ JSON parse error in cleaning: {e}")
+            fact_logger.logger.error(f"[LOG] JSON parse error in cleaning: {e}")
             return CleaningResult(
                 success=False,
                 error=f"Failed to parse AI response: {e}",
                 original_length=len(content)
             )
         except Exception as e:
-            fact_logger.logger.error(f"❌ Article cleaning failed: {e}")
+            fact_logger.logger.error(f"[LOG] Article cleaning failed: {e}")
             return CleaningResult(
                 success=False,
                 error=str(e),
@@ -436,7 +444,7 @@ class ArticleContentCleaner:
                 url, result = await coro
                 results[url] = result
             except Exception as e:
-                fact_logger.logger.error(f"❌ Batch cleaning error: {e}")
+                fact_logger.logger.error(f"[LOG] Batch cleaning error: {e}")
         
         return results
 
@@ -459,21 +467,21 @@ if __name__ == "__main__":
     
     # Sample noisy content (like the Le Monde example)
     test_content = """
-    Cet article vous est offert Pour lire gratuitement cet article réservé aux abonnés, connectez-vous Se connecter Vous n'êtes pas inscrit sur Le Monde ? Inscrivez-vous gratuitement
+    Cet article vous est offert Pour lire gratuitement cet article reserve aux abonnes, connectez-vous Se connecter Vous n'etes pas inscrit sur Le Monde ? Inscrivez-vous gratuitement
     
-    # Plainte contre Thierry Mariani pour « provocation à la discrimination au logement »
+    # Plainte contre Thierry Mariani pour -> provocation -> la discrimination au logement ->
     
-    Thierry Mariani, député européen du Rassemblement national (RN) et candidat à la Mairie de Paris, devant le marché couvert des Batignolles, dans le 17ᵉ arrondissement de Paris, le 11 janvier 2026. KIRAN RIDLEY/AFP
+    Thierry Mariani, depute europeen du Rassemblement national (RN) et candidat a la Mairie de Paris, devant le marche couvert des Batignolles, dans le 17 arrondissement de Paris, le 11 janvier 2026. KIRAN RIDLEY/AFP
 
-    Thierry Mariani, candidat Rassemblement national (RN) à la Mairie de Paris et député européen, est visé par une plainte de l'association La Maison des potes pour « provocation à la discrimination au logement », en raison de sa promesse de campagne d'instaurer la priorité nationale, a déclaré vendredi la plaignante à l'Agence France-Presse (AFP).
+    Thierry Mariani, candidat Rassemblement national (RN) a la Mairie de Paris et depute europeen, est vise par une plainte de l'association La Maison des potes pour " provocation a la discrimination au logement ", en raison de sa promesse de campagne d'instaurer la priorite nationale, a declare vendredi la plaignante a l'Agence France-Presse (AFP).
 
-    L'association estime qu'avec cet argument Thierry Mariani « appelle explicitement tous ceux qui seront candidats sur sa liste » à « l'instauration d'une politique municipale fondée sur un critère de nationalité, lequel est prohibé par la loi ».
+    L'association estime qu'avec cet argument Thierry Mariani " appelle explicitement tous ceux qui seront candidats sur sa liste " a " l'instauration d'une politique municipale fondee sur un critere de nationalite, lequel est prohibe par la loi ".
 
-    Cette plainte, transmise au parquet de Paris récemment, mentionne le site Internet de la candidature de M. Mariani.
+    Cette plainte, transmise au parquet de Paris recemment, mentionne le site Internet de la candidature de M. Mariani.
     
     Lecture du Monde en cours sur un autre appareil.
-    Vous pouvez lire Le Monde sur un seul appareil à la fois
-    Continuer à lire ici
+    Vous pouvez lire Le Monde sur un seul appareil a la fois
+    Continuer a lire ici
     Ce message s'affichera sur l'autre appareil.
     
     Votre abonnement n'autorise pas la lecture de cet article
@@ -489,7 +497,7 @@ if __name__ == "__main__":
         )
         
         if result.success:
-            print("✅ Cleaning successful!")
+            print("[LOG] Cleaning successful!")
             print(f"\nTitle: {result.cleaned.title}")
             print(f"Author: {result.cleaned.author}")
             print(f"Date: {result.cleaned.publication_date}")
@@ -498,8 +506,8 @@ if __name__ == "__main__":
             print(f"\nNoise removed: {result.cleaned.noise_removed}")
             print(f"Truncated: {result.cleaned.is_truncated}")
             print(f"Confidence: {result.cleaned.cleaning_confidence}")
-            print(f"\nReduction: {result.original_length} → {result.cleaned_length} ({result.reduction_percent:.0f}%)")
+            print(f"\nReduction: {result.original_length} -> {result.cleaned_length} ({result.reduction_percent:.0f}%)")
         else:
-            print(f"❌ Failed: {result.error}")
+            print(f"[LOG] Failed: {result.error}")
     
     asyncio.run(test())

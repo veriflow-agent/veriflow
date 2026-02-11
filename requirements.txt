@@ -8,6 +8,8 @@ langchain>=0.3.0,<0.4.0
 # LangChain OpenAI Integration - Version 0.3.x  
 langchain-openai>=0.3.0,<0.4.0
 
+langchain-google-genai>=2.0.0
+
 # LangChain Anthropic Integration - Version 0.3.x
 langchain-anthropic>=0.3.0,<0.4.0
 

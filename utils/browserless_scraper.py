@@ -50,7 +50,7 @@ try:
     ArticleContentCleaner = _ArticleContentCleaner
     CONTENT_CLEANER_AVAILABLE = True
 except ImportError:
-    fact_logger.logger.info("ArticleContentCleaner not available, using basic cleaning only")
+    fact_logger.logger.info("[LOG] ArticleContentCleaner not available, using basic cleaning only")
 
 
 # NEW: ScrapingBee fallback for 401/403 blocked sites (Imperva, Reuters, etc.)
@@ -285,10 +285,10 @@ class BrowserlessScraper:
         }
 
         if self.browserless_endpoint:
-            fact_logger.logger.info(f"Railway Browserless endpoint configured: {self.browserless_endpoint[:50]}...")
-            fact_logger.logger.info(f"Running on replica: {self.replica_id}")
+            fact_logger.logger.info(f"[LOG] Railway Browserless endpoint configured: {self.browserless_endpoint[:50]}...")
+            fact_logger.logger.info(f"[LOG] Running on replica: {self.replica_id}")
         else:
-            fact_logger.logger.info("Local Playwright mode")
+            fact_logger.logger.info("[LOG] Local Playwright mode")
 
         fact_logger.log_component_start(
             "BrowserlessScraper",
@@ -303,7 +303,7 @@ class BrowserlessScraper:
         if self._content_cleaner is None and CONTENT_CLEANER_AVAILABLE and ArticleContentCleaner is not None:
             try:
                 self._content_cleaner = ArticleContentCleaner(self.config)
-                fact_logger.logger.info("AI content cleaner initialized")
+                fact_logger.logger.info("[LOG] AI content cleaner initialized")
             except Exception as e:
                 fact_logger.logger.warning(f"Failed to initialize content cleaner: {e}")
         return self._content_cleaner
@@ -412,7 +412,7 @@ class BrowserlessScraper:
 
             if len(self.browser_pool) < target_count:
                 browsers_needed = target_count - len(self.browser_pool)
-                fact_logger.logger.info(f"Initializing {browsers_needed} browsers in parallel...")
+                fact_logger.logger.info(f"[LOG] Initializing {browsers_needed} browsers in parallel...")
 
                 start = time.time()
                 self.playwright = await async_playwright().start()
@@ -462,7 +462,7 @@ class BrowserlessScraper:
                     ws_endpoint,
                     timeout=self.browser_launch_timeout
                 )
-                fact_logger.logger.debug(f"Connected to Railway browser {browser_index}")
+                fact_logger.logger.debug(f"[LOG] Connected to Railway browser {browser_index}")
             else:
                 # Local Playwright
                 browser = await self.playwright.chromium.launch(
@@ -474,12 +474,12 @@ class BrowserlessScraper:
                         '--disable-dev-shm-usage',
                     ]
                 )
-                fact_logger.logger.debug(f"Launched local browser {browser_index}")
+                fact_logger.logger.debug(f"[LOG] Launched local browser {browser_index}")
 
             return browser
 
         except Exception as e:
-            fact_logger.logger.error(f"Failed to create browser {browser_index}: {e}")
+            fact_logger.logger.error(f"[LOG] Failed to create browser {browser_index}: {e}")
             return None
 
     async def _scrape_with_semaphore(self, semaphore: asyncio.Semaphore, url: str, browser_index: int) -> str:
@@ -718,7 +718,7 @@ class BrowserlessScraper:
                 if cleaner is not None:
                     cleaning_result = await asyncio.wait_for(
                         cleaner.clean(url, content),
-                        timeout=30.0
+                        timeout=60.0
                     )
 
                     if (cleaning_result.success
@@ -738,7 +738,7 @@ class BrowserlessScraper:
             except asyncio.TimeoutError:
                 self.stats["ai_cleaning_failed"] += 1
                 fact_logger.logger.warning(
-                    f"AI cleaning timed out (30s) for {url}, using regex-cleaned text"
+                    f"AI cleaning timed out (60s) for {url}, using regex-cleaned text"
                 )
             except Exception as e:
                 self.stats["ai_cleaning_failed"] += 1
@@ -1173,7 +1173,7 @@ class BrowserlessScraper:
                     if element:
                         is_visible = await element.is_visible()
                         if is_visible:
-                            fact_logger.logger.warning(f"Paywall detected: {selector}")
+                            fact_logger.logger.warning(f"[LOG] Paywall detected: {selector}")
                             return True
                 except Exception:
                     continue
@@ -1186,7 +1186,7 @@ class BrowserlessScraper:
                     body_lower = body_text.lower()
                     for keyword in paywall_keywords:
                         if keyword in body_lower:
-                            fact_logger.logger.warning(f"Likely paywall (short content with '{keyword}')")
+                            fact_logger.logger.warning(f"[LOG] Likely paywall (short content with '{keyword}')")
                             return True
             except Exception:
                 pass
@@ -1300,7 +1300,7 @@ class BrowserlessScraper:
 
                             // Score based on content quality
                             const headingCount = (structuredText.match(/^#+\\s/gm) || []).length;
-                            const paragraphCount = (structuredText.match(/\\n[^\\n#-].+\\n/g) || []).length;
+                            const paragraphCount = (structuredText.match(/\\n[^\\n#\-].+\\n/g) || []).length;
                             const wordCount = structuredText.split(/\\s+/).filter(w => w.length > 0).length;
 
                             let score = 0;
@@ -1329,7 +1329,7 @@ class BrowserlessScraper:
             return content
 
         except Exception as e:
-            fact_logger.logger.error(f"Structure extraction error: {e}")
+            fact_logger.logger.error(f"[LOG] Structure extraction error: {e}")
             return ""
 
     def _clean_content(self, content: str) -> str:
@@ -1389,13 +1389,13 @@ class BrowserlessScraper:
 
     async def close(self):
         """Properly close browser pool and cleanup"""
-        fact_logger.logger.info("Shutting down scraper...")
+        fact_logger.logger.info("[LOG] Shutting down scraper...")
 
         # Close all contexts
         for i, context in enumerate(self.context_pool):
             try:
                 await context.close()
-                fact_logger.logger.debug(f"Closed context {i}")
+                fact_logger.logger.debug(f"[LOG] Closed context {i}")
             except Exception as e:
                 fact_logger.logger.debug(f"Context close error (non-critical): {e}")
 
@@ -1403,7 +1403,7 @@ class BrowserlessScraper:
         for i, browser in enumerate(self.browser_pool):
             try:
                 await browser.close()
-                fact_logger.logger.debug(f"Closed browser {i}")
+                fact_logger.logger.debug(f"[LOG] Closed browser {i}")
             except Exception as e:
                 fact_logger.logger.debug(f"Browser close error (non-critical): {e}")
 
@@ -1411,7 +1411,7 @@ class BrowserlessScraper:
         if self.playwright:
             try:
                 await self.playwright.stop()
-                fact_logger.logger.debug("Playwright stopped")
+                fact_logger.logger.debug("[LOG] Playwright stopped")
             except Exception as e:
                 fact_logger.logger.debug(f"Playwright stop error (non-critical): {e}")
 
@@ -1428,7 +1428,7 @@ class BrowserlessScraper:
             )
 
             # Strategy stats
-            fact_logger.logger.info("Strategy performance:")
+            fact_logger.logger.info("[LOG] Strategy performance:")
             for strategy, usage in self.stats["strategy_usage"].items():
                 if usage > 0:
                     success = self.stats["strategy_success"].get(strategy, 0)
@@ -1463,4 +1463,4 @@ class BrowserlessScraper:
         except Exception as e:
             fact_logger.logger.debug(f"Could not retrieve Supabase stats on shutdown: {e}")
 
-        fact_logger.logger.info("Scraper shutdown complete")
+        fact_logger.logger.info("[LOG] Scraper shutdown complete")
