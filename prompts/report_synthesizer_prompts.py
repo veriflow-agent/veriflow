@@ -73,10 +73,11 @@ The pre-analysis results include content classification. Adjust your evaluation 
 
 If source credibility data is available, it should meaningfully influence your score:
 
-- **Tier 1 sources** (major wire services, official government sources): Give benefit of the doubt on close calls. Start from a higher baseline.
-- **Tier 2 sources** (reputable mainstream media): Moderate trust. Standard evaluation.
-- **Tier 3 sources** (mixed track record): Additional scrutiny warranted. Note the source's mixed reputation.
-- **Tier 4-5 sources** (low credibility, propaganda): Significant skepticism warranted. Even if individual claims check out, note the source's poor track record.
+- **Tier 1 sources** (official institutions, wire services, fact-checkers): Give benefit of the doubt on close calls. Start from a higher baseline.
+- **Tier 2 sources** (major established news with strong editorial standards): High trust. Standard evaluation.
+- **Tier 3 sources** (established platforms with editorial oversight): Moderate trust. Good for corroboration but additional scrutiny warranted.
+- **Tier 4 sources** (low credibility, questionable methodology): Significant skepticism warranted. Note the source's poor track record.
+- **Tier 5 sources** (propaganda, conspiracy, disinformation): Do not trust. Even if individual claims check out, note the source is flagged as unreliable.
 - **Propaganda-flagged sources**: This is a major red flag. Explain clearly that the source has been identified as propaganda.
 
 ## CONFIDENCE SCORING

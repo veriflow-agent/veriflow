@@ -121,7 +121,14 @@ IMPORTANT GUIDELINES:
 2. For bias_score, look for numbers in parentheses like "(-3.4)" and extract as float
 3. For factual_score, look for numbers like "(1.0)" near factual reporting
 4. failed_fact_checks should be a list - if "None in the Last 5 years", return empty list []
-5. special_tags should include any warning labels like "Questionable Source", "Conspiracy-Pseudoscience", "Satire", etc.
+5. special_tags: Extract ONLY from these two specific locations on the page:
+   a) The CATEGORY HEADING that appears between the subtitle and the Detailed Report section.
+      Valid categories: "Questionable Source", "Conspiracy-Pseudoscience", "Satire", "Pro-Science"
+      (Do NOT include bias categories like "Left-Center Bias" or "Right Bias" as special tags)
+   b) The "Questionable Reasoning:" field inside the Detailed Report section.
+      If this field contains "Propaganda", "Conspiracy", or "Pseudoscience", include those as tags.
+   CRITICAL: Do NOT extract tags from sidebar navigation, category menus, "See all" links,
+   methodology descriptions, or any other part of the page.
 6. If a field is not found, use null
 
 RAW PAGE CONTENT:
@@ -569,7 +576,7 @@ class MBFCScraper:
             data = {}
 
             # Publication name
-            title_match = re.search(r'^([^–\-\n]+?)(?:\s*[–\-]\s*Bias)', page_content, re.MULTILINE)
+            title_match = re.search(r'^([^â€“\-\n]+?)(?:\s*[â€“\-]\s*Bias)', page_content, re.MULTILINE)
             if title_match:
                 data['publication_name'] = title_match.group(1).strip()
             else:
@@ -624,11 +631,51 @@ class MBFCScraper:
             # Failed fact checks
             data['failed_fact_checks'] = []
 
-            # Special tags
+            # Special tags - extract from structured MBFC page fields only
             special_tags = []
-            for pattern in ['Questionable Source', 'Conspiracy-Pseudoscience', 'Satire', 'Pro-Science', 'Propaganda']:
-                if re.search(pattern, page_content, re.IGNORECASE):
-                    special_tags.append(pattern)
+
+            # 1. Extract category heading (e.g., "QUESTIONABLE SOURCE", "CONSPIRACY-PSEUDOSCIENCE")
+            #    These appear as section headings between the subtitle and the Detailed Report
+            category_patterns = [
+                r'##\s*(QUESTIONABLE\s+SOURCE)',
+                r'##\s*(CONSPIRACY.?PSEUDOSCIENCE)',
+                r'##\s*(SATIRE)',
+                r'##\s*(PRO.?SCIENCE)',
+            ]
+            for pattern in category_patterns:
+                match = re.search(pattern, page_content, re.IGNORECASE)
+                if match:
+                    raw = match.group(1).strip()
+                    # Normalize the tag name
+                    normalized = raw.upper()
+                    if 'QUESTIONABLE' in normalized:
+                        special_tags.append('Questionable Source')
+                    elif 'CONSPIRACY' in normalized:
+                        special_tags.append('Conspiracy-Pseudoscience')
+                    elif 'SATIRE' in normalized:
+                        special_tags.append('Satire')
+                    elif 'SCIENCE' in normalized:
+                        special_tags.append('Pro-Science')
+
+            # 2. Extract "Questionable Reasoning:" field from Detailed Report
+            #    Format: "Questionable Reasoning: Imposter, Propaganda, Conspiracy, ..."
+            reasoning_match = re.search(
+                r'Questionable\s+Reasoning:\s*\*{0,2}\s*(.+?)(?:\*{0,2}\s*(?:Bias\s+Rating|$))',
+                page_content, re.IGNORECASE | re.DOTALL
+            )
+            if reasoning_match:
+                reasoning_text = reasoning_match.group(1).strip().strip('*').strip()
+                reasoning_items = [item.strip() for item in reasoning_text.split(',')]
+                # Check for specific propaganda/conspiracy flags in the reasoning field
+                for item in reasoning_items:
+                    item_lower = item.lower()
+                    if 'propaganda' in item_lower and 'Propaganda' not in special_tags:
+                        special_tags.append('Propaganda')
+                    if 'conspiracy' in item_lower and 'Conspiracy-Pseudoscience' not in special_tags:
+                        special_tags.append('Conspiracy-Pseudoscience')
+                    if 'pseudoscience' in item_lower and 'Conspiracy-Pseudoscience' not in special_tags:
+                        special_tags.append('Conspiracy-Pseudoscience')
+
             data['special_tags'] = special_tags
 
             if data.get('publication_name') and (data.get('bias_rating') or data.get('factual_reporting')):

@@ -107,7 +107,7 @@ Return ONLY valid JSON with 'name' and 'type' fields."""),
             self.name_cache[cache_key] = f"{name}:::{source_type}"
 
             fact_logger.logger.debug(
-                f"✅ Extracted source name: {name}",
+                f"Extracted source name: {name}",
                 extra={"url": url, "title": title[:100], "extracted_name": name}
             )
 
@@ -115,7 +115,7 @@ Return ONLY valid JSON with 'name' and 'type' fields."""),
 
         except Exception as e:
             fact_logger.logger.warning(
-                f"⚠️ Name extraction failed, using fallback: {e}",
+                f"Name extraction failed, using fallback: {e}",
                 extra={"url": url, "error": str(e)}
             )
             return self._fallback_name(url), "Website"
@@ -198,7 +198,7 @@ Return ONLY valid JSON with 'name' and 'type' fields."""),
             return name
 
         except Exception as e:
-            fact_logger.logger.error(f"❌ Fallback name extraction failed: {e}")
+            fact_logger.logger.error(f"Fallback name extraction failed: {e}")
             return url[:50]  # Last resort
 
 

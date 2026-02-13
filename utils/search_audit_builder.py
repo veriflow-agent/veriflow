@@ -58,7 +58,7 @@ def build_query_audit(
     
     # DEFENSIVE: Handle None or unexpected brave_results
     if brave_results is None:
-        fact_logger.logger.warning(f"⚠️ brave_results is None for query: {query}")
+        fact_logger.logger.warning(f" brave_results is None for query: {query}")
         return QueryAudit(
             query=query,
             query_type=query_type,
@@ -83,7 +83,7 @@ def build_query_audit(
     # Ensure it's a list
     if not isinstance(results_list, list):
         fact_logger.logger.warning(
-            f"⚠️ results_list is {type(results_list).__name__}, expected list"
+            f"results_list is {type(results_list).__name__}, expected list"
         )
         results_list = []
     
@@ -94,7 +94,7 @@ def build_query_audit(
             raw_results.append(raw)
         except Exception as e:
             fact_logger.logger.warning(
-                f"⚠️ Failed to create raw search result at position {i}: {e}"
+                f"Failed to create raw search result at position {i}: {e}"
             )
             # Create a minimal result to avoid losing data
             raw_results.append(RawSearchResult(
@@ -211,8 +211,8 @@ def build_fact_search_audit(
                 query_origin = url_to_query.get(eval_url, "") if eval_url else ""
                 tier_lower = eval_tier.lower() if isinstance(eval_tier, str) else ""
                 
-                # Determine if credible (Tier 1 or Tier 2, score >= 0.70)
-                is_credible = eval_score >= 0.70 and eval_recommended
+                # Determine if credible (Tiers 1-3, score >= 0.65)
+                is_credible = eval_score >= 0.65 and eval_recommended
                 
                 if is_credible:
                     # Credible source
@@ -235,17 +235,22 @@ def build_fact_search_audit(
                     # Update tier counts
                     if "tier 1" in tier_lower:
                         fact_audit.tier1_count += 1
-                    else:
+                    elif "tier 2" in tier_lower:
                         fact_audit.tier2_count += 1
+                    else:
+                        fact_audit.tier3_count += 1
                 else:
-                    # Filtered source
+                    # Filtered source (Tier 4-5)
                     filtered = create_filtered_source(evaluation, query_origin)
                     fact_audit.filtered_sources.append(filtered)
-                    fact_audit.tier3_filtered_count += 1
+                    if "tier 5" in tier_lower or eval_score < 0.30:
+                        fact_audit.tier5_filtered_count += 1
+                    else:
+                        fact_audit.tier4_filtered_count += 1
                     
             except Exception as e:
                 fact_logger.logger.warning(
-                    f"⚠️ Failed to process credibility evaluation: {e}"
+                    f"Failed to process credibility evaluation: {e}"
                 )
                 continue
     
@@ -306,7 +311,7 @@ def save_search_audit(
         )
         
         fact_logger.logger.info(
-            f"📋 Saved search audit: {filename}",
+            f"Saved search audit: {filename}",
             extra={
                 "session_id": session_id,
                 "total_facts": session_audit.total_facts,
@@ -318,7 +323,7 @@ def save_search_audit(
         
     except Exception as e:
         fact_logger.logger.error(
-            f"❌ Failed to save search audit: {e}",
+            f"Failed to save search audit: {e}",
             extra={"session_id": session_id, "error": str(e)}
         )
         raise
@@ -376,7 +381,7 @@ async def upload_search_audit_to_r2(
             
             if url:
                 fact_logger.logger.info(
-                    f"☁️ Uploaded search audit to R2: {r2_filename}"
+                    f"Uploaded search audit to R2: {r2_filename}"
                 )
             
             return url
@@ -387,7 +392,7 @@ async def upload_search_audit_to_r2(
             
     except Exception as e:
         fact_logger.logger.error(
-            f"❌ Failed to upload search audit to R2: {e}",
+            f"Failed to upload search audit to R2: {e}",
             extra={"session_id": session_id, "error": str(e)}
         )
         return None

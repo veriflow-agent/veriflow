@@ -3,7 +3,7 @@
 Web Search Orchestrator - WITH FULL PARALLEL PROCESSING
 Coordinates web search-based fact verification pipeline for text without links
 
-✅ OPTIMIZED: Full parallel processing for all stages
+ OPTIMIZED: Full parallel processing for all stages
    - Parallel query generation
    - Parallel web searches (paid Brave account)
    - Parallel credibility filtering
@@ -13,11 +13,11 @@ Coordinates web search-based fact verification pipeline for text without links
 
 Pipeline:
 1. Extract facts from plain text (with country/language detection)
-2. Generate search queries for each fact (✅ PARALLEL)
-3. Execute web searches via Brave (✅ PARALLEL)
-4. Filter results by source credibility (✅ PARALLEL)
-5. Scrape credible sources (✅ PARALLEL - batch mode)
-6. Verify facts against sources (✅ PARALLEL)
+2. Generate search queries for each fact ( PARALLEL)
+3. Execute web searches via Brave ( PARALLEL)
+4. Filter results by source credibility ( PARALLEL)
+5. Scrape credible sources ( PARALLEL - batch mode)
+6. Verify facts against sources ( PARALLEL)
 7. Save comprehensive search audit
 """
 
@@ -57,7 +57,7 @@ class WebSearchOrchestrator:
     For plain text input without provided sources
     Supports multi-language queries for non-English content
 
-    ✅ OPTIMIZED: Uses parallel processing for all fact operations
+     OPTIMIZED: Uses parallel processing for all fact operations
     """
 
     def __init__(self, config):
@@ -81,11 +81,11 @@ class WebSearchOrchestrator:
             from utils.r2_uploader import R2Uploader
             self.r2_uploader = R2Uploader()
             self.r2_enabled = True
-            fact_logger.logger.info("✅ R2 uploader initialized for search audits")
+            fact_logger.logger.info("R2 uploader initialized for search audits")
         except Exception as e:
             self.r2_enabled = False
             self.r2_uploader = None
-            fact_logger.logger.warning(f"⚠️ R2 not available for audits: {e}")
+            fact_logger.logger.warning(f"R2 not available for audits: {e}")
 
         fact_logger.log_component_start(
             "WebSearchOrchestrator",
@@ -134,7 +134,7 @@ class WebSearchOrchestrator:
         """
         Process with full parallel processing and search audit
 
-        ✅ OPTIMIZED: All fact operations run in parallel
+         OPTIMIZED: All fact operations run in parallel
         """
         session_id = self.file_manager.create_session()
         start_time = time.time()
@@ -147,7 +147,7 @@ class WebSearchOrchestrator:
             # ================================================================
             # STAGE 1: Extract Facts (Sequential - single LLM call)
             # ================================================================
-            job_manager.add_progress(job_id, "📄 Extracting facts from text...")
+            job_manager.add_progress(job_id, "Extracting facts from text...")
             self._check_cancellation(job_id)
 
             parsed_input = {
@@ -159,10 +159,10 @@ class WebSearchOrchestrator:
             facts, _, content_location = await self.analyzer.analyze(parsed_input)
 
             if not facts:
-                job_manager.add_progress(job_id, "⚠️ No verifiable facts found")
+                job_manager.add_progress(job_id, "No verifiable facts found")
                 return self._create_empty_result(session_id, "No verifiable facts found in text")
 
-            job_manager.add_progress(job_id, f"✅ Extracted {len(facts)} facts")
+            job_manager.add_progress(job_id, f"Extracted {len(facts)} facts")
 
             # Initialize session audit with content location
             session_audit = build_session_search_audit(
@@ -177,23 +177,23 @@ class WebSearchOrchestrator:
                 if content_location.language != "english":
                     job_manager.add_progress(
                         job_id, 
-                        f"🌍 Detected location: {content_location.country} ({content_location.language}) - will include local language queries"
+                        f"Detected location: {content_location.country} ({content_location.language}) - will include local language queries"
                     )
                 else:
                     job_manager.add_progress(
                         job_id, 
-                        f"🌍 Detected location: {content_location.country} (English)"
+                        f"Detected location: {content_location.country} (English)"
                     )
 
             # ================================================================
-            # STAGE 2: Generate Search Queries (✅ PARALLEL)
+            # STAGE 2: Generate Search Queries ( PARALLEL)
             # ================================================================
-            job_manager.add_progress(job_id, "🔍 Generating search queries in parallel...")
+            job_manager.add_progress(job_id, "Generating search queries in parallel...")
             self._check_cancellation(job_id)
 
             query_gen_start = time.time()
 
-            # ✅ Create query generation tasks for ALL facts
+            # Create query generation tasks for ALL facts
             async def generate_queries_for_fact(fact):
                 """Generate queries for a single fact"""
                 queries = await self.query_generator.generate_queries(
@@ -209,7 +209,7 @@ class WebSearchOrchestrator:
             all_queries_by_fact = {}
             for result in query_results:
                 if isinstance(result, BaseException):
-                    fact_logger.logger.error(f"❌ Query generation error: {result}")
+                    fact_logger.logger.error(f"Query generation error: {result}")
                     continue
                 fact_id, queries = result
                 all_queries_by_fact[fact_id] = queries
@@ -218,18 +218,18 @@ class WebSearchOrchestrator:
             total_queries = sum(len(q.all_queries) for q in all_queries_by_fact.values())
             job_manager.add_progress(
                 job_id, 
-                f"✅ Generated {total_queries} queries in {query_gen_duration:.1f}s"
+                f"Generated {total_queries} queries in {query_gen_duration:.1f}s"
             )
 
             # ================================================================
-            # STAGE 3: Execute Web Searches (✅ PARALLEL)
+            # STAGE 3: Execute Web Searches ( PARALLEL)
             # ================================================================
-            job_manager.add_progress(job_id, "🌐 Searching the web in parallel...")
+            job_manager.add_progress(job_id, "Searching the web in parallel...")
             self._check_cancellation(job_id)
 
             search_start = time.time()
 
-            # ✅ Create search tasks for ALL facts
+            # Create search tasks for ALL facts
             async def search_for_fact(fact):
                 """Execute all searches for a single fact"""
                 queries = all_queries_by_fact.get(fact.id)
@@ -239,7 +239,7 @@ class WebSearchOrchestrator:
                 search_results = await self.searcher.search_multiple(
                     queries=queries.all_queries,
                     search_depth="advanced",
-                    max_concurrent=3  # ✅ Aggressive with paid Brave
+                    max_concurrent=3 # Aggressive with paid Brave
                 )
 
                 # Build query audits
@@ -272,7 +272,7 @@ class WebSearchOrchestrator:
 
             for result in search_results_list:
                 if isinstance(result, BaseException):
-                    fact_logger.logger.error(f"❌ Search error: {result}")
+                    fact_logger.logger.error(f"Search error: {result}")
                     continue
                 fact_id, search_results, query_audits = result
                 search_results_by_fact[fact_id] = search_results
@@ -283,18 +283,18 @@ class WebSearchOrchestrator:
             search_duration = time.time() - search_start
             job_manager.add_progress(
                 job_id, 
-                f"📊 Found {total_results} potential sources in {search_duration:.1f}s"
+                f"Found {total_results} potential sources in {search_duration:.1f}s"
             )
 
             # ================================================================
-            # STAGE 4: Filter by Credibility (✅ PARALLEL)
+            # STAGE 4: Filter by Credibility ( PARALLEL)
             # ================================================================
-            job_manager.add_progress(job_id, "🏆 Filtering sources by credibility in parallel...")
+            job_manager.add_progress(job_id, "Filtering sources by credibility in parallel...")
             self._check_cancellation(job_id)
 
             filter_start = time.time()
 
-            # ✅ Create credibility filter tasks for ALL facts
+            # Create credibility filter tasks for ALL facts
             async def filter_sources_for_fact(fact):
                 """Filter sources for a single fact"""
                 search_results = search_results_by_fact.get(fact.id, {})
@@ -325,7 +325,7 @@ class WebSearchOrchestrator:
 
             for result in filter_results:
                 if isinstance(result, BaseException):
-                    fact_logger.logger.error(f"❌ Credibility filter error: {result}")
+                    fact_logger.logger.error(f"Credibility filter error: {result}")
                     continue
                 fact_id, credible_urls, cred_results = result
                 credible_urls_by_fact[fact_id] = credible_urls
@@ -335,21 +335,21 @@ class WebSearchOrchestrator:
             total_credible = sum(len(urls) for urls in credible_urls_by_fact.values())
             job_manager.add_progress(
                 job_id, 
-                f"✅ Found {total_credible} credible sources in {filter_duration:.1f}s"
+                f"Found {total_credible} credible sources in {filter_duration:.1f}s"
             )
 
             # ================================================================
-            # STAGE 5: Scrape Sources (✅ PARALLEL - Batch Mode)
+            # STAGE 5: Scrape Sources ( PARALLEL - Batch Mode)
             # ================================================================
-            job_manager.add_progress(job_id, f"🌐 Scraping {total_credible} sources in parallel...")
+            job_manager.add_progress(job_id, f"Scraping {total_credible} sources in parallel...")
             self._check_cancellation(job_id)
 
             scrape_start = time.time()
 
-            # ✅ Create scraper in async context (correct event loop)
+            # Create scraper in async context (correct event loop)
             scraper = BrowserlessScraper(self.config)
 
-            # ✅ Collect ALL URLs to scrape across all facts
+            # Collect ALL URLs to scrape across all facts
             all_urls_to_scrape = []
             url_to_fact_map = {}  # Track which fact each URL belongs to
 
@@ -361,7 +361,7 @@ class WebSearchOrchestrator:
                         url_to_fact_map[url] = []
                     url_to_fact_map[url].append(fact.id)
 
-            # ✅ Scrape all URLs at once (browser pool handles concurrency)
+            # Scrape all URLs at once (browser pool handles concurrency)
             all_scraped_content = await scraper.scrape_urls_for_facts(all_urls_to_scrape)
 
             # Organize scraped content by fact
@@ -390,7 +390,7 @@ class WebSearchOrchestrator:
             successful_scrapes = len([v for v in all_scraped_content.values() if v])
             job_manager.add_progress(
                 job_id, 
-                f"✅ Scraped {successful_scrapes}/{len(all_urls_to_scrape)} sources in {scrape_duration:.1f}s"
+                f"Scraped {successful_scrapes}/{len(all_urls_to_scrape)} sources in {scrape_duration:.1f}s"
             )
 
             # Build fact search audits
@@ -406,17 +406,17 @@ class WebSearchOrchestrator:
                 session_audit.add_fact_audit(fact_audit)
 
             # ================================================================
-            # STAGE 6: Verify Facts (✅ PARALLEL)
+            # STAGE 6: Verify Facts ( PARALLEL)
             # ================================================================
             job_manager.add_progress(
                 job_id,
-                f"⚖️ Verifying {len(facts)} facts in parallel..."
+                f"Verifying {len(facts)} facts in parallel..."
             )
             self._check_cancellation(job_id)
 
             verify_start = time.time()
 
-            # ✅ Create verification tasks for ALL facts
+            # Create verification tasks for ALL facts
             async def verify_single_fact(fact):
                 """Verify a single fact and return result"""
                 try:
@@ -447,7 +447,7 @@ class WebSearchOrchestrator:
                     )
 
                     # Progress update
-                    score_emoji = "✅" if result.match_score >= 0.9 else "⚠️" if result.match_score >= 0.7 else "❌"
+                    score_emoji = "" if result.match_score >= 0.9 else "" if result.match_score >= 0.7 else ""
                     job_manager.add_progress(
                         job_id,
                         f"{score_emoji} {fact.id}: {result.match_score:.0%} - {result.report[:50]}..."
@@ -456,7 +456,7 @@ class WebSearchOrchestrator:
                     return result
 
                 except Exception as e:
-                    fact_logger.logger.error(f"❌ Verification error for {fact.id}: {e}")
+                    fact_logger.logger.error(f"Verification error for {fact.id}: {e}")
                     return FactCheckResult(
                         fact_id=fact.id,
                         statement=fact.statement,
@@ -472,12 +472,12 @@ class WebSearchOrchestrator:
             final_results = []
             for result in results:
                 if isinstance(result, BaseException):
-                    fact_logger.logger.error(f"❌ Verification exception: {result}")
+                    fact_logger.logger.error(f"Verification exception: {result}")
                     continue
                 final_results.append(result)
 
             verify_duration = time.time() - verify_start
-            job_manager.add_progress(job_id, f"✅ All facts verified in {verify_duration:.1f}s")
+            job_manager.add_progress(job_id, f"All facts verified in {verify_duration:.1f}s")
 
             # Clean up scraper
             try:
@@ -492,7 +492,7 @@ class WebSearchOrchestrator:
             summary = self._generate_summary(final_results)
 
             # Save search audit
-            job_manager.add_progress(job_id, "📋 Saving search audit...")
+            job_manager.add_progress(job_id, "Saving search audit...")
 
             audit_file_path = save_search_audit(
                 session_audit=session_audit,
@@ -511,11 +511,11 @@ class WebSearchOrchestrator:
                     pipeline_type="web-search"
                 )
 
-            job_manager.add_progress(job_id, f"✅ Complete in {processing_time:.1f}s")
+            job_manager.add_progress(job_id, f"Complete in {processing_time:.1f}s")
 
             # Log performance metrics
             fact_logger.logger.info(
-                "⚡ Web Search Pipeline Performance",
+                " Web Search Pipeline Performance",
                 extra={
                     "total_time": round(processing_time, 2),
                     "query_gen_time": round(query_gen_duration, 2),
@@ -566,7 +566,9 @@ class WebSearchOrchestrator:
                         "tier_breakdown": {
                             "tier1": session_audit.total_tier1,
                             "tier2": session_audit.total_tier2,
-                            "tier3_filtered": session_audit.total_tier3_filtered
+                            "tier3": session_audit.total_tier3,
+                            "tier4_filtered": session_audit.total_tier4_filtered,
+                            "tier5_filtered": session_audit.total_tier5_filtered
                         }
                     }
                 },
@@ -586,7 +588,7 @@ class WebSearchOrchestrator:
         except Exception as e:
             error_msg = str(e)
             if "cancelled" in error_msg.lower():
-                job_manager.add_progress(job_id, "🛑 Verification cancelled")
+                job_manager.add_progress(job_id, "Verification cancelled")
                 return {
                     "success": False,
                     "session_id": session_id,
@@ -597,7 +599,7 @@ class WebSearchOrchestrator:
             fact_logger.logger.error(f"Web search orchestrator error: {e}")
             import traceback
             fact_logger.logger.error(f"Traceback: {traceback.format_exc()}")
-            job_manager.add_progress(job_id, f"❌ Error: {error_msg}")
+            job_manager.add_progress(job_id, f"Error: {error_msg}")
 
             # Try to save partial audit even on error
             if session_audit and session_audit.total_facts > 0:

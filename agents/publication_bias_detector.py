@@ -123,13 +123,13 @@ class PublicationBiasDetector:
             self.supabase_service = get_supabase_service(config)
             self.supabase_enabled = self.supabase_service.enabled
             if self.supabase_enabled:
-                fact_logger.logger.info("✅ Supabase integration enabled for MBFC storage")
+                fact_logger.logger.info("Supabase integration enabled for MBFC storage")
         except ImportError:
-            fact_logger.logger.warning("⚠️ Supabase service not found - database caching disabled")
+            fact_logger.logger.warning("Supabase service not found - database caching disabled")
             self.supabase_service = None
             self.supabase_enabled = False
         except Exception as e:
-            fact_logger.logger.warning(f"⚠️ Supabase not available: {e}")
+            fact_logger.logger.warning(f"Supabase not available: {e}")
             self.supabase_service = None
             self.supabase_enabled = False
 
@@ -312,13 +312,13 @@ class PublicationBiasDetector:
 
                     now = datetime.now(verified_date.tzinfo) if verified_date.tzinfo else datetime.utcnow()
                     if now - verified_date > timedelta(days=30):
-                        fact_logger.logger.info(f"📅 Database record for {domain} is stale, will refresh")
+                        fact_logger.logger.info(f"Database record for {domain} is stale, will refresh")
                         return None
                 except Exception as e:
                     fact_logger.logger.warning(f"Could not parse date: {e}")
 
             # Convert database record to MBFCResult
-            fact_logger.logger.info(f"✅ Found {domain} in database cache")
+            fact_logger.logger.info(f"Found {domain} in database cache")
 
             # Get publication name from names array or domain
             names = record.get('names', [])
@@ -344,7 +344,7 @@ class PublicationBiasDetector:
             )
 
         except Exception as e:
-            fact_logger.logger.warning(f"⚠️ Database lookup failed: {e}")
+            fact_logger.logger.warning(f"Database lookup failed: {e}")
             return None
 
     async def save_mbfc_to_database(self, domain: str, mbfc_result: MBFCResult) -> bool:
@@ -372,12 +372,12 @@ class PublicationBiasDetector:
             )
 
             if result:
-                fact_logger.logger.info(f"✅ Saved MBFC data to Supabase: {domain}")
+                fact_logger.logger.info(f"Saved MBFC data to Supabase: {domain}")
                 return True
             return False
 
         except Exception as e:
-            fact_logger.logger.error(f"❌ Failed to save to Supabase: {e}")
+            fact_logger.logger.error(f"Failed to save to Supabase: {e}")
             return False
 
     async def lookup_mbfc(self, domain: str) -> Optional[MBFCResult]:
@@ -687,7 +687,7 @@ class PublicationBiasDetector:
                 # Fall back to local database
                 if domain in self.publication_database:
                     profile = self.publication_database[domain]
-                    fact_logger.logger.info(f"📰 Using local profile for: {domain}")
+                    fact_logger.logger.info(f"Using local profile for: {domain}")
                     return profile
 
         # Fall back to name-based lookup (local only)
@@ -715,16 +715,16 @@ class PublicationBiasDetector:
         # Try domain-based match first
         for domain, profile in self.publication_database.items():
             if normalized_name in domain or domain.replace('.com', '').replace('.co.uk', '') in normalized_name:
-                fact_logger.logger.info(f"📰 Detected publication: {profile.name}")
+                fact_logger.logger.info(f"Detected publication: {profile.name}")
                 return profile
 
         # Try name-based match
         for domain, profile in self.publication_database.items():
             if normalized_name in profile.name.lower() or profile.name.lower() in normalized_name:
-                fact_logger.logger.info(f"📰 Detected publication (name match): {profile.name}")
+                fact_logger.logger.info(f"Detected publication (name match): {profile.name}")
                 return profile
 
-        fact_logger.logger.info(f"📰 Unknown publication: {publication_name}")
+        fact_logger.logger.info(f"Unknown publication: {publication_name}")
         return None
 
     def get_publication_context(
@@ -798,7 +798,7 @@ class PublicationBiasDetector:
             context_parts.append(f"SOURCE: {profile.source.capitalize()} database")
 
         context_parts.append(
-            f"\n⚠️ IMPORTANT: This publication has a known {profile.political_leaning} bias. "
+            f"\n IMPORTANT: This publication has a known {profile.political_leaning} bias. "
             "Consider how this might influence the framing and presentation of information."
         )
 
@@ -813,7 +813,7 @@ class PublicationBiasDetector:
             profile: PublicationProfile to add
         """
         self.publication_database[domain] = profile
-        fact_logger.logger.info(f"➕ Added publication profile: {profile.name}")
+        fact_logger.logger.info(f"Added publication profile: {profile.name}")
 
     def is_propaganda_source(self, domain: str) -> bool:
         """

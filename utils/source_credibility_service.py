@@ -88,9 +88,9 @@ class SourceCredibilityService:
             self.supabase = get_supabase_service(config)
             self.supabase_enabled = self.supabase.enabled
             if self.supabase_enabled:
-                fact_logger.logger.info("✅ Supabase enabled for credibility service")
+                fact_logger.logger.info("Supabase enabled for credibility service")
         except Exception as e:
-            fact_logger.logger.warning(f"⚠️ Supabase not available: {e}")
+            fact_logger.logger.warning(f"Supabase not available: {e}")
             self.supabase = None
             self.supabase_enabled = False
 
@@ -104,9 +104,9 @@ class SourceCredibilityService:
             )
             self.mbfc_enabled = brave_searcher is not None and scraper is not None
             if self.mbfc_enabled:
-                fact_logger.logger.info("✅ MBFC lookup enabled for credibility service")
+                fact_logger.logger.info("MBFC lookup enabled for credibility service")
         except Exception as e:
-            fact_logger.logger.warning(f"⚠️ MBFC detector not available: {e}")
+            fact_logger.logger.warning(f"MBFC detector not available: {e}")
             self.mbfc_detector = None
             self.mbfc_enabled = False
 
@@ -114,7 +114,7 @@ class SourceCredibilityService:
         self.cache: Dict[str, CredibilityCheckResult] = {}
 
         fact_logger.logger.info(
-            "🔒 SourceCredibilityService initialized",
+            " SourceCredibilityService initialized",
             extra={
                 "supabase_enabled": self.supabase_enabled,
                 "mbfc_enabled": self.mbfc_enabled
@@ -152,7 +152,7 @@ class SourceCredibilityService:
         domain = self._extract_domain(url)
 
         if not domain:
-            fact_logger.logger.warning(f"⚠️ Could not extract domain from URL: {url}")
+            fact_logger.logger.warning(f"Could not extract domain from URL: {url}")
             return CredibilityCheckResult(
                 url=url,
                 domain="unknown",
@@ -162,13 +162,13 @@ class SourceCredibilityService:
 
         # Check in-memory cache first
         if use_cache and domain in self.cache:
-            fact_logger.logger.debug(f"📦 Using cached credibility for {domain}")
+            fact_logger.logger.debug(f"Using cached credibility for {domain}")
             cached = self.cache[domain]
             # Update URL in cached result
             cached.url = url
             return cached
 
-        fact_logger.logger.info(f"🔍 Checking credibility for {domain}")
+        fact_logger.logger.info(f"Checking credibility for {domain}")
 
         result = CredibilityCheckResult(
             url=url,
@@ -184,7 +184,7 @@ class SourceCredibilityService:
                 result.source = "supabase"
                 self.cache[domain] = result
                 fact_logger.logger.info(
-                    f"✅ Found {domain} in Supabase (Tier {result.credibility_tier})"
+                    f"Found {domain} in Supabase (Tier {result.credibility_tier})"
                 )
                 return result
 
@@ -198,7 +198,7 @@ class SourceCredibilityService:
                 result.source = "propaganda_list"
                 result.tier_reasoning = "Listed in propaganda/disinformation database"
                 self.cache[domain] = result
-                fact_logger.logger.warning(f"⚠️ {domain} is flagged as propaganda source")
+                fact_logger.logger.warning(f" {domain} is flagged as propaganda source")
                 return result
 
         # Step 3: Run MBFC lookup if enabled and requested
@@ -209,7 +209,7 @@ class SourceCredibilityService:
                 result.url = url
                 self.cache[domain] = result
                 fact_logger.logger.info(
-                    f"✅ MBFC lookup complete for {domain} (Tier {result.credibility_tier})"
+                    f"MBFC lookup complete for {domain} (Tier {result.credibility_tier})"
                 )
                 return result
 
@@ -218,7 +218,7 @@ class SourceCredibilityService:
         result.tier_reasoning = "No credibility data found"
         self.cache[domain] = result
 
-        fact_logger.logger.info(f"ℹ️ No credibility data for {domain}, using default tier 3")
+        fact_logger.logger.info(f"No credibility data for {domain}, using default tier 3")
 
         return result
 
@@ -267,7 +267,7 @@ class SourceCredibilityService:
             )
 
         except Exception as e:
-            fact_logger.logger.warning(f"⚠️ Supabase lookup failed: {e}")
+            fact_logger.logger.warning(f"Supabase lookup failed: {e}")
             return None
 
     async def _check_propaganda_list(self, domain: str) -> bool:
@@ -286,7 +286,7 @@ class SourceCredibilityService:
         try:
             return self.supabase.is_propaganda_source(domain)
         except Exception as e:
-            fact_logger.logger.warning(f"⚠️ Propaganda check failed: {e}")
+            fact_logger.logger.warning(f"Propaganda check failed: {e}")
             return False
 
     async def _run_mbfc_lookup(self, domain: str) -> Optional[CredibilityCheckResult]:
@@ -303,7 +303,7 @@ class SourceCredibilityService:
             return None
 
         try:
-            fact_logger.logger.info(f"🌐 Running MBFC lookup for {domain}")
+            fact_logger.logger.info(f"Running MBFC lookup for {domain}")
 
             mbfc_result = await self.mbfc_detector.lookup_mbfc(domain)
 
@@ -330,33 +330,36 @@ class SourceCredibilityService:
                 source="mbfc"
             )
 
-            # Determine tier based on MBFC data
+            # Single tier calculation -- same logic used for Supabase storage
             result.credibility_tier = self._calculate_tier(mbfc_result)
             result.tier_reasoning = self._generate_tier_reasoning(mbfc_result, result.credibility_tier)
 
-            # Check for special warning tags
+            # Propaganda flag: only set for truly propaganda-flagged sources
+            # "Questionable Source" alone means poor methodology, not necessarily propaganda
             if mbfc_result.special_tags:
                 tags_lower = [t.lower() for t in mbfc_result.special_tags]
-                if 'questionable source' in tags_lower or 'conspiracy-pseudoscience' in tags_lower:
+                if 'propaganda' in tags_lower:
                     result.is_propaganda = True
-                    result.credibility_tier = max(result.credibility_tier, 4)
+                elif 'conspiracy-pseudoscience' in tags_lower:
+                    result.is_propaganda = True
 
             return result
 
         except Exception as e:
-            fact_logger.logger.error(f"❌ MBFC lookup failed: {e}")
+            fact_logger.logger.error(f"MBFC lookup failed: {e}")
             return None
 
     def _calculate_tier(self, mbfc_result) -> int:
         """
-        Calculate credibility tier from MBFC data
+        Calculate credibility tier from MBFC data.
+        Single source of truth for tier assignment -- matches supabase_service fallback logic.
 
         Tier Guidelines:
         - Tier 1: HIGH factual + HIGH credibility
-        - Tier 2: MOSTLY FACTUAL + MEDIUM-HIGH credibility  
-        - Tier 3: MIXED factual or unclear
-        - Tier 4: LOW factual or extreme bias
-        - Tier 5: VERY LOW factual, propaganda, conspiracy
+        - Tier 2: MOSTLY FACTUAL or HIGH factual with non-LOW credibility
+        - Tier 3: MIXED factual or unclear data
+        - Tier 4: LOW factual or extreme bias or questionable source tag
+        - Tier 5: VERY LOW factual, propaganda, conspiracy-pseudoscience
 
         Args:
             mbfc_result: MBFCResult object
@@ -368,30 +371,27 @@ class SourceCredibilityService:
         credibility = (mbfc_result.credibility_rating or "").upper()
         tags = [t.lower() for t in (mbfc_result.special_tags or [])]
 
-        # Check for automatic tier 5 indicators
-        if 'questionable source' in tags or 'conspiracy-pseudoscience' in tags:
+        # Tier 5: conspiracy, propaganda, very low factual reporting
+        if 'conspiracy-pseudoscience' in tags or 'propaganda' in tags:
+            return 5
+        if factual == 'VERY LOW' or credibility == 'LOW CREDIBILITY':
             return 5
 
-        if factual == 'VERY LOW' or 'propaganda' in tags:
-            return 5
-
-        # Check for tier 4
-        if factual == 'LOW' or 'LOW CREDIBILITY' in credibility:
+        # Tier 4: questionable source, low factual reporting
+        if 'questionable source' in tags:
+            return 4
+        if factual == 'LOW':
             return 4
 
-        # Check for tier 1
+        # Tier 1: high factual + high credibility
         if factual == 'HIGH' and 'HIGH' in credibility:
             return 1
 
-        # Check for tier 2
+        # Tier 2: mostly factual or high factual with reasonable credibility
         if factual in ['HIGH', 'MOSTLY FACTUAL'] and 'LOW' not in credibility:
             return 2
 
-        # Check for tier 3 (default for mixed)
-        if factual == 'MIXED':
-            return 3
-
-        # Default to tier 3 if unclear
+        # Tier 3: mixed or unclear
         return 3
 
     def _generate_tier_reasoning(self, mbfc_result, tier: int) -> str:
@@ -440,7 +440,7 @@ class SourceCredibilityService:
                 domain_url_map[domain] = url
 
         fact_logger.logger.info(
-            f"🔍 Batch credibility check for {len(domain_url_map)} unique domains"
+            f"Batch credibility check for {len(domain_url_map)} unique domains"
         )
 
         # Check all in parallel (limited concurrency)
@@ -469,7 +469,7 @@ class SourceCredibilityService:
                         result_copy.url = orig_url
                         results[orig_url] = result_copy
             except Exception as e:
-                fact_logger.logger.error(f"❌ Batch check error: {e}")
+                fact_logger.logger.error(f"Batch check error: {e}")
 
         return results
 
@@ -499,7 +499,7 @@ def get_credibility_service(config=None, brave_searcher=None, scraper=None) -> S
 if __name__ == "__main__":
     import asyncio
 
-    print("🧪 Testing Source Credibility Service\n")
+    print("Testing Source Credibility Service\n")
 
     service = SourceCredibilityService()
 
@@ -513,8 +513,8 @@ if __name__ == "__main__":
         for url in test_urls:
             result = await service.check_credibility(url, run_mbfc_if_missing=False)
             print(f"\n{result.domain}:")
-            print(f"  Tier: {result.credibility_tier}")
-            print(f"  Source: {result.source}")
-            print(f"  Propaganda: {result.is_propaganda}")
+            print(f"Tier: {result.credibility_tier}")
+            print(f"Source: {result.source}")
+            print(f"Propaganda: {result.is_propaganda}")
 
     asyncio.run(test())

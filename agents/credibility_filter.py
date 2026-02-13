@@ -43,7 +43,7 @@ class CredibilityResults:
         self.summary = summary
         self.source_metadata = source_metadata
 
-    def get_recommended_urls(self, min_score: float = 0.70) -> List[str]:
+    def get_recommended_urls(self, min_score: float = 0.65) -> List[str]:
         """Get URLs of recommended sources"""
         return [e.url for e in self.evaluations if e.recommended and e.credibility_score >= min_score]
 
@@ -53,8 +53,8 @@ class CredibilityResults:
         return sorted_evals[:n]
 
     def get_tier1_sources(self) -> List[SourceEvaluation]:
-        """Get Tier 1 sources (score >= 0.85)"""
-        return [e for e in self.evaluations if e.credibility_score >= 0.85]
+        """Get Tier 1 sources (score >= 0.90)"""
+        return [e for e in self.evaluations if e.credibility_score >= 0.90]
 
     def get_source_metadata_dict(self) -> Dict[str, SourceMetadata]:
         """Get dictionary mapping URL to SourceMetadata"""
@@ -63,14 +63,16 @@ class CredibilityResults:
 
 class CredibilityFilter:
     """
-    Simplified credibility evaluation using 3-tier system
+    Source credibility evaluation using 5-tier system
 
-    Tier 1 (0.90): Official sources, major news, Wikipedia
-    Tier 2 (0.75): Established platforms with editorial standards
-    Tier 3 (0.40): Discard - low quality sources
+    Tier 1 (0.95): Official/primary authority sources
+    Tier 2 (0.85): Major established news with strong editorial standards
+    Tier 3 (0.70): Established platforms with editorial oversight
+    Tier 4 (0.40): Low credibility - blogs, user-generated, tabloids
+    Tier 5 (0.15): Unreliable - propaganda, conspiracy, spam
     """
 
-    def __init__(self, config, min_credibility_score: float = 0.70):
+    def __init__(self, config, min_credibility_score: float = 0.65):
         self.config = config
         self.min_credibility_score = min_credibility_score
 
@@ -98,13 +100,13 @@ class CredibilityFilter:
             "CredibilityFilter",
             model="gpt-4o",
             min_score=min_credibility_score,
-            system="3-tier-simplified"
+            system="5-tier"
         )
 
     @traceable(
         name="evaluate_source_credibility",
         run_type="chain",
-        tags=["credibility", "3-tier", "simplified"]
+        tags=["credibility", "5-tier"]
     )
     async def evaluate_sources(
         self,
@@ -112,7 +114,7 @@ class CredibilityFilter:
         search_results: List[Dict[str, Any]]
     ) -> CredibilityResults:
         """
-        Evaluate credibility using simplified 3-tier system
+        Evaluate credibility using 5-tier system
 
         Args:
             fact: Fact object being verified
@@ -126,14 +128,14 @@ class CredibilityFilter:
         self.stats["total_sources_evaluated"] += len(search_results)
 
         fact_logger.logger.info(
-            f"🔍 Evaluating {len(search_results)} sources using 3-tier system for {fact.id}"
+            f"Evaluating {len(search_results)} sources using 5-tier system for {fact.id}"
         )
 
         if not search_results:
             return CredibilityResults(
                 fact_id=fact.id,
                 evaluations=[],
-                summary={"total_sources": 0, "tier1": 0, "tier2": 0, "tier3": 0, "recommended_count": 0},
+                summary={"total_sources": 0, "tier1": 0, "tier2": 0, "tier3": 0, "tier4": 0, "tier5": 0, "recommended_count": 0},
                 source_metadata={}
             )
 
@@ -154,7 +156,7 @@ class CredibilityFilter:
                 ))
 
             # Extract source names
-            fact_logger.logger.info(f"🏷️ Extracting source names for {len(evaluations)} sources")
+            fact_logger.logger.info(f"Extracting source names for {len(evaluations)} sources")
             source_metadata = await self._extract_source_metadata(evaluations)
 
             results = CredibilityResults(
@@ -177,7 +179,9 @@ class CredibilityFilter:
                 fact_id=fact.id,
                 tier1=evaluation.summary.get('tier1', 0),
                 tier2=evaluation.summary.get('tier2', 0),
-                tier3=evaluation.summary.get('tier3', 0)
+                tier3=evaluation.summary.get('tier3', 0),
+                tier4=evaluation.summary.get('tier4', 0),
+                tier5=evaluation.summary.get('tier5', 0)
             )
 
             return results
@@ -210,12 +214,12 @@ class CredibilityFilter:
                 )
 
                 fact_logger.logger.debug(
-                    f"📋 Created metadata: {source_name} ({source_type})"
+                    f"Created metadata: {source_name} ({source_type})"
                 )
 
             except Exception as e:
                 fact_logger.logger.warning(
-                    f"⚠️ Failed to extract name for {evaluation.url}: {e}"
+                    f"Failed to extract name for {evaluation.url}: {e}"
                 )
                 # Fallback to URL-based name
                 domain = evaluation.url.split('/')[2].replace('www.', '')
@@ -290,7 +294,7 @@ class CredibilityFilter:
         ]
 
         fact_logger.logger.info(
-            f"🎯 Filtered to {len(filtered_urls)} credible URLs from {len(search_results)} total"
+            f"Filtered to {len(filtered_urls)} credible URLs from {len(search_results)} total"
         )
 
         return filtered_urls
