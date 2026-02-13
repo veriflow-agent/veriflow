@@ -1,25 +1,49 @@
 // src/components/reports/LLMOutputReport.tsx
 import { cn } from "@/lib/utils";
 import { SessionInfo } from "./shared";
-import { ExternalLink } from "lucide-react";
+import { ExternalLink, ChevronDown, ChevronUp } from "lucide-react";
+import { useState } from "react";
 
+// Backend LLMVerificationResult fields:
+//   claim_id, claim_text, verification_score (0-1),
+//   assessment, interpretation_issues, wording_comparison,
+//   confidence, reasoning, excerpts, cited_source_urls
 type VerResult = {
-  fact_text: string;
-  source_url: string;
-  source_domain: string;
+  claim_id: string;
+  claim_text: string;           // was fact_text
   verification_score: number;
-  verification_status: string;
-  explanation: string;
+  assessment: string;           // was explanation
+  interpretation_issues?: string[];
+  wording_comparison?: Record<string, any>;
+  confidence?: number;
+  reasoning?: string;
+  excerpts?: Record<string, any>[];
+  cited_source_urls?: string[];  // was source_url / source_domain
 };
 
 type Props = {
   data: {
     results?: VerResult[];
     factCheck?: { results?: VerResult[] };
+    summary?: {
+      average_score?: number;
+      total_claims?: number;
+      verified_count?: number;
+      partial_count?: number;
+      unverified_count?: number;
+    };
     session_id?: string;
     processing_time?: number;
+    duration?: number;          // backend uses duration, not processing_time
     audit_url?: string;
   };
+};
+
+// Derive status from verification_score
+const deriveStatus = (score: number): string => {
+  if (score >= 0.85) return "verified";
+  if (score >= 0.6) return "partially_verified";
+  return "unverified";
 };
 
 const statusStyles: Record<string, string> = {
@@ -28,12 +52,23 @@ const statusStyles: Record<string, string> = {
   unverified: "bg-score-low/15 text-score-low",
 };
 
-const LLMOutputReport = ({ data }: Props) => {
-  const results = data.results || data.factCheck?.results || [];
+// Extract domain from URL for display
+const getDomain = (url: string): string => {
+  try {
+    return new URL(url).hostname.replace("www.", "");
+  } catch {
+    return url;
+  }
+};
 
-  const verified = results.filter(r => r.verification_status === "verified").length;
-  const issues = results.filter(r => r.verification_status === "partially_verified").length;
-  const unverified = results.filter(r => r.verification_status === "unverified").length;
+const LLMOutputReport = ({ data }: Props) => {
+  const [expandedClaims, setExpandedClaims] = useState<Record<string, boolean>>({});
+  const results = data.results || data.factCheck?.results || [];
+  const processingTime = data.processing_time ?? data.duration;
+
+  const verified = results.filter(r => deriveStatus(r.verification_score) === "verified").length;
+  const issues = results.filter(r => deriveStatus(r.verification_score) === "partially_verified").length;
+  const unverified = results.filter(r => deriveStatus(r.verification_score) === "unverified").length;
 
   return (
     <div className="space-y-4">
@@ -58,35 +93,77 @@ const LLMOutputReport = ({ data }: Props) => {
         <div className="space-y-3">
           {results.map((r, i) => {
             const score = Math.round(r.verification_score * 100);
+            const status = deriveStatus(r.verification_score);
+            const isExpanded = expandedClaims[r.claim_id || String(i)];
+
             return (
-              <div key={i} className="rounded-lg border border-border p-4">
+              <div key={r.claim_id || i} className="rounded-lg border border-border p-4">
                 <div className="flex items-center gap-2 mb-2">
                   <span className="text-xs font-semibold text-muted-foreground">#{i + 1}</span>
                   <span className={cn(
                     "rounded px-2 py-0.5 text-[10px] font-semibold uppercase",
-                    statusStyles[r.verification_status] || "bg-muted text-muted-foreground"
+                    statusStyles[status] || "bg-muted text-muted-foreground"
                   )}>
-                    {r.verification_status?.replace("_", " ")}
+                    {status.replace("_", " ")}
                   </span>
+                  <span className="text-xs text-muted-foreground ml-auto">{score}%</span>
                 </div>
-                <p className="text-sm font-medium mb-1">{r.fact_text}</p>
-                <p className="text-xs text-muted-foreground leading-relaxed">{r.explanation}</p>
-                {r.source_domain && (
-                  <a
-                    href={r.source_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-1 mt-2 text-xs text-muted-foreground hover:text-foreground"
-                  >
-                    <ExternalLink size={10} /> {r.source_domain}
-                  </a>
+                <p className="text-sm font-medium mb-1">{r.claim_text}</p>
+                <p className="text-xs text-muted-foreground leading-relaxed">{r.assessment}</p>
+
+                {/* Interpretation issues */}
+                {r.interpretation_issues && r.interpretation_issues.length > 0 && (
+                  <div className="mt-2 space-y-1">
+                    {r.interpretation_issues.map((issue, j) => (
+                      <p key={j} className="text-xs text-score-low pl-3 border-l-2 border-score-low">
+                        {issue}
+                      </p>
+                    ))}
+                  </div>
+                )}
+
+                {/* Cited sources */}
+                {r.cited_source_urls && r.cited_source_urls.length > 0 && (
+                  <div className="mt-2">
+                    {r.cited_source_urls.map((url, j) => (
+                      <a
+                        key={j}
+                        href={url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1 mt-1 text-xs text-muted-foreground hover:text-foreground"
+                      >
+                        <ExternalLink size={10} /> {getDomain(url)}
+                      </a>
+                    ))}
+                  </div>
+                )}
+
+                {/* Expandable reasoning */}
+                {r.reasoning && (
+                  <>
+                    <button
+                      onClick={() => setExpandedClaims(prev => ({
+                        ...prev,
+                        [r.claim_id || String(i)]: !isExpanded
+                      }))}
+                      className="flex items-center gap-1 mt-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      Reasoning {isExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                    </button>
+                    {isExpanded && (
+                      <p className="mt-1 text-xs text-muted-foreground leading-relaxed pl-3 border-l-2 border-border">
+                        {r.reasoning}
+                      </p>
+                    )}
+                  </>
                 )}
               </div>
             );
           })}
         </div>
       </div>
-      <SessionInfo sessionId={data.session_id} processingTime={data.processing_time} />
+      <SessionInfo sessionId={data.session_id} processingTime={processingTime} />
     </div>
   );
 };

@@ -14,14 +14,18 @@ type Props = {
     source_verification?: Record<string, any>;
     mode_routing?: { selected_modes?: string[]; reasoning?: string };
     mode_reports?: Record<string, any>;
+    mode_errors?: Record<string, string>;
     synthesis_report?: {
       overall_score?: number;
       overall_rating?: string;
+      overall_credibility_score?: number;  // alternate field name
+      overall_credibility_rating?: string; // alternate field name
       confidence?: number;
       summary?: string;
       key_concerns?: string[];
       positive_indicators?: string[];
       recommendations?: string[];
+      modes_analyzed?: string[];
     };
     session_id?: string;
     processing_time?: number;
@@ -36,22 +40,43 @@ const tierColors: Record<number, string> = {
   5: "bg-score-low text-accent-foreground",
 };
 
+// Backend mode IDs -> display names
+const modeLabels: Record<string, string> = {
+  key_claims_analysis: "Key Claims Verification",
+  bias_analysis: "Bias Analysis",
+  manipulation_detection: "Manipulation Detection",
+  lie_detection: "Deception Detection",
+  llm_output_verification: "LLM Output Verification",
+};
+
 const ComprehensiveReport = ({ data }: Props) => {
   const [expandedModes, setExpandedModes] = useState<Record<string, boolean>>({});
   const synth = data.synthesis_report;
-  const score = synth?.overall_score ?? 0;
+  // Handle both field name variants
+  const score = synth?.overall_score ?? synth?.overall_credibility_score ?? 0;
+  const rating = synth?.overall_rating ?? synth?.overall_credibility_rating;
 
   const toggleMode = (mode: string) => {
     setExpandedModes(prev => ({ ...prev, [mode]: !prev[mode] }));
   };
 
+  // Map backend mode IDs to the correct sub-report component
+  // Backend uses: key_claims_analysis, bias_analysis, manipulation_detection, lie_detection
   const renderSubReport = (modeKey: string, modeData: any) => {
     switch (modeKey) {
-      case "key_claims": return <KeyClaimsReport data={modeData} />;
-      case "bias_check": return <BiasReport data={modeData} />;
-      case "lie_detection": return <DeceptionReport data={modeData} />;
-      case "manipulation_check": return <ManipulationReport data={modeData} />;
-      default: return <pre className="text-xs overflow-auto">{JSON.stringify(modeData, null, 2)}</pre>;
+      case "key_claims_analysis":
+        return <KeyClaimsReport data={modeData} />;
+      case "bias_analysis":
+        return <BiasReport data={modeData} />;
+      case "lie_detection":
+        return <DeceptionReport data={modeData} />;
+      case "manipulation_detection":
+        return <ManipulationReport data={modeData} />;
+      case "llm_output_verification":
+        // Fallback to JSON for now
+        return <pre className="text-xs overflow-auto">{JSON.stringify(modeData, null, 2)}</pre>;
+      default:
+        return <pre className="text-xs overflow-auto">{JSON.stringify(modeData, null, 2)}</pre>;
     }
   };
 
@@ -68,8 +93,14 @@ const ComprehensiveReport = ({ data }: Props) => {
               <span className="font-medium capitalize">{data.content_classification.content_type.replace("_", " ")}</span>
             </div>
           )}
+          {data.content_classification?.realm && (
+            <div className="rounded-lg bg-secondary px-3 py-1.5 text-xs">
+              <span className="text-muted-foreground">Realm:</span>{" "}
+              <span className="font-medium capitalize">{data.content_classification.realm}</span>
+            </div>
+          )}
           {data.source_verification?.credibility_tier && (
-            <div className={cn("rounded-lg px-3 py-1.5 text-xs font-medium", tierColors[data.source_verification.credibility_tier])}>
+            <div className={cn("rounded-lg px-3 py-1.5 text-xs font-medium", tierColors[data.source_verification.credibility_tier] || "bg-muted")}>
               Tier {data.source_verification.credibility_tier} - {data.source_verification.publication_name}
             </div>
           )}
@@ -80,6 +111,13 @@ const ComprehensiveReport = ({ data }: Props) => {
             </div>
           )}
         </div>
+
+        {/* Mode routing info */}
+        {data.mode_routing?.selected_modes && (
+          <p className="text-xs text-muted-foreground">
+            Modes selected: {data.mode_routing.selected_modes.map(m => modeLabels[m] || m).join(", ")}
+          </p>
+        )}
       </div>
 
       {/* Mode Reports */}
@@ -89,7 +127,7 @@ const ComprehensiveReport = ({ data }: Props) => {
             onClick={() => toggleMode(key)}
             className="w-full flex items-center justify-between p-4 text-sm font-medium hover:bg-secondary/50 transition-colors"
           >
-            <span className="capitalize">{key.replace("_", " ")}</span>
+            <span>{modeLabels[key] || key.replace(/_/g, " ")}</span>
             {expandedModes[key] ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
           </button>
           {expandedModes[key] && (
@@ -100,13 +138,27 @@ const ComprehensiveReport = ({ data }: Props) => {
         </div>
       ))}
 
+      {/* Mode Errors */}
+      {data.mode_errors && Object.keys(data.mode_errors).length > 0 && (
+        <div className="rounded-xl border border-score-low/30 bg-score-low/5 p-4">
+          <h4 className="text-xs font-semibold uppercase tracking-wide text-score-low mb-2">
+            Failed Modes
+          </h4>
+          {Object.entries(data.mode_errors).map(([key, err]) => (
+            <p key={key} className="text-xs text-muted-foreground">
+              {modeLabels[key] || key}: {err}
+            </p>
+          ))}
+        </div>
+      )}
+
       {/* Synthesis */}
       {synth && (
         <div className="rounded-xl border border-border bg-card p-5">
           <h3 className="text-lg font-display font-semibold mb-3">Overall Assessment</h3>
 
           <div className="flex items-center gap-4 mb-4">
-            <ScoreBadge score={score} label={synth.overall_rating || getScoreLabel(score)} />
+            <ScoreBadge score={score} label={rating || getScoreLabel(score)} />
             {synth.confidence != null && (
               <span className="text-xs text-muted-foreground">Confidence: {Math.round(synth.confidence)}%</span>
             )}

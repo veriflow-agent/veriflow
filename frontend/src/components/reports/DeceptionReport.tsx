@@ -4,13 +4,15 @@ import { RiskBadge, SessionInfo, ScoreBadge } from "./shared";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { useState } from "react";
 
+// Backend MarkerCategory model fields:
+//   category (str), present (bool), severity (str),
+//   examples (List[str]), explanation (str)
 type Marker = {
-  marker_name: string;
+  category: string;          // was marker_name
   present: boolean;
   severity?: string | null;
-  description?: string | null;
+  explanation?: string | null; // was description
   examples?: string[];
-  recommendation?: string;
 };
 
 type Props = {
@@ -20,6 +22,9 @@ type Props = {
       risk_level?: string;
       overall_assessment?: string;
       markers_detected?: Marker[];
+      positive_indicators?: string[];
+      conclusion?: string;
+      reasoning?: string;
     };
     session_id?: string;
     processing_time?: number;
@@ -29,7 +34,8 @@ type Props = {
 const severityColor = (s?: string | null) => {
   switch (s?.toLowerCase()) {
     case "low": return "bg-score-high/15 text-score-high";
-    case "moderate": return "bg-score-moderate/15 text-score-moderate";
+    case "moderate":
+    case "medium": return "bg-score-moderate/15 text-score-moderate";
     case "high": return "bg-score-low/15 text-score-low";
     default: return "bg-muted text-muted-foreground";
   }
@@ -67,12 +73,12 @@ const DeceptionReport = ({ data }: Props) => {
             {activeMarkers.map((m, i) => (
               <div key={i} className="rounded-lg border border-border p-3">
                 <div className="flex items-center gap-2 mb-1">
-                  <span className="text-sm font-medium">{m.marker_name}</span>
+                  <span className="text-sm font-medium">{m.category}</span>
                   <span className={cn("rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase", severityColor(m.severity))}>
                     {m.severity}
                   </span>
                 </div>
-                {m.description && <p className="text-xs text-muted-foreground">{m.description}</p>}
+                {m.explanation && <p className="text-xs text-muted-foreground">{m.explanation}</p>}
                 {m.examples?.map((ex, j) => (
                   <p key={j} className="text-xs text-muted-foreground mt-1 pl-3 border-l-2 border-border italic">
                     {ex}
@@ -83,6 +89,23 @@ const DeceptionReport = ({ data }: Props) => {
           </div>
         )}
 
+        {/* Positive indicators from backend */}
+        {a?.positive_indicators && a.positive_indicators.length > 0 && (
+          <div className="mb-4">
+            <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+              Credibility Indicators
+            </h4>
+            <div className="space-y-1">
+              {a.positive_indicators.map((ind, i) => (
+                <p key={i} className="text-xs text-muted-foreground pl-3 border-l-2 border-score-high">
+                  {ind}
+                </p>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Inactive markers as reasoning detail */}
         {credIndicators.length > 0 && (
           <div>
             <button
@@ -94,13 +117,18 @@ const DeceptionReport = ({ data }: Props) => {
             {showReasoning && (
               <div className="mt-2 space-y-1">
                 <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  Credibility Indicators
+                  Markers Not Detected
                 </h4>
                 {credIndicators.map((m, i) => (
                   <p key={i} className="text-xs text-muted-foreground">
-                    {m.marker_name}
+                    {m.category}
                   </p>
                 ))}
+                {a?.reasoning && (
+                  <p className="text-xs text-muted-foreground mt-2 pt-2 border-t border-border">
+                    {a.reasoning}
+                  </p>
+                )}
               </div>
             )}
           </div>
