@@ -1,11 +1,11 @@
 # nixpacks.toml
-# "..." preserves auto-detected Python setup, adds Node for React build
+# Let Python provider handle pip/venv automatically
+# Only add Node and append frontend build
+
+providers = ["python"]
 
 [phases.setup]
 nixPkgs = ["...", "nodejs_20"]
 
-[phases.install]
-cmds = ["pip install -r requirements.txt", "cd frontend && npm install"]
-
 [phases.build]
-cmds = ["cd frontend && npm run build"]
+cmds = ["...", "cd frontend && npm install && npm run build"]
