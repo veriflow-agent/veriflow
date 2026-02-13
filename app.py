@@ -1,5 +1,6 @@
 # app.py
 from flask import Flask, render_template, request, jsonify, Response
+from flask_cors import CORS
 import os
 import re
 import threading
@@ -29,6 +30,21 @@ load_dotenv()
 
 # Initialize Flask app
 app = Flask(__name__)
+
+CORS(app, resources={
+    r"/api/*": {
+        "origins": [
+            "http://localhost:5173",
+            "http://localhost:3000",
+            "https://*.lovable.app",
+            "https://*.lovableproject.com",
+            "https://*.replit.dev",
+            "https://*.repl.co",
+        ],
+        "methods": ["GET", "POST", "OPTIONS"],
+        "allow_headers": ["Content-Type"],
+    }
+})
 
 # Load configuration
 class Config:
