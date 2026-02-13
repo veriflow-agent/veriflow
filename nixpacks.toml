@@ -2,7 +2,7 @@
 # Tells Railway to install both Python (for Flask) and Node (for React build)
 
 [phases.setup]
-nixPkgs = ["nodejs_20", "npm"]
+nixPkgs = ["nodejs_20"]
 
 [phases.install]
 cmds = ["pip install -r requirements.txt", "cd frontend && npm install"]
