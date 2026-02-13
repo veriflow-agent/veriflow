@@ -1,0 +1,11 @@
+# nixpacks.toml
+# Tells Railway to install both Python (for Flask) and Node (for React build)
+
+[phases.setup]
+nixPkgs = ["nodejs_20", "npm"]
+
+[phases.install]
+cmds = ["pip install -r requirements.txt", "cd frontend && npm install"]
+
+[phases.build]
+cmds = ["cd frontend && npm run build"]

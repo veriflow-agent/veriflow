@@ -1,5 +1,5 @@
 # app.py
-from flask import Flask, render_template, request, jsonify, Response
+from flask import Flask, render_template, request, jsonify, Response, send_from_directory
 from flask_cors import CORS
 import os
 import re
@@ -164,14 +164,24 @@ def detect_input_format(content: str) -> str:
         return 'text'
 
 
+# ---------- Serve React frontend ----------
+FRONTEND_DIST = os.path.join(os.path.dirname(__file__), 'frontend', 'dist')
+
 @app.route('/')
 def index():
-    """Serve the main HTML interface"""
-    return render_template('index.html')
+    """Serve the React frontend"""
+    return send_from_directory(FRONTEND_DIST, 'index.html')
 
-@app.route('/how-it-works')
-def how_it_works():
-    return render_template('how-it-works.html')
+@app.route('/<path:path>')
+def serve_frontend(path):
+    """Serve React static assets, fall back to index.html for client-side routing"""
+    # If the file exists in dist/, serve it (JS, CSS, images, etc.)
+    file_path = os.path.join(FRONTEND_DIST, path)
+    if os.path.isfile(file_path):
+        return send_from_directory(FRONTEND_DIST, path)
+    # Otherwise, let React Router handle it
+    return send_from_directory(FRONTEND_DIST, 'index.html')
+
 
 @app.route('/api/check', methods=['POST'])
 def check_facts():
