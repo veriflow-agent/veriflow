@@ -25,6 +25,9 @@ const Index = () => {
   const [error, setError] = useState<string | null>(null);
   const closeStreamRef = useRef<(() => void) | null>(null);
 
+  // Tracks whether an article was successfully fetched (to auto-switch ContentInput)
+  const [articleFetched, setArticleFetched] = useState(false);
+
   const reset = useCallback(() => {
     setState("idle");
     setMessages([]);
@@ -37,12 +40,17 @@ const Index = () => {
     setContent("");
     setUrl("");
     setArticle(null);
+    setArticleFetched(false);
   }, [reset]);
 
+  /* ──────── URL Fetch ──────── */
   const handleFetchUrl = useCallback(async () => {
     if (!url) return;
     setState("fetching");
     setMessages(["Fetching article from URL..."]);
+    setError(null);
+    setArticle(null);
+    setArticleFetched(false);
 
     try {
       const { job_id } = await postJob("/api/scrape-url", {
@@ -55,12 +63,28 @@ const Index = () => {
       closeStreamRef.current = streamJob(job_id, {
         onMessage: (msg) => setMessages((prev) => [...prev, msg]),
         onComplete: async () => {
-          const job = await fetchJobResult(job_id);
-          const r = job.result || job;
-          setArticle(r);
-          if (r.content) setContent(r.content);
-          setState("idle");
-          setMessages([]);
+          try {
+            const job = await fetchJobResult(job_id);
+            const r = job.result || job;
+            setArticle(r);
+
+            // If scrape succeeded, load the content
+            if (r.content) {
+              setContent(r.content);
+              setArticleFetched(true);
+            }
+            // If scrape failed but we still got credibility data, show SourceCard
+            // but leave content empty so user can paste manually
+            if (r.scrape_failed) {
+              setArticleFetched(false);
+            }
+
+            setState("idle");
+            setMessages([]);
+          } catch (fetchErr: any) {
+            setError(fetchErr.message || "Failed to retrieve results");
+            setState("error");
+          }
         },
         onError: (err) => {
           setError(err);
@@ -73,6 +97,7 @@ const Index = () => {
     }
   }, [url]);
 
+  /* ──────── Analysis ──────── */
   const handleAnalyze = useCallback(async () => {
     if (!content.trim()) return;
     setState("analyzing");
@@ -97,9 +122,14 @@ const Index = () => {
       closeStreamRef.current = streamJob(job_id, {
         onMessage: (msg) => setMessages((prev) => [...prev, msg]),
         onComplete: async () => {
-          const job = await fetchJobResult(job_id);
-          setResult(job.result || job);
-          setState("done");
+          try {
+            const job = await fetchJobResult(job_id);
+            setResult(job.result || job);
+            setState("done");
+          } catch (fetchErr: any) {
+            setError(fetchErr.message || "Failed to retrieve results");
+            setState("error");
+          }
         },
         onError: (err) => {
           setError(err);
@@ -112,7 +142,8 @@ const Index = () => {
     }
   }, [content, mode, url, article]);
 
-  const handleCancel = useCallback(async () => {
+  /* ──────── Cancel ──────── */
+  const handleCancel = useCallback(() => {
     closeStreamRef.current?.();
     setState("idle");
     setMessages([]);
@@ -136,14 +167,14 @@ const Index = () => {
             <ModeSelector selected={mode} onSelect={setMode} />
           </div>
 
-          {/* Source Card */}
+          {/* Source Card -- visible when article data exists (even with scrape failure) */}
           {article && !isProcessing && state !== "done" && (
             <div className="mb-4">
               <SourceCard article={article} />
             </div>
           )}
 
-          {/* Input */}
+          {/* Input -- hidden when showing results */}
           {state !== "done" && (
             <div className="mb-4">
               <ContentInput
@@ -154,6 +185,7 @@ const Index = () => {
                 onFetchUrl={handleFetchUrl}
                 isFetching={state === "fetching"}
                 mode={mode}
+                articleFetched={articleFetched}
               />
             </div>
           )}
