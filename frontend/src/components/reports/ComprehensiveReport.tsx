@@ -5,7 +5,7 @@ import KeyClaimsReport from "./KeyClaimsReport";
 import BiasReport from "./BiasReport";
 import DeceptionReport from "./DeceptionReport";
 import ManipulationReport from "./ManipulationReport";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
 
 type Props = {
@@ -50,7 +50,17 @@ const modeLabels: Record<string, string> = {
 };
 
 const ComprehensiveReport = ({ data }: Props) => {
-  const [expandedModes, setExpandedModes] = useState<Record<string, boolean>>({});
+  // Auto-expand all mode sections by default
+  const modeKeys = useMemo(
+    () => Object.keys(data.mode_reports || {}),
+    [data.mode_reports]
+  );
+  const [expandedModes, setExpandedModes] = useState<Record<string, boolean>>(() => {
+    const initial: Record<string, boolean> = {};
+    modeKeys.forEach(k => { initial[k] = true; });
+    return initial;
+  });
+
   const synth = data.synthesis_report;
   // Handle both field name variants
   const score = synth?.overall_score ?? synth?.overall_credibility_score ?? 0;
@@ -61,7 +71,6 @@ const ComprehensiveReport = ({ data }: Props) => {
   };
 
   // Map backend mode IDs to the correct sub-report component
-  // Backend uses: key_claims_analysis, bias_analysis, manipulation_detection, lie_detection
   const renderSubReport = (modeKey: string, modeData: any) => {
     switch (modeKey) {
       case "key_claims_analysis":
@@ -73,7 +82,6 @@ const ComprehensiveReport = ({ data }: Props) => {
       case "manipulation_detection":
         return <ManipulationReport data={modeData} />;
       case "llm_output_verification":
-        // Fallback to JSON for now
         return <pre className="text-xs overflow-auto">{JSON.stringify(modeData, null, 2)}</pre>;
       default:
         return <pre className="text-xs overflow-auto">{JSON.stringify(modeData, null, 2)}</pre>;
@@ -86,11 +94,11 @@ const ComprehensiveReport = ({ data }: Props) => {
       <div className="rounded-xl border border-border bg-card p-5">
         <h3 className="text-lg font-display font-semibold mb-3">Comprehensive Analysis</h3>
 
-        <div className="flex flex-wrap gap-4 mb-3">
+        <div className="flex flex-wrap gap-2 mb-3">
           {data.content_classification?.content_type && (
             <div className="rounded-lg bg-secondary px-3 py-1.5 text-xs">
               <span className="text-muted-foreground">Type:</span>{" "}
-              <span className="font-medium capitalize">{data.content_classification.content_type.replace("_", " ")}</span>
+              <span className="font-medium capitalize">{data.content_classification.content_type.replace(/_/g, " ")}</span>
             </div>
           )}
           {data.content_classification?.realm && (
@@ -101,7 +109,8 @@ const ComprehensiveReport = ({ data }: Props) => {
           )}
           {data.source_verification?.credibility_tier && (
             <div className={cn("rounded-lg px-3 py-1.5 text-xs font-medium", tierColors[data.source_verification.credibility_tier] || "bg-muted")}>
-              Tier {data.source_verification.credibility_tier} - {data.source_verification.publication_name}
+              Tier {data.source_verification.credibility_tier}
+              {data.source_verification.publication_name && ` -- ${data.source_verification.publication_name}`}
             </div>
           )}
           {data.source_verification?.bias_rating && (
@@ -120,7 +129,7 @@ const ComprehensiveReport = ({ data }: Props) => {
         )}
       </div>
 
-      {/* Mode Reports */}
+      {/* Mode Reports -- auto-expanded */}
       {data.mode_reports && Object.entries(data.mode_reports).map(([key, value]) => (
         <div key={key} className="rounded-xl border border-border bg-card overflow-hidden">
           <button
@@ -140,8 +149,8 @@ const ComprehensiveReport = ({ data }: Props) => {
 
       {/* Mode Errors */}
       {data.mode_errors && Object.keys(data.mode_errors).length > 0 && (
-        <div className="rounded-xl border border-score-low/30 bg-score-low/5 p-4">
-          <h4 className="text-xs font-semibold uppercase tracking-wide text-score-low mb-2">
+        <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-4">
+          <h4 className="text-xs font-semibold uppercase tracking-wide text-destructive mb-2">
             Failed Modes
           </h4>
           {Object.entries(data.mode_errors).map(([key, err]) => (
@@ -152,7 +161,7 @@ const ComprehensiveReport = ({ data }: Props) => {
         </div>
       )}
 
-      {/* Synthesis */}
+      {/* Synthesis / Overall Assessment */}
       {synth && (
         <div className="rounded-xl border border-border bg-card p-5">
           <h3 className="text-lg font-display font-semibold mb-3">Overall Assessment</h3>

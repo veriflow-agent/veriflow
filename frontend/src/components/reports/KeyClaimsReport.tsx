@@ -4,28 +4,37 @@ import { ScoreBadge, SessionInfo, getScoreColor } from "./shared";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { useState } from "react";
 
-// Backend FactCheckResult fields:
-//   fact_id (str), statement (str), match_score (float 0-1),
-//   confidence (float 0-1), report (str), tier_breakdown (dict)
+// Backend returns: id, statement, match_score (0-1), confidence (0-1), report, tier_breakdown
+// Key claims mode also sends: claim_text as alias, assessment as alias
 type Claim = {
   id: string;
-  statement: string;        // was claim_text
-  match_score: number;      // was verification_score (0-1 range)
-  confidence: number;
-  report: string;           // was verification_summary
+  statement?: string;
+  claim_text?: string;      // legacy alias
+  match_score?: number;     // 0-1 range
+  confidence?: number;
+  report?: string;
+  assessment?: string;      // legacy alias for report
   tier_breakdown?: { tier1?: number; tier2?: number; tier3?: number; filtered?: number } | null;
 };
 
 type Props = {
   data: {
-    facts?: Claim[];         // was key_claims
+    // Backend uses "facts" (web search mode) or "key_claims" (key claims mode)
+    facts?: Claim[];
+    key_claims?: Claim[];
     no_claims_found?: boolean;
     summary?: {
-      total_facts: number;   // was total_key_claims
+      // Web search mode fields
+      total_facts?: number;
       average_score?: number;
-      verified_count: number;
-      partial_count: number;
-      unverified_count: number;
+      // Key claims mode fields
+      total_key_claims?: number;
+      average_confidence?: number;
+      overall_credibility?: string;
+      // Shared fields
+      verified_count?: number;
+      partial_count?: number;
+      unverified_count?: number;
     };
     session_id?: string;
     processing_time?: number;
@@ -60,8 +69,8 @@ const statusColor = (s: string) => {
 const KeyClaimsReport = ({ data }: Props) => {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
-  // Backend returns "facts", not "key_claims"
-  const claims = data.facts;
+  // Handle both field name variants: "facts" (web search) or "key_claims" (key claims mode)
+  const claims = data.facts || data.key_claims;
 
   if (data.no_claims_found || !claims?.length) {
     return (
@@ -71,40 +80,54 @@ const KeyClaimsReport = ({ data }: Props) => {
     );
   }
 
+  // Handle both summary field name variants
+  const totalClaims = data.summary?.total_facts || data.summary?.total_key_claims || claims.length;
+
   return (
     <div className="space-y-4">
       <div className="rounded-xl border border-border bg-card p-5">
         <h3 className="text-lg font-display font-semibold mb-1">Key Claims Analysis</h3>
         <p className="text-xs text-muted-foreground mb-4">
-          We identify the 2-3 most important claims and verify each one thoroughly
+          We identify the 2-3 most important claims and verify each one thoroughly.
         </p>
 
         {data.summary && (
           <div className="flex flex-wrap gap-4 mb-4 p-3 rounded-lg bg-secondary">
             <div className="text-center">
-              <span className="block text-lg font-bold">{data.summary.total_facts}</span>
+              <span className="block text-lg font-bold">{totalClaims}</span>
               <span className="text-xs text-muted-foreground">Claims</span>
             </div>
             <div className="text-center">
-              <span className="block text-lg font-bold text-score-high">{data.summary.verified_count}</span>
+              <span className="block text-lg font-bold text-score-high">{data.summary.verified_count ?? 0}</span>
               <span className="text-xs text-muted-foreground">Verified</span>
             </div>
             <div className="text-center">
-              <span className="block text-lg font-bold text-score-moderate">{data.summary.partial_count}</span>
+              <span className="block text-lg font-bold text-score-moderate">{data.summary.partial_count ?? 0}</span>
               <span className="text-xs text-muted-foreground">Partial</span>
             </div>
             <div className="text-center">
-              <span className="block text-lg font-bold text-score-low">{data.summary.unverified_count}</span>
+              <span className="block text-lg font-bold text-score-low">{data.summary.unverified_count ?? 0}</span>
               <span className="text-xs text-muted-foreground">Unverified</span>
             </div>
+            {data.summary.overall_credibility && (
+              <div className="text-center">
+                <span className="block text-sm font-semibold capitalize">{data.summary.overall_credibility}</span>
+                <span className="text-xs text-muted-foreground">Credibility</span>
+              </div>
+            )}
           </div>
         )}
 
         <div className="space-y-3">
           {claims.map((claim) => {
-            const scorePercent = Math.round(claim.match_score * 100);
-            const status = deriveStatus(claim.match_score);
+            const matchScore = claim.match_score ?? 0;
+            const scorePercent = Math.round(matchScore * 100);
+            const status = deriveStatus(matchScore);
             const isOpen = expanded[claim.id];
+
+            // Handle field name variants
+            const statementText = claim.statement || claim.claim_text || "No statement available";
+            const reportText = claim.report || claim.assessment || "";
 
             return (
               <div key={claim.id} className="rounded-lg border border-border p-4">
@@ -119,8 +142,10 @@ const KeyClaimsReport = ({ data }: Props) => {
                         {statusLabel(status)}
                       </span>
                     </div>
-                    <p className="text-sm font-medium mb-2">{claim.statement}</p>
-                    <p className="text-xs text-muted-foreground leading-relaxed">{claim.report}</p>
+                    <p className="text-sm font-medium mb-2">{statementText}</p>
+                    {reportText && (
+                      <p className="text-xs text-muted-foreground leading-relaxed">{reportText}</p>
+                    )}
 
                     {claim.tier_breakdown && (
                       <button
@@ -141,6 +166,9 @@ const KeyClaimsReport = ({ data }: Props) => {
                         )}
                         {claim.tier_breakdown.tier3 != null && claim.tier_breakdown.tier3 > 0 && (
                           <span>Tier 3: {claim.tier_breakdown.tier3}</span>
+                        )}
+                        {claim.tier_breakdown.filtered != null && claim.tier_breakdown.filtered > 0 && (
+                          <span className="text-score-low">Filtered: {claim.tier_breakdown.filtered}</span>
                         )}
                       </div>
                     )}
