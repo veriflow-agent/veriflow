@@ -292,6 +292,10 @@ class BrowserlessScraper:
             "cloudscraper_successes": 0,
         }
 
+        # Per-URL failure reason tracking (readable by orchestrators)
+        # Values: "paywall", "http_blocked", "all_strategies_failed", "timeout"
+        self.url_failure_reasons: Dict[str, str] = {}
+
         if self.browserless_endpoint:
             fact_logger.logger.info(f"[LOG] Railway Browserless endpoint configured: {self.browserless_endpoint[:50]}...")
             fact_logger.logger.info(f"[LOG] Running on replica: {self.replica_id}")
@@ -555,6 +559,8 @@ class BrowserlessScraper:
             processing_time = time.time() - start_time
             self.stats["failed_scrapes"] += 1
             self.stats["timeout_scrapes"] += 1
+            if url not in self.url_failure_reasons:
+                self.url_failure_reasons[url] = "timeout"
             fact_logger.logger.error(
                 f"TIMEOUT after {processing_time:.1f}s: {url}",
                 extra={"url": url, "browser_index": browser_index, "timeout": self.overall_scrape_timeout}
@@ -563,6 +569,8 @@ class BrowserlessScraper:
         except Exception as e:
             processing_time = time.time() - start_time
             self.stats["failed_scrapes"] += 1
+            if url not in self.url_failure_reasons:
+                self.url_failure_reasons[url] = "scrape_failed"
             fact_logger.logger.error(
                 f"Scraping error for {url}: {e}",
                 extra={"url": url, "duration": processing_time, "error": str(e)}
@@ -699,19 +707,27 @@ class BrowserlessScraper:
                     f"HTTP block detected for {domain} -- breaking to ScrapingBee fallback"
                 )
                 http_blocked = True
+                self.url_failure_reasons[url] = "http_blocked"
                 break  # Exit strategy loop, fall through to ScrapingBee
 
         # All Playwright strategies failed (or HTTP blocked) -- try ScrapingBee
         sb_content = await self._try_scrapingbee_fallback(url, domain, start_time, browser_index, browser)
         if sb_content:
+            self.url_failure_reasons.pop(url, None)  # Clear -- fallback succeeded
             return sb_content
 
         # ScrapingBee also failed -- try CloudScraper (Cloudflare bypass)
         cs_content = await self._try_cloudscraper_fallback(url, domain, start_time, browser_index, browser)
         if cs_content:
+            self.url_failure_reasons.pop(url, None)  # Clear -- fallback succeeded
             return cs_content
 
-        # Everything failed
+        # Everything failed -- set final reason if not already set (paywall takes priority)
+        if url not in self.url_failure_reasons:
+            if http_blocked:
+                self.url_failure_reasons[url] = "http_blocked"
+            else:
+                self.url_failure_reasons[url] = "all_strategies_failed"
         fact_logger.logger.error(
             f"All strategies failed for {url}" + (" (HTTP blocked)" if http_blocked else ""),
             extra={
@@ -908,6 +924,7 @@ class BrowserlessScraper:
             if await self._detect_paywall(page):
                 self.stats["failed_scrapes"] += 1
                 self.stats["paywall_detected"] += 1
+                self.url_failure_reasons[url] = "paywall"
                 fact_logger.logger.warning(f"Paywall detected, skipping: {url}")
                 return ""
 

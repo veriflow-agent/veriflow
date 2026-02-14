@@ -19,7 +19,7 @@ import time
 
 from utils.logger import fact_logger
 from utils.langsmith_config import langsmith_config
-from agents.llm_fact_extractor import LLMClaim  # ✅ Import new type
+from agents.llm_fact_extractor import LLMClaim  # âœ… Import new type
 
 
 class LLMVerificationResult(BaseModel):
@@ -32,7 +32,8 @@ class LLMVerificationResult(BaseModel):
     confidence: float = Field(ge=0.0, le=1.0)
     reasoning: str
     excerpts: List[Dict] = Field(default_factory=list)
-    cited_source_urls: List[str] = Field(default_factory=list)  # Changed to list
+    cited_source_urls: List[str] = Field(default_factory=list)
+    source_issues: List[Dict] = Field(default_factory=list)  # [{url, reason, domain}]
 
 
 class LLMOutputVerifier:
@@ -55,7 +56,7 @@ class LLMOutputVerifier:
 
         self.parser = JsonOutputParser(pydantic_object=LLMVerificationResult)
 
-        # ✅ Import prompts
+        # âœ… Import prompts
         from prompts.llm_output_verification_prompts import get_llm_verification_prompts
         self.prompts = get_llm_verification_prompts()
 
@@ -80,7 +81,7 @@ class LLMOutputVerifier:
         """
         Verify if LLM accurately interpreted its cited sources
 
-        ✅ NEW: Checks against ALL cited sources (handles [4][6][9] style citations)
+        âœ… NEW: Checks against ALL cited sources (handles [4][6][9] style citations)
 
         Args:
             claim: The LLMClaim object with the LLM's claim text and cited_sources list
@@ -93,14 +94,14 @@ class LLMOutputVerifier:
         start_time = time.time()
 
         fact_logger.logger.info(
-            f"🔍 Verifying LLM interpretation for {claim.id}",
+            f"ðŸ” Verifying LLM interpretation for {claim.id}",
             extra={
                 "claim_id": claim.id, 
                 "num_cited_sources": len(claim.cited_sources)
             }
         )
 
-        # ✅ Handle multiple cited sources
+        # âœ… Handle multiple cited sources
         all_excerpts = []
         available_sources = []
         missing_sources = []
@@ -112,7 +113,7 @@ class LLMOutputVerifier:
                 source_excerpts = excerpts_by_url.get(cited_url, [])
 
                 fact_logger.logger.debug(
-                    f"  📄 Source available: {cited_url} ({len(source_excerpts)} excerpts)",
+                    f"  ðŸ“„ Source available: {cited_url} ({len(source_excerpts)} excerpts)",
                     extra={"claim_id": claim.id, "source_url": cited_url}
                 )
 
@@ -124,14 +125,14 @@ class LLMOutputVerifier:
             else:
                 missing_sources.append(cited_url)
                 fact_logger.logger.warning(
-                    f"  ⚠️ Source NOT available: {cited_url}",
+                    f"  âš ï¸ Source NOT available: {cited_url}",
                     extra={"claim_id": claim.id, "source_url": cited_url}
                 )
 
         # Check if we have any available sources
         if not available_sources:
             fact_logger.logger.error(
-                f"❌ None of the {len(claim.cited_sources)} cited sources are available for {claim.id}",
+                f"âŒ None of the {len(claim.cited_sources)} cited sources are available for {claim.id}",
                 extra={"claim_id": claim.id, "missing_sources": missing_sources}
             )
             return self._create_error_result(
@@ -141,7 +142,7 @@ class LLMOutputVerifier:
 
         # Log verification details
         fact_logger.logger.info(
-            f"  ✅ Checking {claim.id} against {len(available_sources)}/{len(claim.cited_sources)} sources ({len(all_excerpts)} total excerpts)",
+            f"  âœ… Checking {claim.id} against {len(available_sources)}/{len(claim.cited_sources)} sources ({len(all_excerpts)} total excerpts)",
             extra={
                 "claim_id": claim.id,
                 "available_sources": len(available_sources),
@@ -172,7 +173,7 @@ class LLMOutputVerifier:
         # Execute verification with GPT-4o
         try:
             fact_logger.logger.debug(
-                f"  🤖 Calling LLM for verification of {claim.id}",
+                f"  ðŸ¤– Calling LLM for verification of {claim.id}",
                 extra={"claim_id": claim.id, "model": "gpt-4o"}
             )
 
@@ -198,16 +199,16 @@ class LLMOutputVerifier:
                 confidence=response.get('confidence', 0.5),
                 reasoning=response.get('reasoning', 'No reasoning provided'),
                 excerpts=all_excerpts,  # Store all excerpts with source tags
-                cited_source_urls=available_sources  # ✅ Now a list of all checked sources
+                cited_source_urls=available_sources  # âœ… Now a list of all checked sources
             )
 
             # Add warning about missing sources if any
             if missing_sources:
-                missing_warning = f"⚠️ {len(missing_sources)} cited source(s) were unavailable: {', '.join([self._shorten_url(url) for url in missing_sources])}"
+                missing_warning = f"âš ï¸ {len(missing_sources)} cited source(s) were unavailable: {', '.join([self._shorten_url(url) for url in missing_sources])}"
                 result.interpretation_issues.insert(0, missing_warning)
 
                 fact_logger.logger.warning(
-                    f"  ⚠️ {claim.id}: Some sources unavailable",
+                    f"  âš ï¸ {claim.id}: Some sources unavailable",
                     extra={
                         "claim_id": claim.id,
                         "missing_count": len(missing_sources),
@@ -218,7 +219,7 @@ class LLMOutputVerifier:
             elapsed_time = time.time() - start_time
 
             fact_logger.logger.info(
-                f"  ✅ Verification complete for {claim.id}: {result.verification_score:.2f} ({elapsed_time:.1f}s)",
+                f"  âœ… Verification complete for {claim.id}: {result.verification_score:.2f} ({elapsed_time:.1f}s)",
                 extra={
                     "claim_id": claim.id,
                     "score": result.verification_score,
@@ -231,7 +232,7 @@ class LLMOutputVerifier:
 
         except Exception as e:
             fact_logger.logger.error(
-                f"❌ Verification failed for {claim.id}: {str(e)}",
+                f"âŒ Verification failed for {claim.id}: {str(e)}",
                 extra={"claim_id": claim.id, "error": str(e)}
             )
             return self._create_error_result(claim, f"Verification error: {str(e)}")
@@ -245,7 +246,7 @@ class LLMOutputVerifier:
         """
         Format excerpts from multiple sources for verification prompt
 
-        ✅ NEW: Groups excerpts by source and labels them clearly
+        âœ… NEW: Groups excerpts by source and labels them clearly
         """
         if not excerpts:
             return "No relevant excerpts found in any cited source."

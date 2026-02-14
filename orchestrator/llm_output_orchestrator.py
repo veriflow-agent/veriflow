@@ -18,6 +18,7 @@ For fact-checking ANY text, use web_search_orchestrator.py instead.
 from langsmith import traceable
 import time
 import asyncio
+from urllib.parse import urlparse
 
 from utils.html_parser import HTMLParser
 from utils.file_manager import FileManager
@@ -56,7 +57,7 @@ class LLMInterpretationOrchestrator:
     def __init__(self, config):
         self.config = config
         self.parser = HTMLParser()
-        self.extractor = LLMFactExtractor(config)  # ✅ Use new extractor
+        self.extractor = LLMFactExtractor(config)  # Use new extractor
         self.scraper = BrowserlessScraper(config)
         self.highlighter = Highlighter(config)
         # Will import updated verifier
@@ -86,51 +87,71 @@ class LLMInterpretationOrchestrator:
         start_time = time.time()
 
         fact_logger.logger.info(
-            f"🔍 STARTING LLM INTERPRETATION VERIFICATION: {session_id}",
+            f"STARTING LLM INTERPRETATION VERIFICATION: {session_id}",
             extra={"session_id": session_id, "process": "interpretation_verification"}
         )
 
         try:
             # Step 1: Parse LLM output
-            job_manager.add_progress(job_id, "📄 Parsing LLM output...")
+            job_manager.add_progress(job_id, "Parsing LLM output...")
             self._check_cancellation(job_id)
             parsed = await self._traced_parse(html_content)
 
             # Step 2: Extract claim segments (with source mapping)
-            job_manager.add_progress(job_id, "🔍 Extracting LLM claim segments...")
+            job_manager.add_progress(job_id, "Extracting LLM claim segments...")
             self._check_cancellation(job_id)
 
-            # ✅ Use new extractor that preserves wording and maps sources
+            # Use new extractor that preserves wording and maps sources
             claims, all_source_urls = await self.extractor.extract_claims(parsed)
 
             job_manager.add_progress(
                 job_id,
-                f"✅ Found {len(claims)} claim segments citing {len(all_source_urls)} sources"
+                f"Found {len(claims)} claim segments citing {len(all_source_urls)} sources"
             )
 
             # Step 3: Scrape cited sources
             unique_urls = list(set(all_source_urls))
             job_manager.add_progress(
                 job_id,
-                f"🌐 Scraping {len(unique_urls)} sources cited by LLM..."
+                f"Scraping {len(unique_urls)} sources cited by LLM..."
             )
             self._check_cancellation(job_id)
 
             all_scraped_content = await self.scraper.scrape_urls_for_facts(unique_urls)
             successful_scrapes = len([v for v in all_scraped_content.values() if v])
+
+            # Capture per-URL failure reasons from scraper
+            url_failure_reasons = dict(self.scraper.url_failure_reasons)
+
+            # Log specific failure types so the user sees them in progress
+            for fail_url, reason in url_failure_reasons.items():
+                fail_domain = urlparse(fail_url).netloc.lower().replace('www.', '')
+                if reason == "paywall":
+                    job_manager.add_progress(
+                        job_id,
+                        f"[PAYWALL] {fail_domain} -- article is behind a paywall",
+                        {'url': fail_url, 'domain': fail_domain, 'failure_reason': 'paywall'}
+                    )
+                elif reason == "http_blocked":
+                    job_manager.add_progress(
+                        job_id,
+                        f"[BLOCKED] {fail_domain} -- site is blocking automated access (HTTP 401/403)",
+                        {'url': fail_url, 'domain': fail_domain, 'failure_reason': 'http_blocked'}
+                    )
+
             job_manager.add_progress(
                 job_id,
-                f"✅ Scraped {successful_scrapes}/{len(unique_urls)} cited sources"
+                f"Scraped {successful_scrapes}/{len(unique_urls)} cited sources"
             )
 
-            # Step 4: Verify each claim's interpretation (✅ OPTIMIZED: Parallel processing)
+            # Step 4: Verify each claim's interpretation (OPTIMIZED: Parallel processing)
             job_manager.add_progress(
                 job_id,
-                f"🔬 Verifying {len(claims)} claims in parallel..."
+                f"Verifying {len(claims)} claims in parallel..."
             )
             self._check_cancellation(job_id)
 
-            # ✅ NEW: Create verification tasks for parallel execution
+            # NEW: Create verification tasks for parallel execution
             async def verify_single_claim(claim, claim_index):
                 """Verify a single claim and return result"""
                 try:
@@ -143,6 +164,19 @@ class LLMInterpretationOrchestrator:
                         excerpts,
                         all_scraped_content
                     )
+
+                    # Attach source issues (paywall, blocked, etc.) for this claim
+                    claim_source_issues = []
+                    for cited_url in claim.cited_sources:
+                        if cited_url in url_failure_reasons:
+                            fail_domain = urlparse(cited_url).netloc.lower().replace('www.', '')
+                            claim_source_issues.append({
+                                'url': cited_url,
+                                'domain': fail_domain,
+                                'reason': url_failure_reasons[cited_url]
+                            })
+                    if claim_source_issues:
+                        verification.source_issues = claim_source_issues
 
                     # Update progress with score
                     score_emoji = self._get_score_emoji(verification.verification_score)
@@ -159,9 +193,21 @@ class LLMInterpretationOrchestrator:
                     return verification
 
                 except Exception as e:
-                    fact_logger.logger.error(f"❌ Error verifying {claim.id}: {e}")
+                    fact_logger.logger.error(f"Error verifying {claim.id}: {e}")
                     # Return a failed verification result
                     from agents.llm_output_verifier import LLMVerificationResult
+
+                    # Still attach source issues even on error
+                    claim_source_issues = []
+                    for cited_url in claim.cited_sources:
+                        if cited_url in url_failure_reasons:
+                            fail_domain = urlparse(cited_url).netloc.lower().replace('www.', '')
+                            claim_source_issues.append({
+                                'url': cited_url,
+                                'domain': fail_domain,
+                                'reason': url_failure_reasons[cited_url]
+                            })
+
                     return LLMVerificationResult(
                         claim_id=claim.id,
                         claim_text=claim.claim_text,
@@ -172,10 +218,10 @@ class LLMInterpretationOrchestrator:
                         confidence=0.0,
                         reasoning=str(e),
                         excerpts=[],
-                        cited_source_urls=claim.cited_sources
+                        cited_source_urls=claim.cited_sources,
+                        source_issues=claim_source_issues
                     )
 
-            # ✅ Execute all verifications in parallel
             verification_tasks = [
                 verify_single_claim(claim, i)
                 for i, claim in enumerate(claims, 1)
@@ -183,24 +229,24 @@ class LLMInterpretationOrchestrator:
 
             results = await asyncio.gather(*verification_tasks, return_exceptions=False)
 
-            job_manager.add_progress(job_id, "✅ All claims verified")
+            job_manager.add_progress(job_id, "All claims verified")
 
             # Step 5: Create summary
-            job_manager.add_progress(job_id, "📊 Creating verification summary...")
+            job_manager.add_progress(job_id, "Creating verification summary...")
             summary = self._create_summary(results, claims, all_source_urls)
 
             # Step 6: Save results
-            job_manager.add_progress(job_id, "💾 Saving results...")
+            job_manager.add_progress(job_id, "Saving results...")
             await self._save_results(session_id, results, summary, html_content)
 
             duration = time.time() - start_time
             job_manager.add_progress(
                 job_id,
-                f"✅ Verification complete in {duration:.1f}s - {len(results)} claims analyzed"
+                f"Verification complete in {duration:.1f}s - {len(results)} claims analyzed"
             )
 
             fact_logger.logger.info(
-                f"🎉 INTERPRETATION VERIFICATION COMPLETE: {session_id}",
+                f"INTERPRETATION VERIFICATION COMPLETE: {session_id}",
                 extra={
                     "session_id": session_id,
                     "num_claims": len(results),
@@ -209,7 +255,7 @@ class LLMInterpretationOrchestrator:
                 }
             )
 
-            # ✅ Convert Pydantic objects to dicts for JSON serialization
+            # Convert Pydantic objects to dicts for JSON serialization
             return {
                 'session_id': session_id,
                 'results': [result.model_dump() for result in results],  # Convert to dict
@@ -221,7 +267,7 @@ class LLMInterpretationOrchestrator:
             fact_logger.log_component_error("LLMInterpretationOrchestrator", e)
             job_manager.add_progress(
                 job_id,
-                f"❌ Error: {str(e)}",
+                f"Error: {str(e)}",
                 {'error': str(e)}
             )
             raise
@@ -236,11 +282,11 @@ class LLMInterpretationOrchestrator:
         """
         Extract relevant excerpts for a claim from ALL its cited sources
 
-        ✅ UPDATED: Now handles multiple cited sources per claim
+        âœ… UPDATED: Now handles multiple cited sources per claim
         """
 
         fact_logger.logger.info(
-            f"🔦 Extracting excerpts for {claim.id} from {len(claim.cited_sources)} source(s)",
+            f"Extracting excerpts for {claim.id} from {len(claim.cited_sources)} source(s)",
             extra={
                 "claim_id": claim.id, 
                 "num_cited_sources": len(claim.cited_sources),
@@ -248,28 +294,28 @@ class LLMInterpretationOrchestrator:
             }
         )
 
-        # ✅ Extract excerpts from ALL cited sources
+        # Extract excerpts from ALL cited sources
         all_excerpts_by_url = {}
 
         for cited_url in claim.cited_sources:
             if cited_url not in scraped_content or not scraped_content[cited_url]:
                 fact_logger.logger.warning(
-                    f"⚠️ Cited source not available: {cited_url}",
+                    f"Cited source not available: {cited_url}",
                     extra={"claim_id": claim.id, "url": cited_url}
                 )
                 all_excerpts_by_url[cited_url] = []
                 continue
 
-            # ✅ Create a Fact-like object for Highlighter
+            # Create a Fact-like object for Highlighter
             simple_fact = SimpleFact(
                 id=claim.id,
                 statement=claim.claim_text
             )
 
-            # ✅ Create proper dict format: {url: content}
+            # Create proper dict format: {url: content}
             cited_content = {cited_url: scraped_content[cited_url]}
 
-            # ✅ Call highlighter with correct signature (2 args)
+            # Call highlighter with correct signature (2 args)
             excerpts_dict = await self.highlighter.highlight(simple_fact, cited_content)
 
             # Extract excerpts list for this URL
@@ -277,7 +323,7 @@ class LLMInterpretationOrchestrator:
             all_excerpts_by_url[cited_url] = excerpts
 
             fact_logger.logger.debug(
-                f"✂️ Extracted {len(excerpts)} excerpts from {cited_url}",
+                f"Extracted {len(excerpts)} excerpts from {cited_url}",
                 extra={
                     "claim_id": claim.id, 
                     "url": cited_url,
@@ -287,7 +333,7 @@ class LLMInterpretationOrchestrator:
 
         total_excerpts = sum(len(e) for e in all_excerpts_by_url.values())
         fact_logger.logger.info(
-            f"✅ Total excerpts for {claim.id}: {total_excerpts} from {len(all_excerpts_by_url)} sources",
+            f"Total excerpts for {claim.id}: {total_excerpts} from {len(all_excerpts_by_url)} sources",
             extra={"claim_id": claim.id, "total_excerpts": total_excerpts}
         )
 
@@ -296,15 +342,15 @@ class LLMInterpretationOrchestrator:
     def _get_score_emoji(self, score: float) -> str:
         """Get emoji based on verification score"""
         if score >= 0.9:
-            return "✅"
+            return "âœ…"
         elif score >= 0.75:
-            return "✔️"
+            return "âœ”ï¸"
         elif score >= 0.6:
-            return "⚠️"
+            return "âš ï¸"
         elif score >= 0.3:
-            return "❌"
+            return "âŒ"
         else:
-            return "🚫"
+            return "ðŸš«"
 
     def _create_summary(self, results: list, claims: list, sources: list) -> dict:
         """Create summary statistics"""
@@ -341,11 +387,11 @@ class LLMInterpretationOrchestrator:
             f"  Sources Cited: {summary['total_sources']}",
             f"  Average Verification Score: {summary['average_score']:.2f}",
             f"\n  Accuracy Breakdown:",
-            f"    ✅ Accurate (0.9+): {summary['accurate_count']}",
-            f"    ✔️  Mostly Accurate (0.75-0.89): {summary['mostly_accurate_count']}",
-            f"    ⚠️  Partially Accurate (0.6-0.74): {summary['partially_accurate_count']}",
-            f"    ❌ Misleading (0.3-0.59): {summary['misleading_count']}",
-            f"    🚫 False (0.0-0.29): {summary['false_count']}",
+            f"    âœ… Accurate (0.9+): {summary['accurate_count']}",
+            f"    âœ”ï¸  Mostly Accurate (0.75-0.89): {summary['mostly_accurate_count']}",
+            f"    âš ï¸  Partially Accurate (0.6-0.74): {summary['partially_accurate_count']}",
+            f"    âŒ Misleading (0.3-0.59): {summary['misleading_count']}",
+            f"    ðŸš« False (0.0-0.29): {summary['false_count']}",
             "\n" + "=" * 80,
             "DETAILED RESULTS:",
             "=" * 80,
@@ -360,7 +406,7 @@ class LLMInterpretationOrchestrator:
                 f"Confidence: {result.confidence:.2f}",
             ])
 
-            # ✅ Add wording comparison section
+            # Add wording comparison section
             if result.wording_comparison:
                 report_lines.append("\nWORDING COMPARISON:")
                 wc = result.wording_comparison
@@ -369,10 +415,10 @@ class LLMInterpretationOrchestrator:
                 if wc.get('source_says'):
                     report_lines.append(f"  Source Says: \"{wc.get('source_says')}\"")
                 if 'faithful' in wc:
-                    faithful_status = "✓ Faithful" if wc.get('faithful') else "✗ Not Faithful"
+                    faithful_status = "Faithful" if wc.get('faithful') else "Not Faithful"
                     report_lines.append(f"  {faithful_status}")
 
-            # ✅ Add highlighted excerpts section
+            # Add highlighted excerpts section
             if result.excerpts:
                 report_lines.append(f"\nHIGHLIGHTED EXCERPTS FROM SOURCE ({len(result.excerpts)} found):")
                 for i, excerpt in enumerate(result.excerpts[:3], 1):  # Show top 3 excerpts
@@ -386,7 +432,7 @@ class LLMInterpretationOrchestrator:
                         report_lines.append(f"      \"{quote}\"")
                 if len(result.excerpts) > 3:
                     report_lines.append(f"  ... and {len(result.excerpts) - 3} more excerpts")
-                # ✅ Display all checked sources (now a list)
+                # Display all checked sources (now a list)
                 if result.cited_source_urls:
                     if len(result.cited_source_urls) == 1:
                         report_lines.append(f"  Source: {result.cited_source_urls[0]}")
@@ -395,7 +441,7 @@ class LLMInterpretationOrchestrator:
                         for i, url in enumerate(result.cited_source_urls, 1):
                             report_lines.append(f"    [{i}] {url}")
 
-            # ✅ Add detailed reasoning section
+            # Add detailed reasoning section
             if result.reasoning:
                 report_lines.append("\nREASONING:")
                 # Format reasoning with proper indentation
@@ -412,7 +458,7 @@ class LLMInterpretationOrchestrator:
 
         report_text = "\n".join(report_lines)
 
-        # ✅ FIXED: Use the new save_verification_report method
+        # FIXED: Use the new save_verification_report method
         upload_result = self.file_manager.save_verification_report(
             session_id,
             report_text,
@@ -421,7 +467,7 @@ class LLMInterpretationOrchestrator:
         )
 
         fact_logger.logger.info(
-            f"✅ Session {session_id} saved",
+            f"Session {session_id} saved",
             extra={
                 "session_id": session_id,
                 "r2_upload_success": upload_result.get('success', False),

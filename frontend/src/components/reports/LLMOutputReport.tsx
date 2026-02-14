@@ -1,7 +1,7 @@
 // src/components/reports/LLMOutputReport.tsx
 import { cn } from "@/lib/utils";
 import { SessionInfo } from "./shared";
-import { ExternalLink, ChevronDown, ChevronUp } from "lucide-react";
+import { ExternalLink, ChevronDown, ChevronUp, Lock, ShieldAlert } from "lucide-react";
 import { useState } from "react";
 
 // Backend LLMVerificationResult fields:
@@ -19,6 +19,7 @@ type VerResult = {
   reasoning?: string;
   excerpts?: Record<string, any>[];
   cited_source_urls?: string[];  // was source_url / source_domain
+  source_issues?: { url: string; domain: string; reason: string }[];
 };
 
 type Props = {
@@ -70,6 +71,18 @@ const LLMOutputReport = ({ data }: Props) => {
   const issues = results.filter(r => deriveStatus(r.verification_score) === "partially_verified").length;
   const unverified = results.filter(r => deriveStatus(r.verification_score) === "unverified").length;
 
+  // Collect unique source issues across all claims
+  const allSourceIssues = new Map<string, { domain: string; reason: string }>();
+  results.forEach(r => {
+    r.source_issues?.forEach(si => {
+      if (!allSourceIssues.has(si.url)) {
+        allSourceIssues.set(si.url, { domain: si.domain, reason: si.reason });
+      }
+    });
+  });
+  const paywallCount = [...allSourceIssues.values()].filter(si => si.reason === "paywall").length;
+  const blockedCount = [...allSourceIssues.values()].filter(si => si.reason !== "paywall").length;
+
   return (
     <div className="space-y-4">
       <div className="rounded-xl border border-border bg-card p-5">
@@ -89,6 +102,25 @@ const LLMOutputReport = ({ data }: Props) => {
             <span className="text-xs text-muted-foreground">Unverified</span>
           </div>
         </div>
+
+        {/* Source access issues banner */}
+        {allSourceIssues.size > 0 && (
+          <div className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-3">
+            <div className="flex items-center gap-2 mb-1">
+              <Lock size={13} className="text-amber-500" />
+              <span className="text-xs font-semibold text-amber-600 dark:text-amber-400">
+                Some sources could not be accessed
+              </span>
+            </div>
+            <p className="text-[11px] text-muted-foreground leading-relaxed">
+              {paywallCount > 0 && `${paywallCount} source${paywallCount > 1 ? "s" : ""} behind a paywall`}
+              {paywallCount > 0 && blockedCount > 0 && ", "}
+              {blockedCount > 0 && `${blockedCount} source${blockedCount > 1 ? "s" : ""} blocking automated access`}
+              . Claims citing these sources could not be fully verified.
+              Look for the links below to open them in your browser.
+            </p>
+          </div>
+        )}
 
         <div className="space-y-3">
           {results.map((r, i) => {
@@ -122,20 +154,54 @@ const LLMOutputReport = ({ data }: Props) => {
                   </div>
                 )}
 
-                {/* Cited sources */}
+                {/* Cited sources with failure status */}
                 {r.cited_source_urls && r.cited_source_urls.length > 0 && (
-                  <div className="mt-2">
-                    {r.cited_source_urls.map((url, j) => (
-                      <a
-                        key={j}
-                        href={url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-1 mt-1 text-xs text-muted-foreground hover:text-foreground"
-                      >
-                        <ExternalLink size={10} /> {getDomain(url)}
-                      </a>
-                    ))}
+                  <div className="mt-2 space-y-1">
+                    {r.cited_source_urls.map((url, j) => {
+                      const issue = r.source_issues?.find(si => si.url === url);
+                      if (issue) {
+                        return (
+                          <div key={j} className="flex items-start gap-2 mt-1 rounded border border-amber-500/30 bg-amber-500/5 px-2.5 py-1.5">
+                            <div className="flex items-center gap-1 shrink-0 mt-px">
+                              {issue.reason === "paywall" ? (
+                                <Lock size={11} className="text-amber-500" />
+                              ) : (
+                                <ShieldAlert size={11} className="text-amber-500" />
+                              )}
+                              <span className="text-[10px] font-semibold uppercase text-amber-500">
+                                {issue.reason === "paywall" ? "Paywall" : "Blocked"}
+                              </span>
+                            </div>
+                            <div className="flex flex-col gap-0.5 min-w-0">
+                              <span className="text-[11px] text-muted-foreground leading-tight">
+                                {issue.reason === "paywall"
+                                  ? "This article is behind a paywall. Open it in your browser to read the source:"
+                                  : `${issue.domain} is blocking automated access. Open it in your browser:`}
+                              </span>
+                              <a
+                                href={url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex items-center gap-1 text-xs text-foreground hover:underline truncate"
+                              >
+                                <ExternalLink size={10} className="shrink-0" /> {getDomain(url)}
+                              </a>
+                            </div>
+                          </div>
+                        );
+                      }
+                      return (
+                        <a
+                          key={j}
+                          href={url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-1 mt-1 text-xs text-muted-foreground hover:text-foreground"
+                        >
+                          <ExternalLink size={10} /> {getDomain(url)}
+                        </a>
+                      );
+                    })}
                   </div>
                 )}
 
