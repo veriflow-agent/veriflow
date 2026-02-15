@@ -4,11 +4,9 @@ Comprehensive Analysis Orchestrator
 Coordinates the full 3-stage comprehensive analysis pipeline
 
 STAGE 1: Pre-Analysis (produces MetadataBlocks)
-- Content Classification (type, realm, LLM detection)
-- Source Verification (credibility tier, MBFC check)
-- Author Investigation (future enhancement)
-- Mode Routing (decide which modes to run)
-- Any future checks simply add a new block
+- Content Classification + Source Verification run in PARALLEL
+- Mode Routing runs after classification completes (depends on its result)
+- Any future checks simply add a helper method + join the gather() call
 
 STAGE 2: Parallel Mode Execution
 - Run ALL selected modes simultaneously using asyncio.gather()
@@ -167,6 +165,101 @@ class ComprehensiveOrchestrator:
     # STAGE 1: PRE-ANALYSIS (produces MetadataBlocks)
     # =========================================================================
 
+    async def _classify_content(self, content: str, job_id: str) -> Tuple[Optional[Dict], MetadataBlock]:
+        """
+        Step 1a helper: Run content classification.
+        Returns (classification_data_dict, metadata_block).
+        Designed to run in parallel with _verify_source().
+        """
+        self._send_stage_update(job_id, "content_classification", "Analyzing content type...")
+
+        classification_result = await self.content_classifier.classify(content)
+
+        if classification_result.success:
+            data = classification_result.classification.model_dump()
+            block = build_content_classification_block(
+                classification_data=data,
+                success=True,
+                processing_time_ms=classification_result.processing_time_ms,
+            )
+            job_manager.add_progress(
+                job_id,
+                f"Content classified: {classification_result.classification.content_type} "
+                f"({classification_result.classification.realm})"
+            )
+        else:
+            data = {"error": classification_result.error}
+            block = build_content_classification_block(
+                classification_data=data,
+                success=False,
+                error=classification_result.error,
+                processing_time_ms=classification_result.processing_time_ms,
+            )
+
+        job_manager.add_progress(job_id, "Content classification complete", details={
+            "partial_result": {"content_classification": data}
+        })
+
+        return data, block
+
+    async def _verify_source(self, source_url: Optional[str], job_id: str) -> Tuple[Optional[Dict], MetadataBlock]:
+        """
+        Step 1b helper: Run source verification.
+        Returns (verification_data_dict, metadata_block).
+        Designed to run in parallel with _classify_content().
+        """
+        self._send_stage_update(job_id, "source_verification", "Verifying source credibility...")
+
+        if source_url:
+            sv_start = time.time()
+            verification_result = await self.source_verifier.verify_source(source_url)
+            sv_time_ms = int((time.time() - sv_start) * 1000)
+
+            if verification_result.report.verification_successful:
+                data = {
+                    "domain": verification_result.report.domain,
+                    "credibility_tier": verification_result.report.credibility_tier,
+                    "tier_description": verification_result.report.tier_description,
+                    "verification_source": verification_result.report.verification_source,
+                    "bias_rating": verification_result.report.bias_rating,
+                    "factual_reporting": verification_result.report.factual_reporting,
+                    "is_propaganda": verification_result.report.is_propaganda,
+                    "verification_successful": verification_result.report.verification_successful
+                }
+                block = build_source_credibility_block(
+                    verification_data=data,
+                    success=True,
+                    processing_time_ms=sv_time_ms,
+                )
+                job_manager.add_progress(
+                    job_id,
+                    f"Source verified: Tier {verification_result.report.credibility_tier} "
+                    f"({verification_result.report.domain})"
+                )
+            else:
+                err = verification_result.report.error or "Verification failed"
+                data = {"error": err}
+                block = build_source_credibility_block(
+                    verification_data=data,
+                    success=False,
+                    error=err,
+                    processing_time_ms=sv_time_ms,
+                )
+        else:
+            data = {"status": "no_url_to_verify"}
+            block = build_source_credibility_block(
+                verification_data=data,
+                success=False,
+                error="No URL to verify",
+            )
+            job_manager.add_progress(job_id, "No source URL to verify")
+
+        job_manager.add_progress(job_id, "Source verification complete", details={
+            "partial_result": {"source_verification": data}
+        })
+
+        return data, block
+
     @traceable(name="comprehensive_stage1_preanalysis", run_type="chain", tags=["comprehensive", "stage1"])
     async def _run_stage1(
         self,
@@ -175,17 +268,11 @@ class ComprehensiveOrchestrator:
         source_url: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        Stage 1: Pre-Analysis
+        Stage 1: Pre-Analysis (PARTIALLY PARALLEL)
 
-        Runs all pre-analysis checks and packages results as MetadataBlocks.
-        Also maintains backward-compatible individual keys for Stage 2 modes
-        that consume content_classification and source_verification directly.
-
-        Steps:
-        1a. Content Classification -> MetadataBlock
-        1b. Source Verification -> MetadataBlock
-        1c. (Future checks would be added here)
-        1d. Mode Routing (uses block data to decide which modes to run)
+        Steps 1a (classification) and 1b (source verification) run in parallel
+        since they are completely independent. Step 1d (mode routing) runs after
+        1a completes because it needs the classification result.
 
         Returns:
             Dict with:
@@ -196,118 +283,63 @@ class ComprehensiveOrchestrator:
         """
         metadata_blocks: List[MetadataBlock] = []
 
-        # These are kept for backward compatibility with Stage 2 mode orchestrators
-        # which consume them directly (e.g., key_claims_orchestrator takes source_context)
-        content_classification_data = None
-        source_verification_data = None
-
         try:
-            # -----------------------------------------------------------------
-            # Step 1a: Content Classification
-            # -----------------------------------------------------------------
-            self._send_stage_update(job_id, "content_classification", "Analyzing content type...")
             self._check_cancellation(job_id)
 
-            classification_result = await self.content_classifier.classify(content)
+            # =================================================================
+            # Steps 1a + 1b: PARALLEL (classification + source verification)
+            # =================================================================
+            # These two operations are completely independent:
+            #   - Classification: LLM call to analyze content type/realm
+            #   - Source Verification: Supabase/MBFC lookup for credibility
+            # Running them in parallel saves ~3-5s.
 
-            if classification_result.success:
-                content_classification_data = classification_result.classification.model_dump()
-                cc_block = build_content_classification_block(
-                    classification_data=content_classification_data,
-                    success=True,
-                    processing_time_ms=classification_result.processing_time_ms,
-                )
-                job_manager.add_progress(
-                    job_id,
-                    f"Content classified: {classification_result.classification.content_type} "
-                    f"({classification_result.classification.realm})"
-                )
-            else:
-                content_classification_data = {"error": classification_result.error}
+            parallel_results = await asyncio.gather(
+                self._classify_content(content, job_id),
+                self._verify_source(source_url, job_id),
+                return_exceptions=True
+            )
+
+            # Process classification result
+            if isinstance(parallel_results[0], BaseException):
+                fact_logger.logger.error(f"Classification failed: {parallel_results[0]}")
+                content_classification_data = {"error": str(parallel_results[0])}
                 cc_block = build_content_classification_block(
                     classification_data=content_classification_data,
                     success=False,
-                    error=classification_result.error,
-                    processing_time_ms=classification_result.processing_time_ms,
+                    error=str(parallel_results[0]),
                 )
+            else:
+                content_classification_data, cc_block = parallel_results[0]
 
             metadata_blocks.append(cc_block)
 
-            # Send partial result for real-time UI update
-            job_manager.add_progress(job_id, "Content classification complete", details={
-                "partial_result": {"content_classification": content_classification_data}
-            })
-
-            # -----------------------------------------------------------------
-            # Step 1b: Source Verification
-            # -----------------------------------------------------------------
-            self._send_stage_update(job_id, "source_verification", "Verifying source credibility...")
-            self._check_cancellation(job_id)
-
-            if source_url:
-                import time as time_mod
-                sv_start = time_mod.time()
-                verification_result = await self.source_verifier.verify_source(source_url)
-                sv_time_ms = int((time_mod.time() - sv_start) * 1000)
-
-                if verification_result.report.verification_successful:
-                    source_verification_data = {
-                        "domain": verification_result.report.domain,
-                        "credibility_tier": verification_result.report.credibility_tier,
-                        "tier_description": verification_result.report.tier_description,
-                        "verification_source": verification_result.report.verification_source,
-                        "bias_rating": verification_result.report.bias_rating,
-                        "factual_reporting": verification_result.report.factual_reporting,
-                        "is_propaganda": verification_result.report.is_propaganda,
-                        "verification_successful": verification_result.report.verification_successful
-                    }
-                    sv_block = build_source_credibility_block(
-                        verification_data=source_verification_data,
-                        success=True,
-                        processing_time_ms=sv_time_ms,
-                    )
-                    job_manager.add_progress(
-                        job_id,
-                        f"Source verified: Tier {verification_result.report.credibility_tier} "
-                        f"({verification_result.report.domain})"
-                    )
-                else:
-                    err = verification_result.report.error or "Verification failed"
-                    source_verification_data = {"error": err}
-                    sv_block = build_source_credibility_block(
-                        verification_data=source_verification_data,
-                        success=False,
-                        error=err,
-                        processing_time_ms=sv_time_ms,
-                    )
-            else:
-                source_verification_data = {"status": "no_url_to_verify"}
+            # Process source verification result
+            if isinstance(parallel_results[1], BaseException):
+                fact_logger.logger.error(f"Source verification failed: {parallel_results[1]}")
+                source_verification_data = {"error": str(parallel_results[1])}
                 sv_block = build_source_credibility_block(
                     verification_data=source_verification_data,
                     success=False,
-                    error="No URL to verify",
+                    error=str(parallel_results[1]),
                 )
-                job_manager.add_progress(job_id, "No source URL to verify")
+            else:
+                source_verification_data, sv_block = parallel_results[1]
 
             metadata_blocks.append(sv_block)
 
-            # Send partial result for real-time UI update
-            job_manager.add_progress(job_id, "Source verification complete", details={
-                "partial_result": {"source_verification": source_verification_data}
-            })
-
-            # -----------------------------------------------------------------
+            # =================================================================
             # Step 1c: (Future checks go here)
             # Each new check:
-            #   1. Run the check
-            #   2. Call build_<check_name>_block() to wrap results
-            #   3. Append to metadata_blocks
+            #   1. Add a helper method like _classify_content / _verify_source
+            #   2. Add it to the asyncio.gather() call above
+            #   3. Process its result and append the block
             # That's it -- synthesizer picks them up automatically.
-            # -----------------------------------------------------------------
+            # =================================================================
 
-            # -----------------------------------------------------------------
-            # Step 1d: Mode Routing
-            # -----------------------------------------------------------------
+            # =================================================================
+            # Step 1d: Mode Routing (SEQUENTIAL -- depends on classification)
+            # =================================================================
             self._send_stage_update(job_id, "mode_routing", "Selecting analysis modes...")
             self._check_cancellation(job_id)
 
