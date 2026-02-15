@@ -22,7 +22,7 @@ const ReportRenderer = ({ mode, data, onReset }: Props) => {
       case "lie-detection": return <DeceptionReport data={data} />;
       case "manipulation": return <ManipulationReport data={data} />;
       case "llm-output": return <LLMOutputReport data={data} />;
-      default: return <pre className="text-xs overflow-auto">{JSON.stringify(data, null, 2)}</pre>;
+      default: return <pre className="text-sm overflow-auto">{JSON.stringify(data, null, 2)}</pre>;
     }
   };
 
@@ -32,7 +32,7 @@ const ReportRenderer = ({ mode, data, onReset }: Props) => {
       <div className="flex justify-center gap-3 pt-2">
         <button
           onClick={onReset}
-          className="rounded-lg border border-border px-5 py-2 text-sm font-medium hover:bg-secondary transition-colors"
+          className="rounded-lg border border-border px-5 py-2 text-base font-medium hover:bg-secondary transition-colors"
         >
           Analyze Another
         </button>

@@ -20,21 +20,21 @@ const ProgressLog = ({ messages, isActive, onCancel }: Props) => {
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           {isActive && <Loader2 size={16} className="animate-spin text-muted-foreground" />}
-          <h3 className="text-sm font-semibold">
+          <h3 className="text-base font-semibold">
             {isActive ? "Analyzing content..." : "Analysis complete"}
           </h3>
         </div>
         {isActive && (
           <button
             onClick={onCancel}
-            className="rounded-lg border border-border px-3 py-1 text-xs font-medium hover:bg-secondary transition-colors"
+            className="rounded-lg border border-border px-3 py-1 text-sm font-medium hover:bg-secondary transition-colors"
           >
             Stop
           </button>
         )}
       </div>
 
-      <div className="max-h-[200px] overflow-y-auto space-y-1 text-xs text-muted-foreground font-mono">
+      <div className="max-h-[240px] overflow-y-auto space-y-1 text-sm text-muted-foreground font-mono">
         {messages.map((msg, i) => (
           <p key={i} className={i === messages.length - 1 && isActive ? "animate-pulse-subtle" : ""}>
             {msg}

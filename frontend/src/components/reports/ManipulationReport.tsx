@@ -75,8 +75,8 @@ const ManipulationReport = ({ data }: Props) => {
   return (
     <div className="space-y-4">
       <div className="rounded-xl border border-border bg-card p-5">
-        <h3 className="text-lg font-display font-semibold mb-1">Manipulation Check</h3>
-        <p className="text-xs text-muted-foreground mb-4">
+        <h3 className="text-xl font-display font-semibold mb-1">Manipulation Check</h3>
+        <p className="text-sm text-muted-foreground mb-4">
           We look for facts taken out of context, cherry-picked data, and misleading framing.
         </p>
 
@@ -84,27 +84,27 @@ const ManipulationReport = ({ data }: Props) => {
           <span className={cn("text-3xl font-bold font-display", level.color)}>
             {score.toFixed(1)}
           </span>
-          <span className="text-sm text-muted-foreground">/10</span>
-          <span className={cn("text-xs font-semibold uppercase", level.color)}>
+          <span className="text-base text-muted-foreground">/10</span>
+          <span className={cn("text-sm font-semibold uppercase", level.color)}>
             {level.label}
           </span>
         </div>
 
         {r?.narrative_summary && (
-          <p className="text-sm leading-relaxed mb-4">{r.narrative_summary}</p>
+          <p className="text-base leading-relaxed mb-4">{r.narrative_summary}</p>
         )}
 
         {/* Techniques -- plain string array */}
         {r?.techniques_used && r.techniques_used.length > 0 && (
           <div className="space-y-2 mb-3">
-            <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <h4 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
               Techniques Detected
             </h4>
             <div className="flex flex-wrap gap-2">
               {r.techniques_used.map((t, i) => (
                 <span
                   key={i}
-                  className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium"
+                  className="rounded-lg border border-border px-3 py-1.5 text-sm font-medium"
                 >
                   {t}
                 </span>
@@ -116,11 +116,11 @@ const ManipulationReport = ({ data }: Props) => {
         {/* Misleading elements */}
         {r?.misleading_elements && r.misleading_elements.length > 0 && (
           <div className="space-y-1 mb-3">
-            <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <h4 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
               Key Misleading Elements
             </h4>
             {r.misleading_elements.map((el, i) => (
-              <p key={i} className="text-xs text-muted-foreground pl-3 border-l-2 border-score-low">
+              <p key={i} className="text-sm text-muted-foreground pl-3 border-l-2 border-score-low">
                 {el}
               </p>
             ))}
@@ -130,11 +130,11 @@ const ManipulationReport = ({ data }: Props) => {
         {/* What the article got right */}
         {r?.what_got_right && r.what_got_right.length > 0 && (
           <div className="space-y-1 mb-3">
-            <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <h4 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
               What It Got Right
             </h4>
             {r.what_got_right.map((item, i) => (
-              <p key={i} className="text-xs text-muted-foreground pl-3 border-l-2 border-score-high">
+              <p key={i} className="text-sm text-muted-foreground pl-3 border-l-2 border-score-high">
                 {item}
               </p>
             ))}
@@ -144,10 +144,10 @@ const ManipulationReport = ({ data }: Props) => {
         {/* Recommendation */}
         {r?.recommendation && (
           <div className="mb-3 p-3 rounded-lg bg-secondary">
-            <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">
+            <h4 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground mb-1">
               Reader Recommendation
             </h4>
-            <p className="text-xs text-muted-foreground">{r.recommendation}</p>
+            <p className="text-sm text-muted-foreground">{r.recommendation}</p>
           </div>
         )}
 
@@ -156,7 +156,7 @@ const ManipulationReport = ({ data }: Props) => {
           <>
             <button
               onClick={() => setShowFindings(!showFindings)}
-              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
             >
               Detailed Findings ({findings.length}) {showFindings ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
             </button>
@@ -165,27 +165,27 @@ const ManipulationReport = ({ data }: Props) => {
                 {findings.map((f, i) => (
                   <div key={f.fact_id || i} className="rounded-lg border border-border p-3">
                     <div className="flex items-center gap-2 mb-1">
-                      <span className="text-xs font-semibold text-muted-foreground">#{f.fact_id}</span>
+                      <span className="text-sm font-semibold text-muted-foreground">#{f.fact_id}</span>
                       <span className={cn(
-                        "rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase",
+                        "rounded px-1.5 py-0.5 text-xs font-semibold uppercase",
                         sevColor(f.manipulation_severity)
                       )}>
                         {f.manipulation_severity}
                       </span>
                     </div>
-                    <p className="text-sm font-medium mb-1">{f.fact_statement}</p>
+                    <p className="text-base font-medium mb-1">{f.fact_statement}</p>
                     {f.manipulation_types?.length > 0 && (
-                      <p className="text-xs text-muted-foreground mb-1">
+                      <p className="text-sm text-muted-foreground mb-1">
                         Types: {f.manipulation_types.join(", ")}
                       </p>
                     )}
                     {f.what_was_omitted && (
-                      <p className="text-xs text-muted-foreground">
+                      <p className="text-sm text-muted-foreground">
                         <strong>Omitted:</strong> {f.what_was_omitted}
                       </p>
                     )}
                     {f.corrected_context && (
-                      <p className="text-xs text-muted-foreground mt-1">
+                      <p className="text-sm text-muted-foreground mt-1">
                         <strong>Context:</strong> {f.corrected_context}
                       </p>
                     )}
@@ -201,12 +201,12 @@ const ManipulationReport = ({ data }: Props) => {
           <>
             <button
               onClick={() => setShowDetails(!showDetails)}
-              className="flex items-center gap-1 mt-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              className="flex items-center gap-1 mt-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
             >
               Article Summary {showDetails ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
             </button>
             {showDetails && (
-              <div className="mt-2 p-3 rounded-lg bg-secondary text-xs text-muted-foreground space-y-1">
+              <div className="mt-2 p-3 rounded-lg bg-secondary text-sm text-muted-foreground space-y-1">
                 {data.article_summary.main_thesis && (
                   <p><strong>Thesis:</strong> {data.article_summary.main_thesis}</p>
                 )}

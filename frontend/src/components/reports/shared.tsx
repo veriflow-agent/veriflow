@@ -47,14 +47,14 @@ export const ScoreBadge = ({ score, label, className }: ScoreBadgeProps) => (
     <span className={cn("text-3xl font-bold font-display", getScoreColor(score))}>
       {Math.round(score)}
     </span>
-    {label && <span className="text-xs text-muted-foreground mt-0.5">{label}</span>}
+    {label && <span className="text-sm text-muted-foreground mt-0.5">{label}</span>}
   </div>
 );
 
 type RiskBadgeProps = { level: string; className?: string };
 
 export const RiskBadge = ({ level, className }: RiskBadgeProps) => (
-  <span className={cn("rounded-full px-3 py-1 text-xs font-semibold uppercase text-accent-foreground", getRiskBg(level), className)}>
+  <span className={cn("rounded-full px-3 py-1 text-sm font-semibold uppercase text-accent-foreground", getRiskBg(level), className)}>
     {level} Risk
   </span>
 );
@@ -62,7 +62,7 @@ export const RiskBadge = ({ level, className }: RiskBadgeProps) => (
 type SessionInfoProps = { sessionId?: string; processingTime?: number };
 
 export const SessionInfo = ({ sessionId, processingTime }: SessionInfoProps) => (
-  <div className="flex items-center gap-3 text-xs text-muted-foreground mt-4 pt-3 border-t border-border">
+  <div className="flex items-center gap-3 text-sm text-muted-foreground mt-4 pt-3 border-t border-border">
     {sessionId && <span>Session ID: {sessionId}</span>}
     {processingTime != null && <span>Processing Time: {Math.round(processingTime)}s</span>}
   </div>

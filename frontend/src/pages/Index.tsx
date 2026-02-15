@@ -152,7 +152,7 @@ const Index = () => {
       <Header />
 
       <main className="flex-1">
-        <div className="container max-w-3xl py-10">
+        <div className="container max-w-5xl py-10">
           {/* Hero */}
           <h1 className="text-4xl md:text-5xl font-display text-center mb-10">
             AI Content Analyzer
@@ -174,7 +174,7 @@ const Index = () => {
             </div>
           )}
 
-          {/* Input — shown when NOT in done state */}
+          {/* Input â€” shown when NOT in done state */}
           {state !== "done" && (
             <div className="mb-4">
               <ContentInput
@@ -194,14 +194,14 @@ const Index = () => {
             <div className="flex justify-center gap-3 mb-6">
               <button
                 onClick={fullReset}
-                className="rounded-lg border border-border px-5 py-2.5 text-sm font-medium hover:bg-secondary transition-colors"
+                className="rounded-lg border border-border px-5 py-2.5 text-base font-medium hover:bg-secondary transition-colors"
               >
                 Clear
               </button>
               <button
                 onClick={handleAnalyze}
                 disabled={!content.trim()}
-                className="rounded-lg bg-primary px-6 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
+                className="rounded-lg bg-primary px-6 py-2.5 text-base font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
               >
                 Analyze
               </button>
@@ -222,10 +222,10 @@ const Index = () => {
           {/* Error */}
           {state === "error" && error && (
             <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 mb-6 text-center">
-              <p className="text-sm text-destructive">{error}</p>
+              <p className="text-base text-destructive">{error}</p>
               <button
                 onClick={reset}
-                className="mt-2 text-xs text-muted-foreground hover:text-foreground underline"
+                className="mt-2 text-sm text-muted-foreground hover:text-foreground underline"
               >
                 Try again
               </button>
@@ -241,7 +241,7 @@ const Index = () => {
                   onClick={() => setShowContent((v) => !v)}
                   className="w-full flex items-center justify-between px-5 py-3 text-left"
                 >
-                  <span className="text-xs font-medium text-muted-foreground">
+                  <span className="text-sm font-medium text-muted-foreground">
                     Analyzed Content
                     {url && (
                       <span className="ml-2 text-muted-foreground/60">{url}</span>
@@ -254,14 +254,14 @@ const Index = () => {
                 </button>
                 {showContent && (
                   <div className="px-5 pb-4 border-t border-border">
-                    <pre className="mt-3 text-xs text-muted-foreground leading-relaxed whitespace-pre-wrap max-h-60 overflow-y-auto">
+                    <pre className="mt-3 text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap max-h-60 overflow-y-auto">
                       {content}
                     </pre>
                   </div>
                 )}
               </div>
 
-              {/* Report — always rendered with the mode that actually produced results */}
+              {/* Report â€” always rendered with the mode that actually produced results */}
               <ReportRenderer mode={analyzedMode} data={result} onReset={fullReset} />
             </>
           )}

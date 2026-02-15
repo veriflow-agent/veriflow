@@ -75,7 +75,7 @@ const KeyClaimsReport = ({ data }: Props) => {
   if (data.no_claims_found || !claims?.length) {
     return (
       <div className="rounded-xl border border-border bg-card p-6 text-center">
-        <p className="text-sm text-muted-foreground">No verifiable claims found in this content.</p>
+        <p className="text-base text-muted-foreground">No verifiable claims found in this content.</p>
       </div>
     );
   }
@@ -86,33 +86,33 @@ const KeyClaimsReport = ({ data }: Props) => {
   return (
     <div className="space-y-4">
       <div className="rounded-xl border border-border bg-card p-5">
-        <h3 className="text-lg font-display font-semibold mb-1">Key Claims Analysis</h3>
-        <p className="text-xs text-muted-foreground mb-4">
+        <h3 className="text-xl font-display font-semibold mb-1">Key Claims Analysis</h3>
+        <p className="text-sm text-muted-foreground mb-4">
           We identify the 2-3 most important claims and verify each one thoroughly.
         </p>
 
         {data.summary && (
           <div className="flex flex-wrap gap-4 mb-4 p-3 rounded-lg bg-secondary">
             <div className="text-center">
-              <span className="block text-lg font-bold">{totalClaims}</span>
-              <span className="text-xs text-muted-foreground">Claims</span>
+              <span className="block text-xl font-bold">{totalClaims}</span>
+              <span className="text-sm text-muted-foreground">Claims</span>
             </div>
             <div className="text-center">
-              <span className="block text-lg font-bold text-score-high">{data.summary.verified_count ?? 0}</span>
-              <span className="text-xs text-muted-foreground">Verified</span>
+              <span className="block text-xl font-bold text-score-high">{data.summary.verified_count ?? 0}</span>
+              <span className="text-sm text-muted-foreground">Verified</span>
             </div>
             <div className="text-center">
-              <span className="block text-lg font-bold text-score-moderate">{data.summary.partial_count ?? 0}</span>
-              <span className="text-xs text-muted-foreground">Partial</span>
+              <span className="block text-xl font-bold text-score-moderate">{data.summary.partial_count ?? 0}</span>
+              <span className="text-sm text-muted-foreground">Partial</span>
             </div>
             <div className="text-center">
-              <span className="block text-lg font-bold text-score-low">{data.summary.unverified_count ?? 0}</span>
-              <span className="text-xs text-muted-foreground">Unverified</span>
+              <span className="block text-xl font-bold text-score-low">{data.summary.unverified_count ?? 0}</span>
+              <span className="text-sm text-muted-foreground">Unverified</span>
             </div>
             {data.summary.overall_credibility && (
               <div className="text-center">
-                <span className="block text-sm font-semibold capitalize">{data.summary.overall_credibility}</span>
-                <span className="text-xs text-muted-foreground">Credibility</span>
+                <span className="block text-base font-semibold capitalize">{data.summary.overall_credibility}</span>
+                <span className="text-sm text-muted-foreground">Credibility</span>
               </div>
             )}
           </div>
@@ -135,29 +135,29 @@ const KeyClaimsReport = ({ data }: Props) => {
                   <ScoreBadge score={scorePercent} className="shrink-0" />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
-                      <span className="text-xs font-semibold text-muted-foreground">
+                      <span className="text-sm font-semibold text-muted-foreground">
                         #{claim.id} KEY CLAIM
                       </span>
-                      <span className={cn("text-xs font-semibold", statusColor(status))}>
+                      <span className={cn("text-sm font-semibold", statusColor(status))}>
                         {statusLabel(status)}
                       </span>
                     </div>
-                    <p className="text-sm font-medium mb-2">{statementText}</p>
+                    <p className="text-base font-medium mb-2">{statementText}</p>
                     {reportText && (
-                      <p className="text-xs text-muted-foreground leading-relaxed">{reportText}</p>
+                      <p className="text-sm text-muted-foreground leading-relaxed">{reportText}</p>
                     )}
 
                     {claim.tier_breakdown && (
                       <button
                         onClick={() => setExpanded(prev => ({ ...prev, [claim.id]: !isOpen }))}
-                        className="flex items-center gap-1 mt-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                        className="flex items-center gap-1 mt-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
                       >
                         Source Tiers {isOpen ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
                       </button>
                     )}
 
                     {isOpen && claim.tier_breakdown && (
-                      <div className="mt-2 flex gap-3 text-xs text-muted-foreground">
+                      <div className="mt-2 flex gap-3 text-sm text-muted-foreground">
                         {claim.tier_breakdown.tier1 != null && claim.tier_breakdown.tier1 > 0 && (
                           <span>Tier 1: {claim.tier_breakdown.tier1}</span>
                         )}

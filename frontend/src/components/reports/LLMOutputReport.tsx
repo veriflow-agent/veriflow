@@ -86,20 +86,20 @@ const LLMOutputReport = ({ data }: Props) => {
   return (
     <div className="space-y-4">
       <div className="rounded-xl border border-border bg-card p-5">
-        <h3 className="text-lg font-display font-semibold mb-1">Verification Results</h3>
+        <h3 className="text-xl font-display font-semibold mb-1">Verification Results</h3>
 
         <div className="flex gap-6 mb-4 p-3 rounded-lg bg-secondary">
           <div className="text-center">
-            <span className="block text-lg font-bold text-score-high">{verified}</span>
-            <span className="text-xs text-muted-foreground">Verified</span>
+            <span className="block text-xl font-bold text-score-high">{verified}</span>
+            <span className="text-sm text-muted-foreground">Verified</span>
           </div>
           <div className="text-center">
-            <span className="block text-lg font-bold text-score-moderate">{issues}</span>
-            <span className="text-xs text-muted-foreground">Issues</span>
+            <span className="block text-xl font-bold text-score-moderate">{issues}</span>
+            <span className="text-sm text-muted-foreground">Issues</span>
           </div>
           <div className="text-center">
-            <span className="block text-lg font-bold text-score-low">{unverified}</span>
-            <span className="text-xs text-muted-foreground">Unverified</span>
+            <span className="block text-xl font-bold text-score-low">{unverified}</span>
+            <span className="text-sm text-muted-foreground">Unverified</span>
           </div>
         </div>
 
@@ -108,11 +108,11 @@ const LLMOutputReport = ({ data }: Props) => {
           <div className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-3">
             <div className="flex items-center gap-2 mb-1">
               <Lock size={13} className="text-amber-500" />
-              <span className="text-xs font-semibold text-amber-600 dark:text-amber-400">
+              <span className="text-sm font-semibold text-amber-600 dark:text-amber-400">
                 Some sources could not be accessed
               </span>
             </div>
-            <p className="text-[11px] text-muted-foreground leading-relaxed">
+            <p className="text-xs text-muted-foreground leading-relaxed">
               {paywallCount > 0 && `${paywallCount} source${paywallCount > 1 ? "s" : ""} behind a paywall`}
               {paywallCount > 0 && blockedCount > 0 && ", "}
               {blockedCount > 0 && `${blockedCount} source${blockedCount > 1 ? "s" : ""} blocking automated access`}
@@ -131,23 +131,23 @@ const LLMOutputReport = ({ data }: Props) => {
             return (
               <div key={r.claim_id || i} className="rounded-lg border border-border p-4">
                 <div className="flex items-center gap-2 mb-2">
-                  <span className="text-xs font-semibold text-muted-foreground">#{i + 1}</span>
+                  <span className="text-sm font-semibold text-muted-foreground">#{i + 1}</span>
                   <span className={cn(
-                    "rounded px-2 py-0.5 text-[10px] font-semibold uppercase",
+                    "rounded px-2 py-0.5 text-xs font-semibold uppercase",
                     statusStyles[status] || "bg-muted text-muted-foreground"
                   )}>
                     {status.replace("_", " ")}
                   </span>
-                  <span className="text-xs text-muted-foreground ml-auto">{score}%</span>
+                  <span className="text-sm text-muted-foreground ml-auto">{score}%</span>
                 </div>
-                <p className="text-sm font-medium mb-1">{r.claim_text}</p>
-                <p className="text-xs text-muted-foreground leading-relaxed">{r.assessment}</p>
+                <p className="text-base font-medium mb-1">{r.claim_text}</p>
+                <p className="text-sm text-muted-foreground leading-relaxed">{r.assessment}</p>
 
                 {/* Interpretation issues */}
                 {r.interpretation_issues && r.interpretation_issues.length > 0 && (
                   <div className="mt-2 space-y-1">
                     {r.interpretation_issues.map((issue, j) => (
-                      <p key={j} className="text-xs text-score-low pl-3 border-l-2 border-score-low">
+                      <p key={j} className="text-sm text-score-low pl-3 border-l-2 border-score-low">
                         {issue}
                       </p>
                     ))}
@@ -168,12 +168,12 @@ const LLMOutputReport = ({ data }: Props) => {
                               ) : (
                                 <ShieldAlert size={11} className="text-amber-500" />
                               )}
-                              <span className="text-[10px] font-semibold uppercase text-amber-500">
+                              <span className="text-xs font-semibold uppercase text-amber-500">
                                 {issue.reason === "paywall" ? "Paywall" : "Blocked"}
                               </span>
                             </div>
                             <div className="flex flex-col gap-0.5 min-w-0">
-                              <span className="text-[11px] text-muted-foreground leading-tight">
+                              <span className="text-xs text-muted-foreground leading-tight">
                                 {issue.reason === "paywall"
                                   ? "This article is behind a paywall. Open it in your browser to read the source:"
                                   : `${issue.domain} is blocking automated access. Open it in your browser:`}
@@ -182,7 +182,7 @@ const LLMOutputReport = ({ data }: Props) => {
                                 href={url}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="flex items-center gap-1 text-xs text-foreground hover:underline truncate"
+                                className="flex items-center gap-1 text-sm text-foreground hover:underline truncate"
                               >
                                 <ExternalLink size={10} className="shrink-0" /> {getDomain(url)}
                               </a>
@@ -196,7 +196,7 @@ const LLMOutputReport = ({ data }: Props) => {
                           href={url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="flex items-center gap-1 mt-1 text-xs text-muted-foreground hover:text-foreground"
+                          className="flex items-center gap-1 mt-1 text-sm text-muted-foreground hover:text-foreground"
                         >
                           <ExternalLink size={10} /> {getDomain(url)}
                         </a>
@@ -213,12 +213,12 @@ const LLMOutputReport = ({ data }: Props) => {
                         ...prev,
                         [r.claim_id || String(i)]: !isExpanded
                       }))}
-                      className="flex items-center gap-1 mt-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                      className="flex items-center gap-1 mt-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
                     >
                       Reasoning {isExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
                     </button>
                     {isExpanded && (
-                      <p className="mt-1 text-xs text-muted-foreground leading-relaxed pl-3 border-l-2 border-border">
+                      <p className="mt-1 text-sm text-muted-foreground leading-relaxed pl-3 border-l-2 border-border">
                         {r.reasoning}
                       </p>
                     )}

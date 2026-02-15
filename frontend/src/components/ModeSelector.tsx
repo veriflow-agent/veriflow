@@ -21,7 +21,7 @@ type Props = {
 
 const ModeSelector = ({ selected, onSelect, analyzedMode }: Props) => (
   <div>
-    <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground mb-3">
+    <p className="text-sm font-medium uppercase tracking-widest text-muted-foreground mb-3">
       Choose Analysis Mode
     </p>
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -37,7 +37,7 @@ const ModeSelector = ({ selected, onSelect, analyzedMode }: Props) => (
             disabled={isDisabled}
             onClick={() => !isDisabled && onSelect(m.id as AnalysisMode)}
             className={cn(
-              "rounded-lg border px-4 py-3 text-left transition-all duration-200 relative",
+              "rounded-lg border px-5 py-4 text-left transition-all duration-200 relative",
               isSelected
                 ? "bg-primary text-primary-foreground border-primary"
                 : "bg-card text-card-foreground border-border hover:border-foreground/30",
@@ -46,12 +46,12 @@ const ModeSelector = ({ selected, onSelect, analyzedMode }: Props) => (
               !isSelected && isAnalyzed && "ring-1 ring-primary/40"
             )}
           >
-            <span className="block text-sm font-semibold font-display">
+            <span className="block text-base font-semibold font-display">
               {info?.label || "Full Fact-Check"}
             </span>
             <span
               className={cn(
-                "block text-xs mt-0.5",
+                "block text-sm mt-0.5",
                 isSelected ? "text-primary-foreground/70" : "text-muted-foreground"
               )}
             >

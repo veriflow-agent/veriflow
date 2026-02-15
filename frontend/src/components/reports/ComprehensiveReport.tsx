@@ -85,7 +85,7 @@ const ComprehensiveReport = ({ data }: Props) => {
       case "llm_output_verification":
         return <LLMOutputReport data={modeData} />;
       default:
-        return <pre className="text-xs overflow-auto">{JSON.stringify(modeData, null, 2)}</pre>;
+        return <pre className="text-sm overflow-auto">{JSON.stringify(modeData, null, 2)}</pre>;
     }
   };
 
@@ -93,29 +93,29 @@ const ComprehensiveReport = ({ data }: Props) => {
     <div className="space-y-4">
       {/* Metadata Panel */}
       <div className="rounded-xl border border-border bg-card p-5">
-        <h3 className="text-lg font-display font-semibold mb-3">Comprehensive Analysis</h3>
+        <h3 className="text-xl font-display font-semibold mb-3">Comprehensive Analysis</h3>
 
         <div className="flex flex-wrap gap-2 mb-3">
           {data.content_classification?.content_type && (
-            <div className="rounded-lg bg-secondary px-3 py-1.5 text-xs">
+            <div className="rounded-lg bg-secondary px-3 py-1.5 text-sm">
               <span className="text-muted-foreground">Type:</span>{" "}
               <span className="font-medium capitalize">{data.content_classification.content_type.replace(/_/g, " ")}</span>
             </div>
           )}
           {data.content_classification?.realm && (
-            <div className="rounded-lg bg-secondary px-3 py-1.5 text-xs">
+            <div className="rounded-lg bg-secondary px-3 py-1.5 text-sm">
               <span className="text-muted-foreground">Realm:</span>{" "}
               <span className="font-medium capitalize">{data.content_classification.realm}</span>
             </div>
           )}
           {data.source_verification?.credibility_tier && (
-            <div className={cn("rounded-lg px-3 py-1.5 text-xs font-medium", tierColors[data.source_verification.credibility_tier] || "bg-muted")}>
+            <div className={cn("rounded-lg px-3 py-1.5 text-sm font-medium", tierColors[data.source_verification.credibility_tier] || "bg-muted")}>
               Tier {data.source_verification.credibility_tier}
               {data.source_verification.publication_name && ` -- ${data.source_verification.publication_name}`}
             </div>
           )}
           {data.source_verification?.bias_rating && (
-            <div className="rounded-lg bg-secondary px-3 py-1.5 text-xs">
+            <div className="rounded-lg bg-secondary px-3 py-1.5 text-sm">
               <span className="text-muted-foreground">Bias:</span>{" "}
               <span className="font-medium">{data.source_verification.bias_rating}</span>
             </div>
@@ -124,7 +124,7 @@ const ComprehensiveReport = ({ data }: Props) => {
 
         {/* Mode routing info */}
         {data.mode_routing?.selected_modes && (
-          <p className="text-xs text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             Modes selected: {data.mode_routing.selected_modes.map(m => modeLabels[m] || m).join(", ")}
           </p>
         )}
@@ -135,7 +135,7 @@ const ComprehensiveReport = ({ data }: Props) => {
         <div key={key} className="rounded-xl border border-border bg-card overflow-hidden">
           <button
             onClick={() => toggleMode(key)}
-            className="w-full flex items-center justify-between p-4 text-sm font-medium hover:bg-secondary/50 transition-colors"
+            className="w-full flex items-center justify-between p-4 text-base font-medium hover:bg-secondary/50 transition-colors"
           >
             <span>{modeLabels[key] || key.replace(/_/g, " ")}</span>
             {expandedModes[key] ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
@@ -151,11 +151,11 @@ const ComprehensiveReport = ({ data }: Props) => {
       {/* Mode Errors */}
       {data.mode_errors && Object.keys(data.mode_errors).length > 0 && (
         <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-4">
-          <h4 className="text-xs font-semibold uppercase tracking-wide text-destructive mb-2">
+          <h4 className="text-sm font-semibold uppercase tracking-wide text-destructive mb-2">
             Failed Modes
           </h4>
           {Object.entries(data.mode_errors).map(([key, err]) => (
-            <p key={key} className="text-xs text-muted-foreground">
+            <p key={key} className="text-sm text-muted-foreground">
               {modeLabels[key] || key}: {err}
             </p>
           ))}
@@ -165,23 +165,23 @@ const ComprehensiveReport = ({ data }: Props) => {
       {/* Synthesis / Overall Assessment */}
       {synth && (
         <div className="rounded-xl border border-border bg-card p-5">
-          <h3 className="text-lg font-display font-semibold mb-3">Overall Assessment</h3>
+          <h3 className="text-xl font-display font-semibold mb-3">Overall Assessment</h3>
 
           <div className="flex items-center gap-4 mb-4">
             <ScoreBadge score={score} label={rating || getScoreLabel(score)} />
             {synth.confidence != null && (
-              <span className="text-xs text-muted-foreground">Confidence: {Math.round(synth.confidence)}%</span>
+              <span className="text-sm text-muted-foreground">Confidence: {Math.round(synth.confidence)}%</span>
             )}
           </div>
 
-          {synth.summary && <p className="text-sm leading-relaxed mb-4">{synth.summary}</p>}
+          {synth.summary && <p className="text-base leading-relaxed mb-4">{synth.summary}</p>}
 
           {synth.key_concerns?.length ? (
             <div className="mb-3">
-              <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">Key Concerns</h4>
+              <h4 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground mb-1">Key Concerns</h4>
               <ul className="space-y-1">
                 {synth.key_concerns.map((c, i) => (
-                  <li key={i} className="text-xs text-muted-foreground pl-3 border-l-2 border-score-low">{c}</li>
+                  <li key={i} className="text-sm text-muted-foreground pl-3 border-l-2 border-score-low">{c}</li>
                 ))}
               </ul>
             </div>
@@ -189,10 +189,10 @@ const ComprehensiveReport = ({ data }: Props) => {
 
           {synth.positive_indicators?.length ? (
             <div className="mb-3">
-              <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">Positive Indicators</h4>
+              <h4 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground mb-1">Positive Indicators</h4>
               <ul className="space-y-1">
                 {synth.positive_indicators.map((p, i) => (
-                  <li key={i} className="text-xs text-muted-foreground pl-3 border-l-2 border-score-high">{p}</li>
+                  <li key={i} className="text-sm text-muted-foreground pl-3 border-l-2 border-score-high">{p}</li>
                 ))}
               </ul>
             </div>
@@ -200,10 +200,10 @@ const ComprehensiveReport = ({ data }: Props) => {
 
           {synth.recommendations?.length ? (
             <div>
-              <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">Recommendations</h4>
+              <h4 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground mb-1">Recommendations</h4>
               <ul className="space-y-1">
                 {synth.recommendations.map((r, i) => (
-                  <li key={i} className="text-xs text-muted-foreground pl-3 border-l-2 border-border">{r}</li>
+                  <li key={i} className="text-sm text-muted-foreground pl-3 border-l-2 border-border">{r}</li>
                 ))}
               </ul>
             </div>

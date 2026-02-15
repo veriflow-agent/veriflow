@@ -82,7 +82,7 @@ const severityColor = (severity: number) => {
 const ModelView = ({ model }: { model?: BiasModel }) => {
   const [showDetails, setShowDetails] = useState(false);
 
-  if (!model) return <p className="text-sm text-muted-foreground">No analysis available.</p>;
+  if (!model) return <p className="text-base text-muted-foreground">No analysis available.</p>;
 
   // Resolve field names (backend actual -> legacy fallback)
   const direction = model.primary_bias_direction || model.bias_rating || "Unknown";
@@ -94,43 +94,43 @@ const ModelView = ({ model }: { model?: BiasModel }) => {
     <div className="space-y-3">
       {/* Direction + Score */}
       <div className="flex items-center gap-3">
-        <span className={cn("text-lg font-bold font-display capitalize", biasColor(direction))}>
+        <span className={cn("text-xl font-bold font-display capitalize", biasColor(direction))}>
           {direction}
         </span>
         {score != null && (
-          <span className="text-sm text-muted-foreground">{score.toFixed?.(1) ?? score}/10</span>
+          <span className="text-base text-muted-foreground">{score.toFixed?.(1) ?? score}/10</span>
         )}
       </div>
 
       {/* Assessment / Reasoning */}
-      {assessment && <p className="text-sm leading-relaxed">{assessment}</p>}
+      {assessment && <p className="text-base leading-relaxed">{assessment}</p>}
 
       {/* Bias Indicators */}
       {indicators.length > 0 && (
         <div className="space-y-2">
-          <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          <h4 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
             Bias Indicators ({indicators.length})
           </h4>
           {indicators.map((ind, i) => (
-            <div key={i} className={cn("rounded-lg bg-secondary p-3 text-sm border-l-3", severityColor(ind.severity || 0))}>
+            <div key={i} className={cn("rounded-lg bg-secondary p-3 text-base border-l-3", severityColor(ind.severity || 0))}>
               <div className="flex items-center gap-2 mb-1">
                 <span className="font-medium capitalize">{ind.type || "Bias"}</span>
                 {ind.severity != null && (
-                  <span className="text-xs text-muted-foreground">{ind.severity}/10</span>
+                  <span className="text-sm text-muted-foreground">{ind.severity}/10</span>
                 )}
                 {ind.direction && (
-                  <span className={cn("text-xs font-medium capitalize", biasColor(ind.direction))}>
+                  <span className={cn("text-sm font-medium capitalize", biasColor(ind.direction))}>
                     {ind.direction}
                   </span>
                 )}
               </div>
-              <p className="text-xs text-muted-foreground">
+              <p className="text-sm text-muted-foreground">
                 {ind.evidence || ind.description || ""}
               </p>
               {ind.techniques && ind.techniques.length > 0 && (
                 <div className="flex flex-wrap gap-1 mt-1.5">
                   {ind.techniques.map((t, j) => (
-                    <span key={j} className="rounded bg-background px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                    <span key={j} className="rounded bg-background px-1.5 py-0.5 text-xs text-muted-foreground">
                       {t}
                     </span>
                   ))}
@@ -146,7 +146,7 @@ const ModelView = ({ model }: { model?: BiasModel }) => {
         <>
           <button
             onClick={() => setShowDetails(!showDetails)}
-            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
           >
             Full Analysis {showDetails ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
           </button>
@@ -154,11 +154,11 @@ const ModelView = ({ model }: { model?: BiasModel }) => {
             <div className="space-y-3 mt-1">
               {model.balanced_aspects && model.balanced_aspects.length > 0 && (
                 <div>
-                  <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">
+                  <h4 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground mb-1">
                     What It Does Well
                   </h4>
                   {model.balanced_aspects.map((item, i) => (
-                    <p key={i} className="text-xs text-muted-foreground pl-3 border-l-2 border-score-high mb-1">
+                    <p key={i} className="text-sm text-muted-foreground pl-3 border-l-2 border-score-high mb-1">
                       {item}
                     </p>
                   ))}
@@ -166,11 +166,11 @@ const ModelView = ({ model }: { model?: BiasModel }) => {
               )}
               {model.missing_perspectives && model.missing_perspectives.length > 0 && (
                 <div>
-                  <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">
+                  <h4 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground mb-1">
                     Missing Perspectives
                   </h4>
                   {model.missing_perspectives.map((item, i) => (
-                    <p key={i} className="text-xs text-muted-foreground pl-3 border-l-2 border-score-moderate mb-1">
+                    <p key={i} className="text-sm text-muted-foreground pl-3 border-l-2 border-score-moderate mb-1">
                       {item}
                     </p>
                   ))}
@@ -178,11 +178,11 @@ const ModelView = ({ model }: { model?: BiasModel }) => {
               )}
               {model.recommendations && model.recommendations.length > 0 && (
                 <div>
-                  <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">
+                  <h4 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground mb-1">
                     Recommendations
                   </h4>
                   {model.recommendations.map((item, i) => (
-                    <p key={i} className="text-xs text-muted-foreground pl-3 border-l-2 border-border mb-1">
+                    <p key={i} className="text-sm text-muted-foreground pl-3 border-l-2 border-border mb-1">
                       {item}
                     </p>
                   ))}
@@ -204,8 +204,8 @@ const BiasReport = ({ data }: Props) => {
   return (
     <div className="space-y-4">
       <div className="rounded-xl border border-border bg-card p-5">
-        <h3 className="text-lg font-display font-semibold mb-1">Bias Analysis</h3>
-        <p className="text-xs text-muted-foreground mb-4">
+        <h3 className="text-xl font-display font-semibold mb-1">Bias Analysis</h3>
+        <p className="text-sm text-muted-foreground mb-4">
           We detect political slant, loaded language, and one-sided framing.
         </p>
 
@@ -215,7 +215,7 @@ const BiasReport = ({ data }: Props) => {
               key={t}
               onClick={() => setTab(t)}
               className={cn(
-                "flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                "flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
                 tab === t ? "bg-card shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
               )}
             >
@@ -230,31 +230,31 @@ const BiasReport = ({ data }: Props) => {
           <div className="space-y-3">
             {/* Direction + Score */}
             <div className="flex items-center gap-3">
-              <span className={cn("text-lg font-bold font-display capitalize", biasColor(a?.consensus_direction))}>
+              <span className={cn("text-xl font-bold font-display capitalize", biasColor(a?.consensus_direction))}>
                 {a?.consensus_direction || "N/A"}
               </span>
               {a?.consensus_bias_score != null && (
-                <span className="text-sm text-muted-foreground">
+                <span className="text-base text-muted-foreground">
                   {typeof a.consensus_bias_score === 'number' ? a.consensus_bias_score.toFixed(1) : a.consensus_bias_score}/10
                 </span>
               )}
               {a?.confidence != null && (
-                <span className="text-xs text-muted-foreground">
+                <span className="text-sm text-muted-foreground">
                   ({Math.round((a.confidence > 1 ? a.confidence : a.confidence * 100))}% confidence)
                 </span>
               )}
             </div>
 
             {/* Final assessment */}
-            {a?.final_assessment && <p className="text-sm leading-relaxed">{a.final_assessment}</p>}
+            {a?.final_assessment && <p className="text-base leading-relaxed">{a.final_assessment}</p>}
 
             {/* Publication bias context */}
             {a?.publication_bias_context && (
               <div className="rounded-lg bg-secondary/60 p-3">
-                <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">
+                <h4 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground mb-1">
                   Publication Context
                 </h4>
-                <p className="text-xs text-muted-foreground leading-relaxed">{a.publication_bias_context}</p>
+                <p className="text-sm text-muted-foreground leading-relaxed">{a.publication_bias_context}</p>
               </div>
             )}
 
@@ -264,7 +264,7 @@ const BiasReport = ({ data }: Props) => {
               <>
                 <button
                   onClick={() => setShowComparison(!showComparison)}
-                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                  className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
                 >
                   Model Comparison {showComparison ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
                 </button>
@@ -272,11 +272,11 @@ const BiasReport = ({ data }: Props) => {
                   <div className="space-y-3 mt-2">
                     {a?.areas_of_agreement && a.areas_of_agreement.length > 0 && (
                       <div>
-                        <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">
+                        <h4 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground mb-1">
                           Areas of Agreement
                         </h4>
                         {a.areas_of_agreement.map((item, i) => (
-                          <p key={i} className="text-xs text-muted-foreground pl-3 border-l-2 border-score-high mb-1">
+                          <p key={i} className="text-sm text-muted-foreground pl-3 border-l-2 border-score-high mb-1">
                             {item}
                           </p>
                         ))}
@@ -284,11 +284,11 @@ const BiasReport = ({ data }: Props) => {
                     )}
                     {a?.areas_of_disagreement && a.areas_of_disagreement.length > 0 && (
                       <div>
-                        <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">
+                        <h4 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground mb-1">
                           Areas of Disagreement
                         </h4>
                         {a.areas_of_disagreement.map((item, i) => (
-                          <p key={i} className="text-xs text-muted-foreground pl-3 border-l-2 border-score-moderate mb-1">
+                          <p key={i} className="text-sm text-muted-foreground pl-3 border-l-2 border-score-moderate mb-1">
                             {item}
                           </p>
                         ))}
@@ -296,11 +296,11 @@ const BiasReport = ({ data }: Props) => {
                     )}
                     {a?.gpt_unique_findings && a.gpt_unique_findings.length > 0 && (
                       <div>
-                        <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">
+                        <h4 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground mb-1">
                           GPT-4 Unique Findings
                         </h4>
                         {a.gpt_unique_findings.map((item, i) => (
-                          <p key={i} className="text-xs text-muted-foreground pl-3 border-l-2 border-border mb-1">
+                          <p key={i} className="text-sm text-muted-foreground pl-3 border-l-2 border-border mb-1">
                             {item}
                           </p>
                         ))}
@@ -308,11 +308,11 @@ const BiasReport = ({ data }: Props) => {
                     )}
                     {a?.claude_unique_findings && a.claude_unique_findings.length > 0 && (
                       <div>
-                        <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">
+                        <h4 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground mb-1">
                           Claude Unique Findings
                         </h4>
                         {a.claude_unique_findings.map((item, i) => (
-                          <p key={i} className="text-xs text-muted-foreground pl-3 border-l-2 border-border mb-1">
+                          <p key={i} className="text-sm text-muted-foreground pl-3 border-l-2 border-border mb-1">
                             {item}
                           </p>
                         ))}
@@ -326,11 +326,11 @@ const BiasReport = ({ data }: Props) => {
             {/* Recommendations */}
             {a?.recommendations && a.recommendations.length > 0 && (
               <div className="mt-3 pt-3 border-t border-border">
-                <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">
+                <h4 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground mb-1">
                   Recommendations
                 </h4>
                 {a.recommendations.map((rec, i) => (
-                  <p key={i} className="text-xs text-muted-foreground pl-3 border-l-2 border-border mb-1">
+                  <p key={i} className="text-sm text-muted-foreground pl-3 border-l-2 border-border mb-1">
                     {rec}
                   </p>
                 ))}
