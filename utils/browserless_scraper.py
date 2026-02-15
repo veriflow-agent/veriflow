@@ -42,6 +42,13 @@ from utils.domain_strategy_service import get_domain_strategy_service
 
 from utils.logger import fact_logger
 
+# BeautifulSoup fallback for when Playwright is unavailable
+try:
+    from bs4 import BeautifulSoup
+    BS4_AVAILABLE = True
+except ImportError:
+    BS4_AVAILABLE = False
+
 # NEW: Import content cleaner for AI-powered noise removal
 CONTENT_CLEANER_AVAILABLE = False
 ArticleContentCleaner = None  # Will be set if import succeeds
@@ -242,6 +249,7 @@ class BrowserlessScraper:
         self.current_browser_index = 0
         self.session_active = False
         self._session_lock = asyncio.Lock()
+        self._bound_loop_id = None  # Track which event loop owns the browser pool
         self.strategy_service = get_domain_strategy_service()
 
         # NEW: ScrapingBee fallback for 401/403 blocked sites
@@ -323,6 +331,10 @@ class BrowserlessScraper:
             "pdf_extractions": 0,
             "pdf_extraction_successes": 0,
         }
+
+        # Per-URL failure reason tracking (readable by orchestrators)
+        # Values: "paywall", "http_blocked", "all_strategies_failed", "timeout"
+        self.url_failure_reasons: Dict[str, str] = {}
 
         if self.browserless_endpoint:
             fact_logger.logger.info(f"[LOG] Railway Browserless endpoint configured: {self.browserless_endpoint[:50]}...")
@@ -443,8 +455,22 @@ class BrowserlessScraper:
             pass
 
     async def _initialize_browser_pool(self, min_browsers: Optional[int] = None):
-        """Initialize browser pool in PARALLEL with enhanced contexts"""
+        """Initialize browser pool in PARALLEL with enhanced contexts.
+        
+        Detects when the event loop has changed (e.g. new request thread)
+        and forces re-initialization to avoid 'Event loop is closed' errors.
+        """
         async with self._session_lock:
+            # Detect stale browser pool from a different event loop
+            current_loop_id = id(asyncio.get_running_loop())
+            
+            if self.session_active and self._bound_loop_id != current_loop_id:
+                fact_logger.logger.warning(
+                    f"Event loop changed (was {self._bound_loop_id}, now {current_loop_id}). "
+                    f"Resetting browser pool to avoid stale connections."
+                )
+                await self._force_reset_pool()
+            
             if self.session_active and len(self.browser_pool) >= (min_browsers or 1):
                 return
 
@@ -475,6 +501,31 @@ class BrowserlessScraper:
                 )
 
             self.session_active = True
+            self._bound_loop_id = current_loop_id
+
+    async def _force_reset_pool(self):
+        """Force-reset stale browser pool without awaiting closes on dead loop.
+        
+        When the event loop has changed, we can't properly close the old 
+        browsers (they're bound to a closed loop). We just discard references
+        and let garbage collection handle cleanup.
+        """
+        fact_logger.logger.info("[LOG] Force-resetting stale browser pool...")
+        
+        # Don't try to close old browsers -- their event loop is dead.
+        # Just discard references.
+        self.browser_pool = []
+        self.context_pool = []
+        self.session_active = False
+        self._bound_loop_id = None
+        
+        # Stop old Playwright instance if possible (may fail, that's ok)
+        if self.playwright:
+            try:
+                await asyncio.wait_for(self.playwright.stop(), timeout=2.0)
+            except Exception:
+                pass
+            self.playwright = None
 
     async def _create_browser(self, browser_index: int) -> Optional[Browser]:
         """Create a single browser with Railway Browserless or local Playwright"""
@@ -580,6 +631,8 @@ class BrowserlessScraper:
             processing_time = time.time() - start_time
             self.stats["failed_scrapes"] += 1
             self.stats["timeout_scrapes"] += 1
+            if url not in self.url_failure_reasons:
+                self.url_failure_reasons[url] = "timeout"
             fact_logger.logger.error(
                 f"TIMEOUT after {processing_time:.1f}s: {url}",
                 extra={"url": url, "browser_index": browser_index, "timeout": self.overall_scrape_timeout}
@@ -588,6 +641,8 @@ class BrowserlessScraper:
         except Exception as e:
             processing_time = time.time() - start_time
             self.stats["failed_scrapes"] += 1
+            if url not in self.url_failure_reasons:
+                self.url_failure_reasons[url] = "scrape_failed"
             fact_logger.logger.error(
                 f"Scraping error for {url}: {e}",
                 extra={"url": url, "duration": processing_time, "error": str(e)}
@@ -724,19 +779,27 @@ class BrowserlessScraper:
                     f"HTTP block detected for {domain} -- breaking to ScrapingBee fallback"
                 )
                 http_blocked = True
+                self.url_failure_reasons[url] = "http_blocked"
                 break  # Exit strategy loop, fall through to ScrapingBee
 
         # All Playwright strategies failed (or HTTP blocked) -- try ScrapingBee
         sb_content = await self._try_scrapingbee_fallback(url, domain, start_time, browser_index, browser)
         if sb_content:
+            self.url_failure_reasons.pop(url, None)  # Clear -- fallback succeeded
             return sb_content
 
         # ScrapingBee also failed -- try CloudScraper (Cloudflare bypass)
         cs_content = await self._try_cloudscraper_fallback(url, domain, start_time, browser_index, browser)
         if cs_content:
+            self.url_failure_reasons.pop(url, None)  # Clear -- fallback succeeded
             return cs_content
 
-        # Everything failed
+        # Everything failed -- set final reason if not already set (paywall takes priority)
+        if url not in self.url_failure_reasons:
+            if http_blocked:
+                self.url_failure_reasons[url] = "http_blocked"
+            else:
+                self.url_failure_reasons[url] = "all_strategies_failed"
         fact_logger.logger.error(
             f"All strategies failed for {url}" + (" (HTTP blocked)" if http_blocked else ""),
             extra={
@@ -818,6 +881,86 @@ class BrowserlessScraper:
 
         return content
 
+    def _extract_with_beautifulsoup(self, raw_html: str, url: str) -> str:
+        """
+        Fallback content extraction using BeautifulSoup when Playwright is unavailable.
+        
+        This handles the case where CloudScraper or ScrapingBee successfully fetch 
+        raw HTML, but Playwright can't process it (e.g. event loop issues).
+        
+        Uses the same site-specific selector logic as the Playwright path.
+        """
+        if not BS4_AVAILABLE:
+            return ""
+        
+        try:
+            soup = BeautifulSoup(raw_html, 'lxml')
+            
+            # Remove unwanted elements (same as Playwright JS extraction)
+            for tag in soup.find_all(['script', 'style', 'noscript', 'nav', 'footer', 
+                                       'header', 'aside', 'iframe']):
+                tag.decompose()
+            
+            # Remove elements by class/role patterns
+            unwanted_patterns = [
+                'sidebar', 'navigation', 'nav', 'menu', 'cookie', 'popup', 
+                'modal', 'advertisement', 'ad', 'social-share', 'comments', 
+                'related-articles', 'newsletter', 'subscription'
+            ]
+            for pattern in unwanted_patterns:
+                for el in soup.find_all(class_=lambda c: c and pattern in str(c).lower()):
+                    el.decompose()
+            for el in soup.find_all(attrs={'role': ['navigation', 'banner', 'contentinfo']}):
+                el.decompose()
+            
+            # Try site-specific selectors first
+            selectors = self._get_site_selectors(url) if url else GENERIC_SELECTORS
+            best_content = ""
+            best_score = 0
+            
+            for selector in selectors:
+                try:
+                    element = soup.select_one(selector)
+                    if element:
+                        text = element.get_text(separator='\n', strip=True)
+                        # Score: paragraph count * average length
+                        paragraphs = [p for p in text.split('\n') if len(p.strip()) > 20]
+                        score = len(paragraphs) * (sum(len(p) for p in paragraphs) / max(len(paragraphs), 1))
+                        
+                        if score > best_score:
+                            best_score = score
+                            best_content = text
+                except Exception:
+                    continue
+            
+            if best_content and len(best_content.strip()) > 100:
+                # Apply basic regex cleaning
+                content = self._clean_content(best_content)
+                fact_logger.logger.info(
+                    f"[BS4 Fallback] Extracted {len(content)} chars from {url}",
+                    extra={"url": url, "method": "beautifulsoup"}
+                )
+                return content
+            
+            # Last resort: try article tag or main content area
+            for tag_name in ['article', 'main', '[role="main"]']:
+                element = soup.select_one(tag_name) if '[' in tag_name else soup.find(tag_name)
+                if element:
+                    text = element.get_text(separator='\n', strip=True)
+                    if len(text.strip()) > 200:
+                        content = self._clean_content(text)
+                        fact_logger.logger.info(
+                            f"[BS4 Fallback] Extracted {len(content)} chars via <{tag_name}> from {url}",
+                            extra={"url": url, "method": "beautifulsoup_generic"}
+                        )
+                        return content
+            
+            return ""
+            
+        except Exception as e:
+            fact_logger.logger.warning(f"[BS4 Fallback] Failed for {url}: {e}")
+            return ""
+
     async def _try_strategy(
         self,
         url: str,
@@ -853,6 +996,7 @@ class BrowserlessScraper:
             if await self._detect_paywall(page):
                 self.stats["failed_scrapes"] += 1
                 self.stats["paywall_detected"] += 1
+                self.url_failure_reasons[url] = "paywall"
                 fact_logger.logger.warning(f"Paywall detected, skipping: {url}")
                 return ""
 
@@ -888,6 +1032,7 @@ class BrowserlessScraper:
                             self.stats["failed_scrapes"] += 1
                             self.stats["paywall_detected"] += 1
                             self.stats["visual_paywall_detected"] += 1
+                            self.url_failure_reasons[url] = "paywall"
                             fact_logger.logger.warning(
                                 f"VISUAL PAYWALL detected for {url}: "
                                 f"{vp_result.paywall_type} "
@@ -1017,7 +1162,22 @@ class BrowserlessScraper:
                 return content
 
         except Exception as e:
-            fact_logger.logger.warning(f"[ScrapingBee] Extraction failed for {url}: {e}")
+            fact_logger.logger.warning(f"[ScrapingBee] Playwright extraction failed for {url}: {e}")
+            
+            # Fallback: try BeautifulSoup extraction if we have the raw HTML
+            if raw_html and BS4_AVAILABLE:
+                fact_logger.logger.info(f"[ScrapingBee] Trying BeautifulSoup fallback for {url}")
+                content = self._extract_with_beautifulsoup(raw_html, url)
+                if content:
+                    processing_time = time.time() - start_time
+                    self.stats["successful_scrapes"] += 1
+                    self.stats["scrapingbee_successes"] += 1
+                    self.strategy_service.save_strategy(domain, "scrapingbee")
+                    fact_logger.logger.info(
+                        f"[ScrapingBee+BS4] Successfully extracted {len(content)} chars from {url}",
+                        extra={"url": url, "domain": domain, "strategy": "scrapingbee_bs4"}
+                    )
+                    return content
 
         finally:
             if page:
@@ -1097,7 +1257,23 @@ class BrowserlessScraper:
                 return content
 
         except Exception as e:
-            fact_logger.logger.warning(f"[CloudScraper] Extraction failed for {url}: {e}")
+            fact_logger.logger.warning(f"[CloudScraper] Playwright extraction failed for {url}: {e}")
+            
+            # Fallback: try BeautifulSoup extraction if we have the raw HTML
+            if raw_html and BS4_AVAILABLE:
+                fact_logger.logger.info(f"[CloudScraper] Trying BeautifulSoup fallback for {url}")
+                content = self._extract_with_beautifulsoup(raw_html, url)
+                if content:
+                    processing_time = time.time() - start_time
+                    self.stats["successful_scrapes"] += 1
+                    self.stats["cloudscraper_successes"] += 1
+                    self.stats["total_processing_time"] += processing_time
+                    self.strategy_service.save_strategy(domain, "cloudscraper")
+                    fact_logger.logger.info(
+                        f"[CloudScraper+BS4] Successfully extracted {len(content)} chars from {url}",
+                        extra={"url": url, "domain": domain, "strategy": "cloudscraper_bs4"}
+                    )
+                    return content
 
         finally:
             if page:
@@ -1367,12 +1543,11 @@ class BrowserlessScraper:
         """
         Download PDF file bytes from a URL.
 
-        Tries httpx (async) first, falls back to Playwright download
-        if httpx is not available.
+        Tries httpx (async) first, falls back to urllib.
 
         Returns raw PDF bytes or None on failure.
         """
-        # Try httpx first (lightweight, async)
+        # Try httpx first (lightweight, async, already in requirements)
         try:
             import httpx
 
@@ -1415,43 +1590,14 @@ class BrowserlessScraper:
 
         except ImportError:
             fact_logger.logger.debug(
-                "httpx not available, trying aiohttp for PDF download"
+                "httpx not available, trying urllib for PDF download"
             )
         except Exception as e:
             fact_logger.logger.warning(
                 f"httpx PDF download failed: {e}"
             )
 
-        # Fallback: try aiohttp
-        try:
-            import aiohttp
-
-            headers = {
-                "User-Agent": self._get_random_user_agent(),
-            }
-
-            async with aiohttp.ClientSession(headers=headers) as session:
-                async with session.get(url, timeout=aiohttp.ClientTimeout(total=25)) as response:
-                    if response.status == 200:
-                        pdf_bytes = await response.read()
-                        if pdf_bytes[:5] == b"%PDF-":
-                            fact_logger.logger.info(
-                                f"PDF downloaded via aiohttp: "
-                                f"{len(pdf_bytes) / 1024:.1f} KB"
-                            )
-                            return pdf_bytes
-            return None
-
-        except ImportError:
-            fact_logger.logger.debug(
-                "aiohttp not available for PDF download"
-            )
-        except Exception as e:
-            fact_logger.logger.warning(
-                f"aiohttp PDF download failed: {e}"
-            )
-
-        # Last resort: urllib (synchronous but always available)
+        # Fallback: urllib (synchronous but always available)
         try:
             import urllib.request
 
