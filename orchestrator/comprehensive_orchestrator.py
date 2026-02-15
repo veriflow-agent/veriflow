@@ -10,10 +10,12 @@ STAGE 1: Pre-Analysis (produces MetadataBlocks)
 - Mode Routing (decide which modes to run)
 - Any future checks simply add a new block
 
-STAGE 2: Sequential Mode Execution
-- Run selected modes based on routing
+STAGE 2: Parallel Mode Execution
+- Run ALL selected modes simultaneously using asyncio.gather()
+- Each mode gets its own orchestrator instance + fresh LLM keys (via key rotation)
+- standalone=False prevents modes from calling complete_job() prematurely
 - Collect reports from each mode
-- Stream progress updates
+- Stream progress updates (prefixed with mode name for clarity)
 
 STAGE 3: AI-Powered Synthesis
 - Uses ReportSynthesizer agent with GPT-4o
@@ -71,7 +73,7 @@ class ComprehensiveOrchestrator:
 
     Coordinates:
     - Stage 1: Pre-analysis checks -> MetadataBlocks + mode routing
-    - Stage 2: Sequential execution of selected analysis modes
+    - Stage 2: PARALLEL execution of selected analysis modes
     - Stage 3: AI-powered synthesis of all findings
     """
 
@@ -455,9 +457,16 @@ class ComprehensiveOrchestrator:
         stage1_results: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
-        Stage 2: Mode Execution (SEQUENTIAL)
+        Stage 2: Mode Execution (PARALLEL)
 
-        Runs modes sequentially to avoid LangChain asyncio task context conflicts.
+        Runs ALL selected modes simultaneously using asyncio.gather().
+        Each mode orchestrator creates its own LLM instances via get_openai_llm()
+        (key rotation), its own BrowserlessScraper instance, and its own LangSmith
+        tracing scope -- so there is no shared mutable state between parallel tasks.
+
+        standalone=False is passed to every mode to prevent any mode from calling
+        job_manager.complete_job(), which would prematurely close the SSE stream
+        while other modes are still running.
         """
         self._send_stage_update(job_id, "mode_execution", "Running selected analysis modes...")
 
@@ -466,56 +475,90 @@ class ComprehensiveOrchestrator:
 
         job_manager.add_progress(
             job_id,
-            f"Executing {len(selected_modes)} modes: {', '.join(selected_modes)}"
+            f"Executing {len(selected_modes)} modes in PARALLEL: {', '.join(selected_modes)}"
         )
-
-        # Process results
-        mode_reports: Dict[str, Any] = {}
-        mode_errors: Dict[str, str] = {}
 
         start_time = time.time()
 
-        # Run modes SEQUENTIALLY to avoid asyncio task conflicts
-        for i, mode_id in enumerate(selected_modes, 1):
+        # =================================================================
+        # PARALLEL EXECUTION: Launch all modes simultaneously
+        # =================================================================
+        # Each mode gets its own orchestrator instance with independent:
+        #   - LLM instances (fresh API key per call via get_openai_llm)
+        #   - BrowserlessScraper (own browser pool)
+        #   - LangSmith callbacks (scoped by component name)
+        # The only shared resource is job_manager for progress messages,
+        # which is already thread/async-safe (dict-based with unique job IDs).
+
+        tasks = [
+            self._run_single_mode(mode_id, content, job_id, stage1_results)
+            for mode_id in selected_modes
+        ]
+
+        fact_logger.logger.info(
+            f"Launching {len(tasks)} mode tasks in parallel",
+            extra={
+                "modes": selected_modes,
+                "job_id": job_id
+            }
+        )
+
+        # asyncio.gather runs all tasks concurrently.
+        # return_exceptions=True ensures one mode failing doesn't cancel the rest.
+        raw_results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # =================================================================
+        # PROCESS RESULTS from parallel execution
+        # =================================================================
+        mode_reports: Dict[str, Any] = {}
+        mode_errors: Dict[str, str] = {}
+
+        for i, result in enumerate(raw_results):
+            mode_id = selected_modes[i]
+
             try:
-                self._check_cancellation(job_id)
+                # Check if asyncio.gather caught an exception for this task
+                if isinstance(result, CancelledException):
+                    raise result
+                elif isinstance(result, BaseException):
+                    fact_logger.logger.error(f"Mode {mode_id} raised exception: {result}")
+                    mode_errors[mode_id] = str(result)
+                    job_manager.add_progress(job_id, f"[{mode_id}] failed: {str(result)[:100]}")
+                    continue
 
-                job_manager.add_progress(
-                    job_id,
-                    f"Running mode {i}/{len(selected_modes)}: {mode_id}..."
-                )
-
-                result = await self._run_single_mode(
-                    mode_id, content, job_id, stage1_results
-                )
-
+                # Normal result: tuple of (mode_id, result_dict, error_message)
                 if isinstance(result, tuple) and len(result) == 3:
                     mode_id_returned, mode_result, error = result
 
                     if error:
                         mode_errors[mode_id] = error
-                        job_manager.add_progress(job_id, f"{mode_id} failed: {error}")
+                        job_manager.add_progress(job_id, f"[{mode_id}] failed: {error}")
                     elif mode_result:
                         mode_reports[mode_id] = mode_result
-                        job_manager.add_progress(job_id, f"{mode_id} complete")
+                        job_manager.add_progress(job_id, f"[{mode_id}] complete")
+                else:
+                    fact_logger.logger.error(
+                        f"Unexpected result format from {mode_id}: {type(result)}"
+                    )
+                    mode_errors[mode_id] = f"Unexpected result format: {type(result)}"
 
             except CancelledException:
                 raise
             except Exception as e:
-                fact_logger.logger.error(f"Mode {mode_id} failed: {e}")
-                import traceback
-                fact_logger.logger.error(f"Traceback: {traceback.format_exc()}")
+                fact_logger.logger.error(f"Error processing result for {mode_id}: {e}")
                 mode_errors[mode_id] = str(e)
-                job_manager.add_progress(job_id, f"{mode_id} error: {str(e)}")
 
         execution_time = time.time() - start_time
 
+        # Log parallel performance metrics
         fact_logger.logger.info(
-            f"Stage 2 complete in {execution_time:.1f}s (sequential execution)",
+            f"Stage 2 complete in {execution_time:.1f}s (PARALLEL execution)",
             extra={
                 "modes_run": len(selected_modes),
                 "modes_succeeded": len(mode_reports),
-                "modes_failed": len(mode_errors)
+                "modes_failed": len(mode_errors),
+                "execution_mode": "parallel",
+                "execution_time": round(execution_time, 2)
             }
         )
 
@@ -824,9 +867,9 @@ class ComprehensiveOrchestrator:
             job_manager.add_progress(job_id, "Stage 1 complete")
 
             # ================================================================
-            # STAGE 2: Sequential Mode Execution
+            # STAGE 2: Parallel Mode Execution
             # ================================================================
-            job_manager.add_progress(job_id, "Stage 2: Mode execution starting...")
+            job_manager.add_progress(job_id, "Stage 2: Parallel mode execution starting...")
             stage2_results = await self._run_stage2(content, job_id, stage1_results)
 
             self._check_cancellation(job_id)
