@@ -117,17 +117,28 @@ class KeyClaimsOrchestrator:
         tags=["key-claims", "thesis-verification", "parallel"]
     )
     async def process_with_progress(
-    self,
-    text_content: str,
-    job_id: str,
-    source_context: Optional[Dict[str, Any]] = None,      # NEW
-    source_credibility: Optional[Dict[str, Any]] = None,   # NEW
-    standalone: bool = True  # NEW: Only mark job complete when True (for comprehensive mode)
+        self,
+        text_content: str,
+        job_id: str,
+        source_context: Optional[Dict[str, Any]] = None,
+        source_credibility: Optional[Dict[str, Any]] = None,
+        standalone: bool = True,
+        shared_scraper=None
     ) -> dict:
         """
         Complete key claims verification pipeline with parallel processing
 
         OPTIMIZED: All claim operations run in parallel
+
+        Args:
+            text_content: Plain text to verify
+            job_id: Job ID for progress tracking
+            source_context: Optional content classification data
+            source_credibility: Optional source credibility data
+            standalone: If True, calls complete_job on finish
+            shared_scraper: Optional shared ScrapeCache from comprehensive mode.
+                           If provided, uses it instead of creating a new scraper.
+                           The caller is responsible for closing it.
         """
         session_id = self.file_manager.create_session()
         # Track credibility usage
@@ -425,8 +436,9 @@ class KeyClaimsOrchestrator:
 
             scrape_start = time.time()
 
-            # Create scraper in async context (correct event loop)
-            scraper = BrowserlessScraper(self.config)
+            # Use shared scraper (from comprehensive mode) or create a new one
+            using_shared_scraper = shared_scraper is not None
+            scraper = shared_scraper if shared_scraper else BrowserlessScraper(self.config)
 
             # Collect ALL URLs to scrape across all claims
             all_urls_to_scrape = []
@@ -527,16 +539,15 @@ class KeyClaimsOrchestrator:
                     )
 
                     # Progress update
-                    score_emoji = "" if result.match_score >= 0.9 else " " if result.match_score >= 0.7 else ""
                     job_manager.add_progress(
                         job_id,
-                        f"{score_emoji} {claim.id}: {result.match_score:.0%} verified"
+                        f"{claim.id}: {result.match_score:.0%} verified"
                     )
 
                     return result
 
                 except Exception as e:
-                    fact_logger.logger.error(f" Verification error for {claim.id}: {e}")
+                    fact_logger.logger.error(f"Verification error for {claim.id}: {e}")
                     return FactCheckResult(
                         fact_id=claim.id,
                         statement=claim.statement,
@@ -552,7 +563,7 @@ class KeyClaimsOrchestrator:
             final_results = []
             for result in results:
                 if isinstance(result, BaseException):
-                    fact_logger.logger.error(f" Verification exception: {result}")
+                    fact_logger.logger.error(f"Verification exception: {result}")
                     continue
                 final_results.append(result)
 
@@ -562,11 +573,12 @@ class KeyClaimsOrchestrator:
                 f"Verification complete in {verify_duration:.1f}s"
             )
 
-            # Clean up scraper
-            try:
-                await scraper.close()
-            except Exception:
-                pass
+            # Clean up scraper only if we created it (not shared)
+            if not using_shared_scraper:
+                try:
+                    await scraper.close()
+                except Exception:
+                    pass
 
             # ================================================================
             # STAGE 7: Generate Summary and Save Audit
@@ -609,7 +621,7 @@ class KeyClaimsOrchestrator:
 
             # Log performance metrics
             fact_logger.logger.info(
-                " Key Claims Pipeline Performance",
+                "Key Claims Pipeline Performance",
                 extra={
                     "total_time": round(processing_time, 2),
                     "query_gen_time": round(query_gen_duration, 2),
