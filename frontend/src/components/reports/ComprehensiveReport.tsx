@@ -5,6 +5,7 @@ import KeyClaimsReport from "./KeyClaimsReport";
 import BiasReport from "./BiasReport";
 import DeceptionReport from "./DeceptionReport";
 import ManipulationReport from "./ManipulationReport";
+import LLMOutputReport from "./LLMOutputReport";
 import { useState, useMemo } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
 
@@ -82,7 +83,7 @@ const ComprehensiveReport = ({ data }: Props) => {
       case "manipulation_detection":
         return <ManipulationReport data={modeData} />;
       case "llm_output_verification":
-        return <pre className="text-xs overflow-auto">{JSON.stringify(modeData, null, 2)}</pre>;
+        return <LLMOutputReport data={modeData} />;
       default:
         return <pre className="text-xs overflow-auto">{JSON.stringify(modeData, null, 2)}</pre>;
     }
