@@ -16,9 +16,10 @@ const ALL_MODES: { id: AnalysisMode | "text-factcheck"; disabled?: boolean }[] =
 type Props = {
   selected: AnalysisMode;
   onSelect: (mode: AnalysisMode) => void;
+  analyzedMode?: AnalysisMode | null;
 };
 
-const ModeSelector = ({ selected, onSelect }: Props) => (
+const ModeSelector = ({ selected, onSelect, analyzedMode }: Props) => (
   <div>
     <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground mb-3">
       Choose Analysis Mode
@@ -27,6 +28,7 @@ const ModeSelector = ({ selected, onSelect }: Props) => (
       {ALL_MODES.map((m) => {
         const isDisabled = m.disabled;
         const isSelected = selected === m.id;
+        const isAnalyzed = analyzedMode === m.id;
         const info = (MODE_INFO as any)[m.id];
 
         return (
@@ -35,11 +37,13 @@ const ModeSelector = ({ selected, onSelect }: Props) => (
             disabled={isDisabled}
             onClick={() => !isDisabled && onSelect(m.id as AnalysisMode)}
             className={cn(
-              "rounded-lg border px-4 py-3 text-left transition-all duration-200",
+              "rounded-lg border px-4 py-3 text-left transition-all duration-200 relative",
               isSelected
                 ? "bg-primary text-primary-foreground border-primary"
                 : "bg-card text-card-foreground border-border hover:border-foreground/30",
-              isDisabled && "opacity-50 cursor-not-allowed"
+              isDisabled && "opacity-50 cursor-not-allowed",
+              // Subtle ring on the analyzed mode when it's not selected
+              !isSelected && isAnalyzed && "ring-1 ring-primary/40"
             )}
           >
             <span className="block text-sm font-semibold font-display">

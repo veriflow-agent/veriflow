@@ -1,5 +1,6 @@
 // src/pages/Index.tsx
 import { useState, useCallback, useRef } from "react";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import ModeSelector from "@/components/ModeSelector";
@@ -9,7 +10,7 @@ import ProgressLog from "@/components/ProgressLog";
 import ReportRenderer from "@/components/ReportRenderer";
 import {
   postJob, fetchJobResult, cancelJob, streamJob,
-  type AnalysisMode, MODE_ENDPOINTS, buildRequestBody,
+  type AnalysisMode, MODE_ENDPOINTS, MODE_INFO, buildRequestBody,
 } from "@/lib/api";
 
 type AppState = "idle" | "fetching" | "analyzing" | "done" | "error";
@@ -23,16 +24,17 @@ const Index = () => {
   const [messages, setMessages] = useState<string[]>([]);
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
+  const [analyzedMode, setAnalyzedMode] = useState<AnalysisMode | null>(null);
+  const [showContent, setShowContent] = useState(false);
   const closeStreamRef = useRef<(() => void) | null>(null);
-
-  // Tracks whether an article was successfully fetched (to auto-switch ContentInput)
-  const [articleFetched, setArticleFetched] = useState(false);
 
   const reset = useCallback(() => {
     setState("idle");
     setMessages([]);
     setResult(null);
     setError(null);
+    setAnalyzedMode(null);
+    setShowContent(false);
   }, []);
 
   const fullReset = useCallback(() => {
@@ -40,17 +42,26 @@ const Index = () => {
     setContent("");
     setUrl("");
     setArticle(null);
-    setArticleFetched(false);
   }, [reset]);
 
-  /* ──────── URL Fetch ──────── */
+  // When user selects a mode while results are showing,
+  // keep the content but clear the results so they can re-analyze.
+  const handleModeSelect = useCallback((newMode: AnalysisMode) => {
+    if (state === "done" && newMode !== analyzedMode) {
+      setState("idle");
+      setMessages([]);
+      setResult(null);
+      setError(null);
+      setAnalyzedMode(null);
+      setShowContent(false);
+    }
+    setMode(newMode);
+  }, [state, analyzedMode]);
+
   const handleFetchUrl = useCallback(async () => {
     if (!url) return;
     setState("fetching");
     setMessages(["Fetching article from URL..."]);
-    setError(null);
-    setArticle(null);
-    setArticleFetched(false);
 
     try {
       const { job_id } = await postJob("/api/scrape-url", {
@@ -63,28 +74,12 @@ const Index = () => {
       closeStreamRef.current = streamJob(job_id, {
         onMessage: (msg) => setMessages((prev) => [...prev, msg]),
         onComplete: async () => {
-          try {
-            const job = await fetchJobResult(job_id);
-            const r = job.result || job;
-            setArticle(r);
-
-            // If scrape succeeded, load the content
-            if (r.content) {
-              setContent(r.content);
-              setArticleFetched(true);
-            }
-            // If scrape failed but we still got credibility data, show SourceCard
-            // but leave content empty so user can paste manually
-            if (r.scrape_failed) {
-              setArticleFetched(false);
-            }
-
-            setState("idle");
-            setMessages([]);
-          } catch (fetchErr: any) {
-            setError(fetchErr.message || "Failed to retrieve results");
-            setState("error");
-          }
+          const job = await fetchJobResult(job_id);
+          const r = job.result || job;
+          setArticle(r);
+          if (r.content) setContent(r.content);
+          setState("idle");
+          setMessages([]);
         },
         onError: (err) => {
           setError(err);
@@ -97,13 +92,14 @@ const Index = () => {
     }
   }, [url]);
 
-  /* ──────── Analysis ──────── */
   const handleAnalyze = useCallback(async () => {
     if (!content.trim()) return;
     setState("analyzing");
     setMessages(["Starting analysis..."]);
     setResult(null);
     setError(null);
+    setAnalyzedMode(null);
+    setShowContent(false);
 
     const sourceContext = article?.credibility
       ? {
@@ -122,14 +118,10 @@ const Index = () => {
       closeStreamRef.current = streamJob(job_id, {
         onMessage: (msg) => setMessages((prev) => [...prev, msg]),
         onComplete: async () => {
-          try {
-            const job = await fetchJobResult(job_id);
-            setResult(job.result || job);
-            setState("done");
-          } catch (fetchErr: any) {
-            setError(fetchErr.message || "Failed to retrieve results");
-            setState("error");
-          }
+          const job = await fetchJobResult(job_id);
+          setResult(job.result || job);
+          setAnalyzedMode(mode);
+          setState("done");
         },
         onError: (err) => {
           setError(err);
@@ -142,14 +134,18 @@ const Index = () => {
     }
   }, [content, mode, url, article]);
 
-  /* ──────── Cancel ──────── */
-  const handleCancel = useCallback(() => {
+  const handleCancel = useCallback(async () => {
     closeStreamRef.current?.();
     setState("idle");
     setMessages([]);
   }, []);
 
   const isProcessing = state === "analyzing" || state === "fetching";
+
+  // Truncate content for preview (first ~300 chars)
+  const contentPreview = content.length > 300
+    ? content.slice(0, 300) + "..."
+    : content;
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -164,17 +160,21 @@ const Index = () => {
 
           {/* Mode Selector */}
           <div className="mb-6">
-            <ModeSelector selected={mode} onSelect={setMode} />
+            <ModeSelector
+              selected={mode}
+              onSelect={handleModeSelect}
+              analyzedMode={analyzedMode}
+            />
           </div>
 
-          {/* Source Card -- visible when article data exists (even with scrape failure) */}
+          {/* Source Card */}
           {article && !isProcessing && state !== "done" && (
             <div className="mb-4">
               <SourceCard article={article} />
             </div>
           )}
 
-          {/* Input -- hidden when showing results */}
+          {/* Input — shown when NOT in done state */}
           {state !== "done" && (
             <div className="mb-4">
               <ContentInput
@@ -185,7 +185,6 @@ const Index = () => {
                 onFetchUrl={handleFetchUrl}
                 isFetching={state === "fetching"}
                 mode={mode}
-                articleFetched={articleFetched}
               />
             </div>
           )}
@@ -233,9 +232,38 @@ const Index = () => {
             </div>
           )}
 
-          {/* Report */}
-          {state === "done" && result && (
-            <ReportRenderer mode={mode} data={result} onReset={fullReset} />
+          {/* Collapsible analyzed content + Report */}
+          {state === "done" && result && analyzedMode && (
+            <>
+              {/* Collapsible content preview */}
+              <div className="rounded-xl border border-border bg-card mb-4">
+                <button
+                  onClick={() => setShowContent((v) => !v)}
+                  className="w-full flex items-center justify-between px-5 py-3 text-left"
+                >
+                  <span className="text-xs font-medium text-muted-foreground">
+                    Analyzed Content
+                    {url && (
+                      <span className="ml-2 text-muted-foreground/60">{url}</span>
+                    )}
+                  </span>
+                  {showContent
+                    ? <ChevronUp size={14} className="text-muted-foreground" />
+                    : <ChevronDown size={14} className="text-muted-foreground" />
+                  }
+                </button>
+                {showContent && (
+                  <div className="px-5 pb-4 border-t border-border">
+                    <pre className="mt-3 text-xs text-muted-foreground leading-relaxed whitespace-pre-wrap max-h-60 overflow-y-auto">
+                      {content}
+                    </pre>
+                  </div>
+                )}
+              </div>
+
+              {/* Report — always rendered with the mode that actually produced results */}
+              <ReportRenderer mode={analyzedMode} data={result} onReset={fullReset} />
+            </>
           )}
         </div>
       </main>
