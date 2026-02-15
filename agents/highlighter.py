@@ -4,13 +4,15 @@ OPTIMIZED Highlighter with Maximum Context Window for GPT-4o
 
 KEY OPTIMIZATIONS:
 1. Increased from 50,000 to 400,000 characters for GPT-4o's 128K token window
-2. ✅ PARALLEL PROCESSING: All sources processed simultaneously using asyncio.gather()
+2. PARALLEL PROCESSING: All sources processed simultaneously using asyncio.gather()
    - Previously: Sequential loop (5 sources = 5 sequential LLM calls)
    - Now: All sources processed in parallel (5 sources = 1 parallel batch)
    - ~60-70% faster for multiple sources
+3. KEY ROTATION: Each LLM call uses get_openai_llm() for a fresh API key,
+   distributing load when called from parallel orchestrator pipelines.
+4. SEMAPHORE: Limits concurrent LLM calls to prevent asyncio task corruption.
 """
 from langchain.prompts import ChatPromptTemplate
-from langchain_openai import ChatOpenAI
 from langchain_core.output_parsers import JsonOutputParser
 from langsmith import traceable
 from pydantic import BaseModel, Field
@@ -20,6 +22,7 @@ import asyncio
 
 from utils.langsmith_config import langsmith_config
 from utils.logger import fact_logger
+from utils.openai_client import get_openai_llm, get_key_count
 from agents.fact_extractor import Fact
 from prompts.highlighter_prompts import get_highlighter_prompts
 
@@ -31,39 +34,39 @@ class HighlighterOutput(BaseModel):
 class Highlighter:
     """Extract relevant excerpts with LangSmith tracing and MAXIMUM context for GPT-4o
 
-    ✅ OPTIMIZED: Parallel processing for all sources using asyncio.gather()
+    OPTIMIZED: Parallel processing for all sources using asyncio.gather()
+    KEY ROTATION: Fresh LLM instance per call via get_openai_llm()
     """
 
     def __init__(self, config):
         self.config = config
 
-        # ✅ PROPER JSON MODE - OpenAI guarantees valid JSON
-        self.llm = ChatOpenAI(
-            model="gpt-4o",
-            temperature=0
-        ).bind(response_format={"type": "json_object"})
-
-        # ✅ SIMPLE PARSER - No fixing needed
+        # Parser (shared -- stateless)
         self.parser = JsonOutputParser(pydantic_object=HighlighterOutput)
 
         # Load prompts during initialization
         self.prompts = get_highlighter_prompts()
 
-        # ✅ OPTIMIZED: Use most of GPT-4o's context window
-        # GPT-4o: 128K tokens ≈ 512K characters
+        # OPTIMIZED: Use most of GPT-4o's context window
+        # GPT-4o: 128K tokens ~ 512K characters
         # Using 400K leaves ~25K tokens for prompts, responses, and safety margin
-        self.max_content_chars = 400000  # 8x increase from 50K!
+        self.max_content_chars = 400000
 
         # Calculate approximate token usage
-        self.approx_tokens_per_char = 0.25  # 1 token ≈ 4 chars
+        self.approx_tokens_per_char = 0.25  # 1 token ~ 4 chars
         self.max_content_tokens = int(self.max_content_chars * self.approx_tokens_per_char)
+
+        # Concurrency control for parallel LLM calls
+        key_count = get_key_count()
+        self._max_concurrent = min(key_count * 2, 6)
 
         fact_logger.log_component_start(
             "Highlighter", 
-            model="gpt-4o",
+            model="gpt-4o (key rotation)",
             max_context_chars=self.max_content_chars,
             approx_max_tokens=self.max_content_tokens,
-            parallel_processing=True  # ✅ NEW: Indicate parallel mode
+            parallel_processing=True,
+            max_concurrent=self._max_concurrent
         )
 
     @traceable(
@@ -75,9 +78,10 @@ class Highlighter:
         """
         Find excerpts that mention or support the fact using semantic understanding
 
-        ✅ OPTIMIZED: All sources processed in PARALLEL using asyncio.gather()
+        OPTIMIZED: All sources processed in PARALLEL using asyncio.gather()
         - Previously: Sequential for loop (slow)
         - Now: All LLM calls run simultaneously (fast)
+        - Semaphore prevents asyncio task context corruption
 
         Returns: {url: [excerpts]}
         """
@@ -85,7 +89,7 @@ class Highlighter:
         results = {}
 
         fact_logger.logger.info(
-            f"🔦 Highlighting excerpts for {fact.id} (PARALLEL MODE)",
+            f"Highlighting excerpts for {fact.id} (PARALLEL MODE)",
             extra={
                 "fact_id": fact.id,
                 "statement": fact.statement[:100],
@@ -95,13 +99,13 @@ class Highlighter:
             }
         )
 
-        # ✅ STEP 1: Filter valid sources and prepare for parallel processing
+        # STEP 1: Filter valid sources and prepare for parallel processing
         valid_sources: List[Tuple[str, str]] = []
 
         for url, content in scraped_content.items():
             if not content:
                 fact_logger.logger.warning(
-                    f"⚠️ Source not found or empty: {url}",
+                    f"Source not found or empty: {url}",
                     extra={"fact_id": fact.id, "url": url}
                 )
                 results[url] = []  # Empty result for invalid sources
@@ -110,14 +114,16 @@ class Highlighter:
 
         if not valid_sources:
             fact_logger.logger.warning(
-                f"⚠️ No valid sources to highlight for {fact.id}",
+                f"No valid sources to highlight for {fact.id}",
                 extra={"fact_id": fact.id}
             )
             return results
 
-        # ✅ STEP 2: Create parallel extraction tasks for ALL valid sources
+        # STEP 2: Create parallel extraction tasks with semaphore
+        semaphore = asyncio.Semaphore(self._max_concurrent)
+
         fact_logger.logger.info(
-            f"🚀 Starting PARALLEL excerpt extraction for {len(valid_sources)} sources",
+            f"Starting PARALLEL excerpt extraction for {len(valid_sources)} sources (max {self._max_concurrent} concurrent)",
             extra={
                 "fact_id": fact.id,
                 "num_sources": len(valid_sources),
@@ -126,28 +132,29 @@ class Highlighter:
         )
 
         async def extract_with_error_handling(url: str, content: str) -> Tuple[str, List]:
-            """Wrapper to handle errors and return (url, excerpts) tuple"""
-            try:
-                excerpts = await self._extract_excerpts(fact, url, content)
-                fact_logger.logger.debug(
-                    f"✂️ Found {len(excerpts)} excerpts from {url}",
-                    extra={
-                        "fact_id": fact.id,
-                        "url": url,
-                        "num_excerpts": len(excerpts),
-                        "content_length_used": min(len(content), self.max_content_chars),
-                        "truncated": len(content) > self.max_content_chars
-                    }
-                )
-                return (url, excerpts)
-            except Exception as e:
-                fact_logger.logger.error(
-                    f"❌ Failed to extract excerpts from {url}: {e}",
-                    extra={"fact_id": fact.id, "url": url, "error": str(e)}
-                )
-                return (url, [])
+            """Wrapper with concurrency control and error handling"""
+            async with semaphore:
+                try:
+                    excerpts = await self._extract_excerpts(fact, url, content)
+                    fact_logger.logger.debug(
+                        f"Found {len(excerpts)} excerpts from {url}",
+                        extra={
+                            "fact_id": fact.id,
+                            "url": url,
+                            "num_excerpts": len(excerpts),
+                            "content_length_used": min(len(content), self.max_content_chars),
+                            "truncated": len(content) > self.max_content_chars
+                        }
+                    )
+                    return (url, excerpts)
+                except Exception as e:
+                    fact_logger.logger.error(
+                        f"Failed to extract excerpts from {url}: {e}",
+                        extra={"fact_id": fact.id, "url": url, "error": str(e)}
+                    )
+                    return (url, [])
 
-        # ✅ STEP 3: Execute ALL extractions in PARALLEL
+        # STEP 3: Execute ALL extractions in PARALLEL
         tasks = [
             extract_with_error_handling(url, content) 
             for url, content in valid_sources
@@ -157,11 +164,11 @@ class Highlighter:
         extraction_results = await asyncio.gather(*tasks, return_exceptions=True)
         parallel_duration = time.time() - parallel_start
 
-        # ✅ STEP 4: Process results
+        # STEP 4: Process results
         for result in extraction_results:
             if isinstance(result, Exception):
                 fact_logger.logger.error(
-                    f"❌ Unexpected error in parallel extraction: {result}",
+                    f"Unexpected error in parallel extraction: {result}",
                     extra={"fact_id": fact.id, "error": str(result)}
                 )
                 continue
@@ -169,27 +176,27 @@ class Highlighter:
             url, excerpts = result
             results[url] = excerpts
 
-        # ✅ STEP 5: Log completion metrics
+        # STEP 5: Log completion metrics
         duration = time.time() - start_time
         total_excerpts = sum(len(excerpts) for excerpts in results.values())
 
         # Calculate estimated sequential time for comparison
-        # Average ~3-5 seconds per LLM call
-        estimated_sequential_time = len(valid_sources) * 4  # Conservative estimate
+        estimated_sequential_time = len(valid_sources) * 4
         time_saved = max(0, estimated_sequential_time - duration)
         speedup_percent = (time_saved / estimated_sequential_time * 100) if estimated_sequential_time > 0 else 0
 
         fact_logger.logger.info(
-            f"⚡ Parallel highlighting complete",
+            f"PARALLEL highlighting complete for {fact.id}: "
+            f"{total_excerpts} excerpts from {len(results)} sources in {duration:.1f}s "
+            f"(~{speedup_percent:.0f}% faster than sequential)",
             extra={
                 "fact_id": fact.id,
-                "total_duration_sec": round(duration, 2),
-                "parallel_batch_duration_sec": round(parallel_duration, 2),
-                "num_sources": len(valid_sources),
                 "total_excerpts": total_excerpts,
-                "estimated_sequential_time_sec": estimated_sequential_time,
-                "estimated_time_saved_sec": round(time_saved, 2),
-                "estimated_speedup_percent": round(speedup_percent, 1)
+                "sources_processed": len(results),
+                "duration": duration,
+                "parallel_duration": parallel_duration,
+                "estimated_sequential_time": estimated_sequential_time,
+                "speedup_percent": round(speedup_percent, 1)
             }
         )
 
@@ -209,11 +216,10 @@ class Highlighter:
         """
         Extract excerpts from a single source using semantic understanding
 
-        ✅ OPTIMIZED: Now uses 400K chars instead of 50K (8x increase!)
-        This means most articles will NOT be truncated
+        Uses get_openai_llm() for a fresh LLM with rotated API key.
         """
 
-        # ✅ INCREASED CONTEXT: Use much more content for better matching
+        # INCREASED CONTEXT: Use much more content for better matching
         content_to_analyze = content[:self.max_content_chars]
 
         original_length = len(content)
@@ -226,7 +232,7 @@ class Highlighter:
         if truncated:
             chars_lost = original_length - self.max_content_chars
             fact_logger.logger.warning(
-                f"⚠️ Content truncated for analysis",
+                f"Content truncated for analysis",
                 extra={
                     "fact_id": fact.id,
                     "url": url,
@@ -238,7 +244,7 @@ class Highlighter:
             )
         else:
             fact_logger.logger.info(
-                f"✅ Using full content (no truncation needed)",
+                f"Using full content (no truncation needed)",
                 extra={
                     "fact_id": fact.id,
                     "url": url,
@@ -247,24 +253,25 @@ class Highlighter:
                 }
             )
 
-        # ✅ CLEAN PROMPT USAGE
+        # CLEAN PROMPT USAGE
         prompt = ChatPromptTemplate.from_messages([
             ("system", self.prompts["system"]),
             ("user", self.prompts["user"])
         ])
 
-        # ✅ FORMAT INSTRUCTIONS
+        # FORMAT INSTRUCTIONS
         prompt_with_format = prompt.partial(
             format_instructions=self.parser.get_format_instructions()
         )
 
         callbacks = langsmith_config.get_callbacks(f"highlighter_{fact.id}")
 
-        # ✅ CLEAN CHAIN - No manual JSON parsing needed
-        chain = prompt_with_format | self.llm | self.parser
+        # KEY ROTATION: Fresh LLM per call -- rotated API key
+        llm = get_openai_llm(model="gpt-4o", temperature=0, json_mode=True)
+        chain = prompt_with_format | llm | self.parser
 
         fact_logger.logger.debug(
-            f"🔍 Analyzing {len(content_to_analyze):,} chars for excerpts",
+            f"Analyzing {len(content_to_analyze):,} chars for excerpts",
             extra={
                 "fact_id": fact.id,
                 "url": url,
@@ -277,16 +284,16 @@ class Highlighter:
             {
                 "fact": fact.statement,
                 "url": url,
-                "content": content_to_analyze  # ✅ USING 400K CHARS NOW (8X MORE!)
+                "content": content_to_analyze
             },
             config={"callbacks": callbacks.handlers}
         )
 
-        # ✅ DIRECT DICT ACCESS - Parser returns clean dict
+        # DIRECT DICT ACCESS - Parser returns clean dict
         excerpts = response.get('excerpts', [])
 
         fact_logger.logger.debug(
-            f"📊 Extracted {len(excerpts)} excerpts",
+            f"Extracted {len(excerpts)} excerpts",
             extra={
                 "fact_id": fact.id,
                 "url": url,

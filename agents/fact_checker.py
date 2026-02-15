@@ -1,15 +1,15 @@
 # agents/fact_checker.py
 """
-Fact Checker Agent - UPDATED WITH TIER FILTERING
+Fact Checker Agent - WITH TIER FILTERING + KEY ROTATION
 Compares claimed facts against source excerpts
 
- TIER FILTERING: Uses Tiers 1-3, filters out Tiers 4-5
- TIER PRECEDENCE: Tier 1 sources override lower tiers when there are contradictions
- SIMPLIFIED OUTPUT: Single comprehensive report field
+TIER FILTERING: Uses Tiers 1-3, filters out Tiers 4-5
+TIER PRECEDENCE: Tier 1 sources override lower tiers when there are contradictions
+SIMPLIFIED OUTPUT: Single comprehensive report field
+KEY ROTATION: Uses get_openai_llm() per call for safe parallel execution
 """
 
 from langsmith import traceable
-from langchain_openai import ChatOpenAI
 from langchain.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
 from pydantic import BaseModel, Field
@@ -19,6 +19,7 @@ import time
 from utils.logger import fact_logger
 from utils.langsmith_config import langsmith_config
 from utils.source_metadata import SourceMetadata
+from utils.openai_client import get_openai_llm
 
 
 class FactCheckResult(BaseModel):
@@ -35,18 +36,16 @@ class FactChecker:
     """
     Checks facts against extracted excerpts
 
-     TIER FILTERING:
-    - Discards Tier 3+ sources (< 0.70 credibility)
-    - Only evaluates against Tier 1 (0.85-1.0) and Tier 2 (0.70-0.84)
+    TIER FILTERING:
+    - Discards Tier 4-5 sources (< 0.65 credibility)
+    - Evaluates against Tier 1 (0.90+), Tier 2 (0.80-0.89), Tier 3 (0.65-0.79)
     - Sorts excerpts by tier (Tier 1 first) before evaluation
+
+    KEY ROTATION: Each check_fact call gets a fresh LLM with rotated API key
     """
 
     def __init__(self, config):
         self.config = config
-        self.llm = ChatOpenAI(
-            model="gpt-4o",
-            temperature=0
-        ).bind(response_format={"type": "json_object"})
 
         self.parser = JsonOutputParser(pydantic_object=FactCheckResult)
 
@@ -54,7 +53,7 @@ class FactChecker:
         from prompts.checker_prompts import get_checker_prompts
         self.prompts = get_checker_prompts()
 
-        fact_logger.log_component_start("FactChecker", model="gpt-4o")
+        fact_logger.log_component_start("FactChecker", model="gpt-4o (key rotation)")
 
     @traceable(
         name="check_fact_accuracy",
@@ -70,8 +69,8 @@ class FactChecker:
         """
         Check a fact against source excerpts
 
-         TIER FILTERING: Filters out Tier 4-5 sources before evaluation
-         TIER ORDERING: Presents sources sorted by tier to the LLM
+        TIER FILTERING: Filters out Tier 4-5 sources before evaluation
+        TIER ORDERING: Presents sources sorted by tier to the LLM
 
         Args:
             fact: Fact object with id and statement
@@ -182,15 +181,6 @@ class FactChecker:
 
         # Return Tier 1 first, then Tier 2, then Tier 3
         return tier1_excerpts + tier2_excerpts + tier3_excerpts
-
-        if filtered_count > 0:
-            fact_logger.logger.debug(
-                f"Filtered {filtered_count} Tier 4-5 excerpts",
-                extra={"filtered_count": filtered_count}
-            )
-
-        # Return Tier 1 first, then Tier 2
-        return tier1_excerpts + tier2_excerpts
 
     def _get_metadata_value(self, metadata, key: str, default: Any = ''):
         """Get value from metadata - handles both object and dict formats"""
@@ -312,7 +302,9 @@ class FactChecker:
     async def _evaluate_fact(self, fact, excerpts: list, source_metadata: Optional[Dict[str, SourceMetadata]] = None) -> FactCheckResult:
         """
         Evaluate fact accuracy against excerpts
-         Emphasizes tier precedence in prompt
+        Emphasizes tier precedence in prompt
+
+        KEY ROTATION: Fresh LLM per call via get_openai_llm()
 
         Args:
             fact: Fact object
@@ -352,10 +344,12 @@ Examples:
 
         callbacks = langsmith_config.get_callbacks(f"fact_checker_{fact.id}")
 
-        chain = prompt_with_format | self.llm | self.parser
+        # KEY ROTATION: Fresh LLM per call -- rotated API key for parallel safety
+        llm = get_openai_llm(model="gpt-4o", temperature=0, json_mode=True)
+        chain = prompt_with_format | llm | self.parser
 
         fact_logger.logger.debug(
-            " Invoking LLM for fact checking",
+            "Invoking LLM for fact checking",
             extra={"fact_id": fact.id, "num_excerpts": len(excerpts)}
         )
 

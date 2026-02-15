@@ -1,4 +1,4 @@
-# orchestrator/llm_output_orchestrator_updated.py
+# orchestrator/llm_output_orchestrator.py
 """
 LLM Interpretation Verification Orchestrator
 
@@ -12,6 +12,9 @@ PROCESS: LLM Output Verification
 - NO tier filtering (sources already provided by LLM)
 - NO fact-checking (just interpretation verification)
 
+CONCURRENCY: Uses asyncio.Semaphore to limit parallel LLM calls,
+preventing Python 3.12 task context corruption in LangChain.
+
 For fact-checking ANY text, use web_search_orchestrator.py instead.
 """
 
@@ -24,11 +27,11 @@ from utils.html_parser import HTMLParser
 from utils.file_manager import FileManager
 from utils.logger import fact_logger
 from utils.langsmith_config import langsmith_config
+from utils.openai_client import get_key_count
 
 from utils.browserless_scraper import BrowserlessScraper
 from agents.llm_fact_extractor import LLMFactExtractor
 from agents.highlighter import Highlighter
-# We'll update the verifier import after creating the updated file
 from utils.job_manager import job_manager
 
 class SimpleFact:
@@ -64,6 +67,16 @@ class LLMInterpretationOrchestrator:
         from agents.llm_output_verifier import LLMOutputVerifier
         self.verifier = LLMOutputVerifier(config)
         self.file_manager = FileManager()
+
+        # Concurrency limit for parallel LLM calls
+        # Scale with available API keys, but cap at a safe maximum
+        key_count = get_key_count()
+        self._max_concurrent_llm = min(key_count * 3, 8)
+
+        fact_logger.logger.info(
+            f"LLM concurrency limit: {self._max_concurrent_llm} "
+            f"(based on {key_count} API key(s))"
+        )
 
         fact_logger.log_component_start("LLMInterpretationOrchestrator")
 
@@ -144,90 +157,120 @@ class LLMInterpretationOrchestrator:
                 f"Scraped {successful_scrapes}/{len(unique_urls)} cited sources"
             )
 
-            # Step 4: Verify each claim's interpretation (OPTIMIZED: Parallel processing)
+            # ================================================================
+            # Step 4: Verify claims (PARALLEL with concurrency limit)
+            # ================================================================
+            # Semaphore prevents Python 3.12 asyncio task context corruption
+            # that occurs when too many LangChain ainvoke() calls run at once.
+            # Each call also gets a rotated API key via get_openai_llm().
+            llm_semaphore = asyncio.Semaphore(self._max_concurrent_llm)
+
             job_manager.add_progress(
                 job_id,
-                f"Verifying {len(claims)} claims in parallel..."
+                f"Verifying {len(claims)} claims (max {self._max_concurrent_llm} concurrent)..."
             )
             self._check_cancellation(job_id)
 
-            # NEW: Create verification tasks for parallel execution
             async def verify_single_claim(claim, claim_index):
-                """Verify a single claim and return result"""
-                try:
-                    # Extract relevant excerpts from the cited sources
-                    excerpts = await self._extract_excerpts(claim, all_scraped_content)
+                """Verify a single claim with concurrency control"""
+                async with llm_semaphore:
+                    try:
+                        # Extract relevant excerpts from the cited sources
+                        excerpts = await self._extract_excerpts(claim, all_scraped_content)
 
-                    # Verify interpretation
-                    verification = await self.verifier.verify_interpretation(
-                        claim,
-                        excerpts,
-                        all_scraped_content
-                    )
+                        # Verify interpretation
+                        verification = await self.verifier.verify_interpretation(
+                            claim,
+                            excerpts,
+                            all_scraped_content
+                        )
 
-                    # Attach source issues (paywall, blocked, etc.) for this claim
-                    claim_source_issues = []
-                    for cited_url in claim.cited_sources:
-                        if cited_url in url_failure_reasons:
-                            fail_domain = urlparse(cited_url).netloc.lower().replace('www.', '')
-                            claim_source_issues.append({
-                                'url': cited_url,
-                                'domain': fail_domain,
-                                'reason': url_failure_reasons[cited_url]
-                            })
-                    if claim_source_issues:
-                        verification.source_issues = claim_source_issues
+                        # Attach source issues (paywall, blocked, etc.) for this claim
+                        claim_source_issues = []
+                        for cited_url in claim.cited_sources:
+                            if cited_url in url_failure_reasons:
+                                fail_domain = urlparse(cited_url).netloc.lower().replace('www.', '')
+                                claim_source_issues.append({
+                                    'url': cited_url,
+                                    'domain': fail_domain,
+                                    'reason': url_failure_reasons[cited_url]
+                                })
+                        if claim_source_issues:
+                            verification.source_issues = claim_source_issues
 
-                    # Update progress with score
-                    score_emoji = self._get_score_emoji(verification.verification_score)
-                    job_manager.add_progress(
-                        job_id,
-                        f"{score_emoji} {claim.id}: {verification.verification_score:.2f} - {verification.assessment[:50]}...",
-                        {
-                            'claim_id': claim.id,
-                            'score': verification.verification_score,
-                            'assessment': verification.assessment
-                        }
-                    )
+                        # Update progress with score
+                        score_label = self._get_score_label(verification.verification_score)
+                        job_manager.add_progress(
+                            job_id,
+                            f"{score_label} {claim.id}: {verification.verification_score:.2f} - {verification.assessment[:50]}...",
+                            {
+                                'claim_id': claim.id,
+                                'score': verification.verification_score,
+                                'assessment': verification.assessment
+                            }
+                        )
 
-                    return verification
+                        return verification
 
-                except Exception as e:
-                    fact_logger.logger.error(f"Error verifying {claim.id}: {e}")
-                    # Return a failed verification result
-                    from agents.llm_output_verifier import LLMVerificationResult
+                    except Exception as e:
+                        fact_logger.logger.error(f"Error verifying {claim.id}: {e}")
+                        # Return a failed verification result
+                        from agents.llm_output_verifier import LLMVerificationResult
 
-                    # Still attach source issues even on error
-                    claim_source_issues = []
-                    for cited_url in claim.cited_sources:
-                        if cited_url in url_failure_reasons:
-                            fail_domain = urlparse(cited_url).netloc.lower().replace('www.', '')
-                            claim_source_issues.append({
-                                'url': cited_url,
-                                'domain': fail_domain,
-                                'reason': url_failure_reasons[cited_url]
-                            })
+                        # Still attach source issues even on error
+                        claim_source_issues = []
+                        for cited_url in claim.cited_sources:
+                            if cited_url in url_failure_reasons:
+                                fail_domain = urlparse(cited_url).netloc.lower().replace('www.', '')
+                                claim_source_issues.append({
+                                    'url': cited_url,
+                                    'domain': fail_domain,
+                                    'reason': url_failure_reasons[cited_url]
+                                })
 
-                    return LLMVerificationResult(
-                        claim_id=claim.id,
-                        claim_text=claim.claim_text,
-                        verification_score=0.0,
-                        assessment=f"Verification error: {str(e)}",
-                        interpretation_issues=["Error during verification"],
-                        wording_comparison={},
-                        confidence=0.0,
-                        reasoning=str(e),
-                        excerpts=[],
-                        cited_source_urls=claim.cited_sources,
-                        source_issues=claim_source_issues
-                    )
+                        return LLMVerificationResult(
+                            claim_id=claim.id,
+                            claim_text=claim.claim_text,
+                            verification_score=0.0,
+                            assessment=f"Verification error: {str(e)}",
+                            interpretation_issues=["Error during verification"],
+                            wording_comparison={},
+                            confidence=0.0,
+                            reasoning=str(e),
+                            excerpts=[],
+                            cited_source_urls=claim.cited_sources,
+                            source_issues=claim_source_issues
+                        )
 
             verification_tasks = [
                 verify_single_claim(claim, i)
                 for i, claim in enumerate(claims, 1)
             ]
 
-            results = await asyncio.gather(*verification_tasks, return_exceptions=False)
+            # return_exceptions=True so one failure does not kill the batch
+            raw_results = await asyncio.gather(*verification_tasks, return_exceptions=True)
+
+            # Handle any unexpected exceptions that slipped through
+            from agents.llm_output_verifier import LLMVerificationResult
+            results = []
+            for i, result in enumerate(raw_results):
+                if isinstance(result, BaseException):
+                    fact_logger.logger.error(f"Unexpected task exception: {result}")
+                    results.append(LLMVerificationResult(
+                        claim_id=claims[i].id,
+                        claim_text=claims[i].claim_text,
+                        verification_score=0.0,
+                        assessment=f"Task error: {str(result)}",
+                        interpretation_issues=["Unexpected error during verification"],
+                        wording_comparison={},
+                        confidence=0.0,
+                        reasoning=str(result),
+                        excerpts=[],
+                        cited_source_urls=claims[i].cited_sources,
+                        source_issues=[]
+                    ))
+                else:
+                    results.append(result)
 
             job_manager.add_progress(job_id, "All claims verified")
 
@@ -281,8 +324,6 @@ class LLMInterpretationOrchestrator:
     async def _extract_excerpts(self, claim, scraped_content: dict) -> dict:
         """
         Extract relevant excerpts for a claim from ALL its cited sources
-
-        âœ… UPDATED: Now handles multiple cited sources per claim
         """
 
         fact_logger.logger.info(
@@ -339,18 +380,18 @@ class LLMInterpretationOrchestrator:
 
         return all_excerpts_by_url
 
-    def _get_score_emoji(self, score: float) -> str:
-        """Get emoji based on verification score"""
+    def _get_score_label(self, score: float) -> str:
+        """Get text label based on verification score"""
         if score >= 0.9:
-            return "âœ…"
+            return "[ACCURATE]"
         elif score >= 0.75:
-            return "âœ”ï¸"
+            return "[MOSTLY ACCURATE]"
         elif score >= 0.6:
-            return "âš ï¸"
+            return "[PARTIAL]"
         elif score >= 0.3:
-            return "âŒ"
+            return "[MISLEADING]"
         else:
-            return "ðŸš«"
+            return "[FALSE]"
 
     def _create_summary(self, results: list, claims: list, sources: list) -> dict:
         """Create summary statistics"""
@@ -387,20 +428,20 @@ class LLMInterpretationOrchestrator:
             f"  Sources Cited: {summary['total_sources']}",
             f"  Average Verification Score: {summary['average_score']:.2f}",
             f"\n  Accuracy Breakdown:",
-            f"    âœ… Accurate (0.9+): {summary['accurate_count']}",
-            f"    âœ”ï¸  Mostly Accurate (0.75-0.89): {summary['mostly_accurate_count']}",
-            f"    âš ï¸  Partially Accurate (0.6-0.74): {summary['partially_accurate_count']}",
-            f"    âŒ Misleading (0.3-0.59): {summary['misleading_count']}",
-            f"    ðŸš« False (0.0-0.29): {summary['false_count']}",
+            f"    Accurate (0.9+): {summary['accurate_count']}",
+            f"    Mostly Accurate (0.75-0.89): {summary['mostly_accurate_count']}",
+            f"    Partially Accurate (0.6-0.74): {summary['partially_accurate_count']}",
+            f"    Misleading (0.3-0.59): {summary['misleading_count']}",
+            f"    False (0.0-0.29): {summary['false_count']}",
             "\n" + "=" * 80,
             "DETAILED RESULTS:",
             "=" * 80,
         ]
 
         for result in results:
-            emoji = self._get_score_emoji(result.verification_score)
+            label = self._get_score_label(result.verification_score)
             report_lines.extend([
-                f"\n{emoji} {result.claim_id} - Score: {result.verification_score:.2f}",
+                f"\n{label} {result.claim_id} - Score: {result.verification_score:.2f}",
                 f"Claim: {result.claim_text}",
                 f"Assessment: {result.assessment}",
                 f"Confidence: {result.confidence:.2f}",
