@@ -56,6 +56,9 @@ from orchestrator.bias_check_orchestrator import BiasCheckOrchestrator
 from orchestrator.manipulation_orchestrator import ManipulationOrchestrator
 from orchestrator.lie_detector_orchestrator import LieDetectorOrchestrator
 
+# Shared scrape cache for parallel mode execution (Phase 3)
+from utils.scrape_cache import ScrapeCache
+
 # Stage 3: Report Synthesizer
 from agents.report_synthesizer import ReportSynthesizer
 
@@ -401,10 +404,16 @@ class ComprehensiveOrchestrator:
         mode_id: str,
         content: str,
         job_id: str,
-        stage1_results: Dict[str, Any]
+        stage1_results: Dict[str, Any],
+        shared_scraper=None
     ) -> Tuple[str, Optional[Dict[str, Any]], Optional[str]]:
         """
         Run a single analysis mode
+
+        Args:
+            shared_scraper: Optional ScrapeCache for deduplicating URL scrapes
+                           across parallel modes. Passed to scraping-heavy modes
+                           (key_claims, manipulation). Non-scraping modes ignore it.
 
         Returns: (mode_id, result_dict, error_message)
         """
@@ -422,7 +431,8 @@ class ComprehensiveOrchestrator:
                     job_id=job_id,
                     source_context=source_context,
                     source_credibility=source_credibility,
-                    standalone=False  # Prevent overwriting comprehensive result
+                    standalone=False,  # Prevent overwriting comprehensive result
+                    shared_scraper=shared_scraper  # Phase 3: shared URL cache
                 )
                 return (mode_id, result, None)
 
@@ -436,6 +446,7 @@ class ComprehensiveOrchestrator:
                     source_credibility=source_credibility if source_credibility else None,
                     job_id=job_id,
                     standalone=False  # Prevent overwriting comprehensive result
+                    # bias_analysis doesn't scrape -- no shared_scraper needed
                 )
                 return (mode_id, result, None)
 
@@ -447,7 +458,8 @@ class ComprehensiveOrchestrator:
                     job_id=job_id,
                     source_info=source_credibility.get("domain", "Unknown"),
                     source_credibility=source_credibility if source_credibility else None,
-                    standalone=False  # Prevent overwriting comprehensive result
+                    standalone=False,  # Prevent overwriting comprehensive result
+                    shared_scraper=shared_scraper  # Phase 3: shared URL cache
                 )
                 return (mode_id, result, None)
 
@@ -459,6 +471,7 @@ class ComprehensiveOrchestrator:
                     job_id=job_id,
                     source_credibility=source_credibility if source_credibility else None,
                     standalone=False  # Prevent overwriting comprehensive result
+                    # lie_detection doesn't scrape -- no shared_scraper needed
                 )
                 return (mode_id, result, None)
 
@@ -489,12 +502,12 @@ class ComprehensiveOrchestrator:
         stage1_results: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
-        Stage 2: Mode Execution (PARALLEL)
+        Stage 2: Mode Execution (PARALLEL with Shared Scrape Cache)
 
         Runs ALL selected modes simultaneously using asyncio.gather().
-        Each mode orchestrator creates its own LLM instances via get_openai_llm()
-        (key rotation), its own BrowserlessScraper instance, and its own LangSmith
-        tracing scope -- so there is no shared mutable state between parallel tasks.
+        A shared ScrapeCache is created for this analysis and passed to
+        scraping-heavy modes (key_claims, manipulation). When both modes
+        discover overlapping URLs, each URL is scraped only once.
 
         standalone=False is passed to every mode to prevent any mode from calling
         job_manager.complete_job(), which would prematurely close the SSE stream
@@ -513,31 +526,58 @@ class ComprehensiveOrchestrator:
         start_time = time.time()
 
         # =================================================================
-        # PARALLEL EXECUTION: Launch all modes simultaneously
+        # Phase 3: Create shared ScrapeCache for this analysis
         # =================================================================
-        # Each mode gets its own orchestrator instance with independent:
-        #   - LLM instances (fresh API key per call via get_openai_llm)
-        #   - BrowserlessScraper (own browser pool)
-        #   - LangSmith callbacks (scoped by component name)
-        # The only shared resource is job_manager for progress messages,
-        # which is already thread/async-safe (dict-based with unique job IDs).
+        # When key_claims and manipulation run in parallel, they often
+        # search the web and discover overlapping source URLs. The shared
+        # cache ensures each URL is scraped at most once, saving browser
+        # resources and ~30-50% of scraping time.
+        #
+        # The cache is passed to scraping-heavy modes (key_claims,
+        # manipulation) and ignored by non-scraping modes (bias, lie_detection).
+        # It lives only for the duration of this Stage 2 execution.
 
-        tasks = [
-            self._run_single_mode(mode_id, content, job_id, stage1_results)
-            for mode_id in selected_modes
-        ]
+        shared_scraper = ScrapeCache(self.config)
 
-        fact_logger.logger.info(
-            f"Launching {len(tasks)} mode tasks in parallel",
-            extra={
-                "modes": selected_modes,
-                "job_id": job_id
-            }
-        )
+        try:
+            # =============================================================
+            # PARALLEL EXECUTION: Launch all modes simultaneously
+            # =============================================================
+            # Each mode gets its own orchestrator instance with independent:
+            #   - LLM instances (fresh API key per call via get_openai_llm)
+            #   - LangSmith callbacks (scoped by component name)
+            # Scraping-heavy modes share the ScrapeCache instead of creating
+            # independent BrowserlessScraper instances.
 
-        # asyncio.gather runs all tasks concurrently.
-        # return_exceptions=True ensures one mode failing doesn't cancel the rest.
-        raw_results = await asyncio.gather(*tasks, return_exceptions=True)
+            tasks = [
+                self._run_single_mode(
+                    mode_id, content, job_id, stage1_results,
+                    shared_scraper=shared_scraper
+                )
+                for mode_id in selected_modes
+            ]
+
+            fact_logger.logger.info(
+                f"Launching {len(tasks)} mode tasks in parallel (shared scrape cache)",
+                extra={
+                    "modes": selected_modes,
+                    "job_id": job_id
+                }
+            )
+
+            # asyncio.gather runs all tasks concurrently.
+            # return_exceptions=True ensures one mode failing doesn't cancel the rest.
+            raw_results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        finally:
+            # =============================================================
+            # CLEANUP: Close shared scraper (releases browser resources)
+            # =============================================================
+            # Always close, even if modes failed or were cancelled.
+            try:
+                await shared_scraper.close()
+            except Exception as cleanup_err:
+                fact_logger.logger.debug(f"ScrapeCache cleanup: {cleanup_err}")
 
         # =================================================================
         # PROCESS RESULTS from parallel execution

@@ -130,11 +130,23 @@ class WebSearchOrchestrator:
         run_type="chain",
         tags=["web-search", "fact-checking", "parallel"]
     )
-    async def process_with_progress(self, text_content: str, job_id: str) -> dict:
+    async def process_with_progress(
+        self,
+        text_content: str,
+        job_id: str,
+        shared_scraper=None
+    ) -> dict:
         """
         Process with full parallel processing and search audit
 
-         OPTIMIZED: All fact operations run in parallel
+        OPTIMIZED: All fact operations run in parallel
+
+        Args:
+            text_content: Plain text to fact-check
+            job_id: Job ID for progress tracking
+            shared_scraper: Optional shared ScrapeCache from comprehensive mode.
+                           If provided, uses it instead of creating a new scraper.
+                           The caller is responsible for closing it.
         """
         session_id = self.file_manager.create_session()
         start_time = time.time()
@@ -346,8 +358,9 @@ class WebSearchOrchestrator:
 
             scrape_start = time.time()
 
-            # Create scraper in async context (correct event loop)
-            scraper = BrowserlessScraper(self.config)
+            # Use shared scraper (from comprehensive mode) or create a new one
+            using_shared_scraper = shared_scraper is not None
+            scraper = shared_scraper if shared_scraper else BrowserlessScraper(self.config)
 
             # Collect ALL URLs to scrape across all facts
             all_urls_to_scrape = []
@@ -479,11 +492,12 @@ class WebSearchOrchestrator:
             verify_duration = time.time() - verify_start
             job_manager.add_progress(job_id, f"All facts verified in {verify_duration:.1f}s")
 
-            # Clean up scraper
-            try:
-                await scraper.close()
-            except Exception:
-                pass
+            # Clean up scraper only if we created it (not shared)
+            if not using_shared_scraper:
+                try:
+                    await scraper.close()
+                except Exception:
+                    pass
 
             # ================================================================
             # STAGE 7: Generate Summary and Save Audit
