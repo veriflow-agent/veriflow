@@ -44,6 +44,7 @@ from utils.metadata_block import (
     build_content_classification_block,
     build_source_credibility_block,
 )
+from utils.async_utils import safe_float
 
 # Stage 1 components
 from agents.content_classifier import ContentClassifier
@@ -765,7 +766,7 @@ class ComprehensiveOrchestrator:
         if "key_claims_analysis" in mode_reports:
             kc = mode_reports["key_claims_analysis"]
             summary = kc.get("summary", {})
-            avg_conf = summary.get("average_confidence", 0.5)
+            avg_conf = safe_float(summary.get("average_confidence", 0.5))
 
             if avg_conf >= 0.7:
                 score += 15
@@ -785,7 +786,7 @@ class ComprehensiveOrchestrator:
         if "bias_analysis" in mode_reports:
             bias = mode_reports["bias_analysis"]
             analysis = bias.get("analysis", {})
-            bias_score = abs(analysis.get("consensus_bias_score", 0))
+            bias_score = abs(safe_float(analysis.get("consensus_bias_score", 0)))
             direction = analysis.get("consensus_direction", "Unknown")
 
             if bias_score > 6:
@@ -803,7 +804,7 @@ class ComprehensiveOrchestrator:
         # Manipulation
         if "manipulation_detection" in mode_reports:
             manip = mode_reports["manipulation_detection"]
-            manip_score = manip.get("manipulation_score", 0)
+            manip_score = safe_float(manip.get("manipulation_score", 0))
 
             if manip_score > 6:
                 score -= 20
@@ -819,10 +820,10 @@ class ComprehensiveOrchestrator:
         # Lie Detection
         if "lie_detection" in mode_reports:
             lie = mode_reports["lie_detection"]
-            deception_score = lie.get(
+            deception_score = safe_float(lie.get(
                 "deception_likelihood_score",
                 lie.get("overall_score", 0)
-            )
+            ))
 
             if deception_score > 6:
                 score -= 10

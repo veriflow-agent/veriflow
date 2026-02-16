@@ -221,6 +221,17 @@ def cleanup_thread_loop():
             logger.debug(f"Thread {thread_id}: Cleaned up event loop")
 
 
+def safe_float(value, default=0.0):
+    """Safely convert a value to float. LLMs sometimes return numbers as strings."""
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except (ValueError, TypeError):
+            return default
+    return default
+
 # Graceful shutdown support
 def shutdown_all_loops():
     """

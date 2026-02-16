@@ -13,6 +13,7 @@ ENHANCEMENTS:
 
 from langchain.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
+from utils.openai_client import get_openai_llm
 from langchain_core.output_parsers import JsonOutputParser
 from langsmith import traceable
 from pydantic import BaseModel, Field
@@ -81,12 +82,6 @@ class QueryGenerator:
 
     def __init__(self, config):
         self.config = config
-
-        # Using GPT-4o-mini for query generation (fast + cost-effective)
-        self.llm = ChatOpenAI(
-            model="gpt-4o-mini",
-            temperature=0.1  # Slight creativity for query variations
-        ).bind(response_format={"type": "json_object"})
 
         self.parser = JsonOutputParser(pydantic_object=QueryGeneratorOutput)
         self.prompts = get_query_generator_prompts()
@@ -296,7 +291,8 @@ class QueryGenerator:
         )
 
         callbacks = langsmith_config.get_callbacks(f"query_generator_{fact.id}")
-        chain = prompt_with_format | self.llm | self.parser
+        llm = get_openai_llm(model="gpt-4o-mini", temperature=0, json_mode=True)
+        chain = prompt_with_format | llm | self.parser
 
         fact_logger.logger.debug(
             "🔗 Invoking LLM for query generation (enhanced context)",
@@ -369,7 +365,8 @@ class QueryGenerator:
         )
 
         callbacks = langsmith_config.get_callbacks(f"query_generator_multilingual_{fact.id}")
-        chain = prompt_with_format | self.llm | self.parser
+        llm = get_openai_llm(model="gpt-4o-mini", temperature=0, json_mode=True)
+        chain = prompt_with_format | llm | self.parser
 
         # Get language and country from content_location
         target_language = content_location.language if hasattr(content_location, 'language') else 'english'

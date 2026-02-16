@@ -15,6 +15,8 @@ import time
 from utils.logger import fact_logger
 from utils.langsmith_config import langsmith_config
 from utils.source_metadata import SourceMetadata, SourceNameExtractor
+from utils.openai_client import get_openai_llm
+from utils.async_utils import safe_float
 
 
 class SourceEvaluation(BaseModel):
@@ -75,11 +77,6 @@ class CredibilityFilter:
     def __init__(self, config, min_credibility_score: float = 0.65):
         self.config = config
         self.min_credibility_score = min_credibility_score
-
-        self.llm = ChatOpenAI(
-            model="gpt-4o",
-            temperature=0
-        ).bind(response_format={"type": "json_object"})
 
         self.parser = JsonOutputParser(pydantic_object=CredibilityEvaluationOutput)
         self.name_extractor = SourceNameExtractor(config)
@@ -149,7 +146,7 @@ class CredibilityFilter:
                 evaluations.append(SourceEvaluation(
                     url=source_data['url'],
                     title=source_data['title'],
-                    credibility_score=source_data['credibility_score'],
+                    credibility_score=safe_float(source_data.get('credibility_score', 0.0)),
                     credibility_tier=source_data['credibility_tier'],
                     reasoning=source_data['reasoning'],
                     recommended=source_data['recommended']
@@ -249,7 +246,8 @@ class CredibilityFilter:
         )
 
         callbacks = langsmith_config.get_callbacks(f"credibility_filter_{fact.id}")
-        chain = prompt_with_format | self.llm | self.parser
+        llm = get_openai_llm(model="gpt-4o", temperature=0, json_mode=True)
+        chain = prompt_with_format | llm | self.parser
 
         response = await chain.ainvoke(
             {

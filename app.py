@@ -22,9 +22,6 @@ from utils.job_manager import job_manager
 from utils.async_utils import run_async_in_thread, cleanup_thread_loop
 
 
-import nest_asyncio
-nest_asyncio.apply()
-
 # Load environment variables
 load_dotenv()
 

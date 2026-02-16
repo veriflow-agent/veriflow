@@ -143,7 +143,7 @@ class KeyClaimsOrchestrator:
         session_id = self.file_manager.create_session()
         # Track credibility usage
         using_credibility = source_credibility is not None
-        credibility_tier = source_credibility.get('tier') if source_credibility else None
+        credibility_tier = int(source_credibility.get('tier', 0)) if source_credibility else None
         start_time = time.time()
 
         # Initialize session search audit
@@ -163,7 +163,7 @@ class KeyClaimsOrchestrator:
                     f"Source context: Tier {tier} | {bias} bias | {factual} factual reporting"
                 )
 
-                if credibility_tier and credibility_tier >= 4:
+                if credibility_tier and int(credibility_tier) >= 4:
                     job_manager.add_progress(
                         job_id,
                         "Low credibility source - claims require extra verification"
