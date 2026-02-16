@@ -16,7 +16,7 @@ import {
 type AppState = "idle" | "fetching" | "analyzing" | "done" | "error";
 
 const Index = () => {
-  const [mode, setMode] = useState<AnalysisMode>("comprehensive");
+  const [mode, setMode] = useState<AnalysisMode>("llm-output");
   const [content, setContent] = useState("");
   const [url, setUrl] = useState("");
   const [article, setArticle] = useState<Record<string, any> | null>(null);

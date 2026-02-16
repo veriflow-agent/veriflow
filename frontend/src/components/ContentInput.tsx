@@ -23,6 +23,15 @@ const ContentInput = ({ content, onContentChange, url, onUrlChange, onFetchUrl, 
     }
   }, [isFetching, content]);
 
+  // LLM Output mode is copy-paste only — force text input and hide URL toggle
+  const isLlmMode = mode === "llm-output";
+
+  useEffect(() => {
+    if (isLlmMode && inputMode === "url") {
+      setInputMode("text");
+    }
+  }, [isLlmMode]);
+
   const placeholders: Record<string, string> = {
     "comprehensive": "Paste any article, text, or AI-generated content for full analysis...",
     "key-claims": "Paste text for Key Claims analysis...",
@@ -38,13 +47,15 @@ const ContentInput = ({ content, onContentChange, url, onUrlChange, onFetchUrl, 
         <h3 className="text-base font-semibold">
           {inputMode === "text" ? "Content to Analyze" : "Article URL"}
         </h3>
-        <button
-          onClick={() => setInputMode(inputMode === "text" ? "url" : "text")}
-          className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
-        >
-          <Link2 size={14} />
-          {inputMode === "text" ? "Paste URL instead" : "Paste text instead"}
-        </button>
+        {!isLlmMode && (
+          <button
+            onClick={() => setInputMode(inputMode === "text" ? "url" : "text")}
+            className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <Link2 size={14} />
+            {inputMode === "text" ? "Paste URL instead" : "Paste text instead"}
+          </button>
+        )}
       </div>
 
       {inputMode === "text" ? (

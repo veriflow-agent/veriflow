@@ -4,12 +4,12 @@ import type { AnalysisMode } from "@/lib/api";
 import { MODE_INFO } from "@/lib/api";
 
 const ALL_MODES: { id: AnalysisMode | "text-factcheck"; disabled?: boolean }[] = [
+  { id: "llm-output" },
   { id: "comprehensive" },
   { id: "key-claims" },
   { id: "bias-analysis" },
   { id: "lie-detection" },
   { id: "manipulation" },
-  { id: "llm-output" },
   { id: "text-factcheck", disabled: true },
 ];
 
