@@ -6,8 +6,8 @@ Coordinates the full pipeline for detecting fact manipulation in articles
 Pipeline:
 1. Article Analysis - Detect agenda, political lean, summary
 2. Fact Extraction - Extract facts with framing context
-3. Web Search Verification - Verify facts via existing pipeline (âœ… PARALLEL)
-4. Manipulation Analysis - Compare verified facts to presentation (âœ… PARALLEL)
+3. Web Search Verification - Verify facts via existing pipeline ( PARALLEL)
+4. Manipulation Analysis - Compare verified facts to presentation ( PARALLEL)
 5. Report Synthesis - Create comprehensive manipulation report
 6. Save audit file to R2
 
@@ -19,7 +19,7 @@ Reuses existing components:
 - Highlighter for excerpt extraction
 - FactChecker for verification
 
-âœ… OPTIMIZED: Parallel fact verification and manipulation analysis
+ OPTIMIZED: Parallel fact verification and manipulation analysis
    - All facts verified simultaneously using asyncio.gather()
    - ~60-70% faster than sequential processing
 """
@@ -37,7 +37,7 @@ from utils.job_manager import job_manager
 from utils.browserless_scraper import BrowserlessScraper
 from utils.brave_searcher import BraveSearcher
 
-# âœ… FIX 1: Import build_manipulation_context
+#  FIX 1: Import build_manipulation_context
 try:
     from utils.credibility_context import build_manipulation_context
 except ImportError:
@@ -90,7 +90,7 @@ class ManipulationOrchestrator:
     3. Job management and progress streaming
     4. Audit file generation
 
-    âœ… OPTIMIZED: Uses parallel processing for fact verification
+     OPTIMIZED: Uses parallel processing for fact verification
     """
 
     def __init__(self, config):
@@ -126,7 +126,7 @@ class ManipulationOrchestrator:
             self.max_sources_per_fact = getattr(config, 'max_sources_per_fact', 5)
             self.max_facts = getattr(config, 'max_facts', 5)
 
-        # âœ… NEW: Parallel processing settings (no rate limit concerns with paid Brave)
+        #  NEW: Parallel processing settings (no rate limit concerns with paid Brave)
         self.max_concurrent_verifications = 5  # All facts in parallel
 
         # Initialize R2 uploader for audit files
@@ -134,11 +134,11 @@ class ManipulationOrchestrator:
             from utils.r2_uploader import R2Uploader
             self.r2_uploader = R2Uploader()
             self.r2_enabled = True
-            fact_logger.logger.info("âœ… R2 uploader initialized for manipulation audits")
+            fact_logger.logger.info(" R2 uploader initialized for manipulation audits")
         except Exception as e:
             self.r2_enabled = False
             self.r2_uploader = None
-            fact_logger.logger.warning(f"âš ï¸ R2 not available for audits: {e}")
+            fact_logger.logger.warning(f" R2 not available for audits: {e}")
 
         fact_logger.log_component_start(
             "ManipulationOrchestrator",
@@ -150,7 +150,7 @@ class ManipulationOrchestrator:
     def _check_cancellation(self, job_id: str):
         """Check if job has been cancelled and raise exception if so"""
         if job_manager.is_cancelled(job_id):
-            fact_logger.logger.info(f"ðŸ›‘ Job {job_id} was cancelled")
+            fact_logger.logger.info(f" Job {job_id} was cancelled")
             raise CancelledException(f"Job {job_id} was cancelled by user")
 
     def _generate_session_id(self) -> str:
@@ -171,23 +171,18 @@ class ManipulationOrchestrator:
         job_id: str,
         source_info: str = "Unknown source",
         source_credibility: Optional[Dict[str, Any]] = None,
-        standalone: bool = True,
-        shared_scraper=None
+        standalone: bool = True  # ADD THIS
     ) -> Dict[str, Any]:
         """
         Run the full manipulation detection pipeline with progress updates
 
-        OPTIMIZED: Uses parallel processing for fact verification and manipulation analysis
+         OPTIMIZED: Uses parallel processing for fact verification and manipulation analysis
 
         Args:
             content: Article text to analyze
             job_id: Job ID for progress tracking
             source_info: URL or source name
-            source_credibility: Optional pre-fetched credibility data
-            standalone: If True, calls complete_job on finish
-            shared_scraper: Optional shared ScrapeCache from comprehensive mode.
-                           If provided, uses it instead of creating a new scraper.
-                           The caller is responsible for closing it.
+            source_credibility: Optional pre-fetched credibility data (NEW)
 
         Returns:
             Dict with manipulation report and metadata
@@ -197,11 +192,11 @@ class ManipulationOrchestrator:
 
         # Track credibility usage
         using_credibility = source_credibility is not None
-        credibility_tier = int(source_credibility.get('tier', 0)) if source_credibility else None
+        credibility_tier = source_credibility.get('tier') if source_credibility else None
         is_propaganda = source_credibility.get('is_propaganda', False) if source_credibility else False
 
         fact_logger.logger.info(
-            "ðŸš€ Starting manipulation detection pipeline",
+            " Starting manipulation detection pipeline",
             extra={
                 "job_id": job_id,
                 "session_id": session_id,
@@ -222,24 +217,24 @@ class ManipulationOrchestrator:
 
                 job_manager.add_progress(
                     job_id, 
-                    f"ðŸ“Š Source credibility: Tier {tier} | {bias} bias | {factual} factual"
+                    f" Source credibility: Tier {tier} | {bias} bias | {factual} factual"
                 )
 
                 # Special warnings for concerning sources
                 if is_propaganda:
                     job_manager.add_progress(
                         job_id,
-                        "ðŸš¨ SOURCE FLAGGED AS PROPAGANDA - Maximum scrutiny applied"
+                        " SOURCE FLAGGED AS PROPAGANDA - Maximum scrutiny applied"
                     )
-                elif credibility_tier and int(credibility_tier) >= 4:
+                elif credibility_tier and credibility_tier >= 4:
                     job_manager.add_progress(
                         job_id,
-                        "âš ï¸ Low credibility source - heightened scrutiny for manipulation"
+                        " Low credibility source - heightened scrutiny for manipulation"
                     )
-                elif credibility_tier and int(credibility_tier) <= 2:
+                elif credibility_tier and credibility_tier <= 2:
                     job_manager.add_progress(
                         job_id,
-                        "âœ… High credibility source - focusing on subtle framing issues"
+                        " High credibility source - focusing on subtle framing issues"
                     )
 
             # ================================================================
@@ -248,12 +243,12 @@ class ManipulationOrchestrator:
             job_manager.add_progress(job_id, "Analyzing article for agenda and bias...")
             self._check_cancellation(job_id)
 
-            # âœ… FIX 2: Build credibility context and call analyze_article OUTSIDE the if block
+            #  FIX 2: Build credibility context and call analyze_article OUTSIDE the if block
             credibility_context = ""
             if source_credibility:
                 credibility_context = build_manipulation_context(source_credibility, source_info)
 
-            # âœ… FIX 2: Always call analyze_article (not just when source_credibility exists)
+            #  FIX 2: Always call analyze_article (not just when source_credibility exists)
             article_summary = await self.detector.analyze_article(
                 content,
                 source_info,
@@ -262,24 +257,24 @@ class ManipulationOrchestrator:
 
             job_manager.add_progress(
                 job_id, 
-                f"âœ… Detected agenda: {article_summary.detected_agenda[:50]}..."
+                f" Detected agenda: {article_summary.detected_agenda[:50]}..."
             )
             job_manager.add_progress(
                 job_id,
-                f"ðŸ“Š Political lean: {article_summary.political_lean} | Opinion ratio: {article_summary.opinion_fact_ratio:.0%}"
+                f" Political lean: {article_summary.political_lean} | Opinion ratio: {article_summary.opinion_fact_ratio:.0%}"
             )
 
             # ================================================================
             # STAGE 2: Fact Extraction
             # ================================================================
-            job_manager.add_progress(job_id, "ðŸ” Extracting key facts with framing analysis...")
+            job_manager.add_progress(job_id, " Extracting key facts with framing analysis...")
             self._check_cancellation(job_id)
 
             facts = await self.detector.extract_facts(content, article_summary)
 
             if not facts:
-                job_manager.add_progress(job_id, "âš ï¸ No verifiable facts found")
-                # âœ… FIX 3: Pass credibility variables to helper method
+                job_manager.add_progress(job_id, " No verifiable facts found")
+                #  FIX 3: Pass credibility variables to helper method
                 return self._build_no_facts_result(
                     session_id=session_id,
                     article_summary=article_summary,
@@ -293,7 +288,7 @@ class ManipulationOrchestrator:
             if len(facts) > self.max_facts:
                 facts = facts[:self.max_facts]
 
-            job_manager.add_progress(job_id, f"âœ… Extracted {len(facts)} key facts for verification")
+            job_manager.add_progress(job_id, f" Extracted {len(facts)} key facts for verification")
 
             # Initialize session audit
             session_audit = build_session_search_audit(
@@ -303,20 +298,19 @@ class ManipulationOrchestrator:
                 content_language="english"
             )
 
-            # Use shared scraper (from comprehensive mode) or create a new one
-            self._using_shared_scraper = shared_scraper is not None
-            self.scraper = shared_scraper if shared_scraper else BrowserlessScraper(self.config)
+            #  Create scraper ONCE in the async context (correct event loop)
+            self.scraper = BrowserlessScraper(self.config)
 
             # ================================================================
-            # STAGE 3: Fact Verification (âœ… PARALLEL PROCESSING)
+            # STAGE 3: Fact Verification ( PARALLEL PROCESSING)
             # ================================================================
             job_manager.add_progress(
                 job_id, 
-                f"ðŸŒ Starting parallel verification of {len(facts)} facts..."
+                f" Starting parallel verification of {len(facts)} facts..."
             )
             self._check_cancellation(job_id)
 
-            # âœ… Create verification tasks for ALL facts
+            #  Create verification tasks for ALL facts
             verification_tasks = [
                 self._verify_single_fact_parallel(
                     fact=fact,
@@ -328,7 +322,7 @@ class ManipulationOrchestrator:
                 for i, fact in enumerate(facts, 1)
             ]
 
-            # âœ… Execute ALL verifications in parallel
+            #  Execute ALL verifications in parallel
             verification_start = time.time()
             try:
                 results = await asyncio.gather(*verification_tasks, return_exceptions=True)
@@ -337,7 +331,7 @@ class ManipulationOrchestrator:
 
             verification_duration = time.time() - verification_start
             fact_logger.logger.info(
-                f"âš¡ Parallel verification completed in {verification_duration:.1f}s",
+                f" Parallel verification completed in {verification_duration:.1f}s",
                 extra={"num_facts": len(facts), "duration": verification_duration}
             )
 
@@ -348,9 +342,9 @@ class ManipulationOrchestrator:
             verification_errors: List[str] = []
 
             for result in results:
-                # âœ… FIX: Check if result is an exception BEFORE unpacking
+                #  FIX: Check if result is an exception BEFORE unpacking
                 if isinstance(result, BaseException):
-                    fact_logger.logger.error(f"âŒ Verification task exception: {result}")
+                    fact_logger.logger.error(f" Verification task exception: {result}")
                     verification_errors.append(str(result))
                     continue
 
@@ -379,16 +373,16 @@ class ManipulationOrchestrator:
             successful_verifications = len(facts) - len(verification_errors)
             job_manager.add_progress(
                 job_id, 
-                f"âœ… Fact verification complete: {successful_verifications}/{len(facts)} in {verification_duration:.1f}s"
+                f" Fact verification complete: {successful_verifications}/{len(facts)} in {verification_duration:.1f}s"
             )
 
             # ================================================================
-            # STAGE 4: Manipulation Analysis (âœ… PARALLEL PROCESSING)
+            # STAGE 4: Manipulation Analysis ( PARALLEL PROCESSING)
             # ================================================================
-            job_manager.add_progress(job_id, "ðŸ”¬ Analyzing manipulation patterns in parallel...")
+            job_manager.add_progress(job_id, " Analyzing manipulation patterns in parallel...")
             self._check_cancellation(job_id)
 
-            # âœ… Create manipulation analysis tasks for ALL facts
+            #  Create manipulation analysis tasks for ALL facts
             manipulation_tasks = [
                 self._analyze_manipulation_parallel(
                     fact=fact,
@@ -400,7 +394,7 @@ class ManipulationOrchestrator:
                 for fact in facts
             ]
 
-            # âœ… Execute ALL manipulation analyses in parallel
+            #  Execute ALL manipulation analyses in parallel
             manipulation_start = time.time()
             try:
                 manipulation_results = await asyncio.gather(*manipulation_tasks, return_exceptions=True)
@@ -409,16 +403,16 @@ class ManipulationOrchestrator:
 
             manipulation_duration = time.time() - manipulation_start
             fact_logger.logger.info(
-                f"âš¡ Parallel manipulation analysis completed in {manipulation_duration:.1f}s",
+                f" Parallel manipulation analysis completed in {manipulation_duration:.1f}s",
                 extra={"num_facts": len(facts), "duration": manipulation_duration}
             )
 
             # Process manipulation results
             manipulation_findings: List[ManipulationFinding] = []
             for result in manipulation_results:
-                # âœ… FIX: Check if result is an exception BEFORE unpacking
+                #  FIX: Check if result is an exception BEFORE unpacking
                 if isinstance(result, BaseException):
-                    fact_logger.logger.error(f"âŒ Manipulation analysis exception: {result}")
+                    fact_logger.logger.error(f" Manipulation analysis exception: {result}")
                     continue
 
                 finding, error = result
@@ -427,15 +421,15 @@ class ManipulationOrchestrator:
                     if finding.manipulation_detected:
                         job_manager.add_progress(
                             job_id,
-                            f"âš ï¸ Manipulation detected in {finding.fact_id}: {finding.manipulation_severity} severity"
+                            f" Manipulation detected in {finding.fact_id}: {finding.manipulation_severity} severity"
                         )
 
-            job_manager.add_progress(job_id, f"âœ… Manipulation analysis complete in {manipulation_duration:.1f}s")
+            job_manager.add_progress(job_id, f" Manipulation analysis complete in {manipulation_duration:.1f}s")
 
             # ================================================================
             # STAGE 5: Report Synthesis
             # ================================================================
-            job_manager.add_progress(job_id, "ðŸ“Š Synthesizing final report...")
+            job_manager.add_progress(job_id, " Synthesizing final report...")
             self._check_cancellation(job_id)
 
             processing_time = time.time() - start_time
@@ -449,13 +443,13 @@ class ManipulationOrchestrator:
 
             job_manager.add_progress(
                 job_id,
-                f"âœ… Manipulation score: {report.overall_manipulation_score:.1f}/10"
+                f" Manipulation score: {report.overall_manipulation_score:.1f}/10"
             )
 
             # ================================================================
             # STAGE 6: Save Audit File
             # ================================================================
-            job_manager.add_progress(job_id, "ðŸ’¾ Saving audit report...")
+            job_manager.add_progress(job_id, " Saving audit report...")
 
             audit_path = save_search_audit(
                 session_audit=session_audit,
@@ -474,9 +468,9 @@ class ManipulationOrchestrator:
                     pipeline_type="manipulation-detection"
                 )
                 if r2_url:
-                    job_manager.add_progress(job_id, "â˜ï¸ Audit saved to cloud")
+                    job_manager.add_progress(job_id, " Audit saved to cloud")
 
-            # âœ… FIX 4: Pass credibility to _build_result
+            #  FIX 4: Pass credibility to _build_result
             result = self._build_result(
                 session_id=session_id,
                 report=report,
@@ -489,13 +483,13 @@ class ManipulationOrchestrator:
                 is_propaganda=is_propaganda
             )
 
-            job_manager.add_progress(job_id, "âœ… Analysis complete!")
+            job_manager.add_progress(job_id, " Analysis complete!")
 
             if standalone:
                 job_manager.complete_job(job_id, result)
 
             fact_logger.logger.info(
-                "âœ… Manipulation detection pipeline complete",
+                " Manipulation detection pipeline complete",
                 extra={
                     "session_id": session_id,
                     "manipulation_score": report.overall_manipulation_score,
@@ -506,40 +500,37 @@ class ManipulationOrchestrator:
                 }
             )
 
-            # Clean up scraper only if we created it (not shared)
-            if not self._using_shared_scraper:
-                try:
-                    await self.scraper.close()
-                except Exception as cleanup_error:
-                    fact_logger.logger.debug(f"Scraper cleanup: {cleanup_error}")
+            # Clean up scraper to release browser resources
+            try:
+                await self.scraper.close()
+            except Exception as cleanup_error:
+                fact_logger.logger.debug(f"Scraper cleanup: {cleanup_error}")
 
             return result
 
         except CancelledException:
-            # Clean up on cancellation too (only if we created the scraper)
-            if not self._using_shared_scraper:
-                try:
-                    await self.scraper.close()
-                except Exception:
-                    pass
-            job_manager.add_progress(job_id, "ðŸ›‘ Analysis cancelled by user")
+            # Clean up on cancellation too
+            try:
+                await self.scraper.close()
+            except Exception:
+                pass
+            job_manager.add_progress(job_id, " Analysis cancelled by user")
             raise
 
         except Exception as e:
-            fact_logger.logger.error(f"âŒ Pipeline failed: {e}")
+            fact_logger.logger.error(f" Pipeline failed: {e}")
             import traceback
             fact_logger.logger.error(f"Traceback: {traceback.format_exc()}")
-            job_manager.add_progress(job_id, f"âŒ Error: {str(e)}")
-            # Clean up scraper on error (only if we created it)
-            if not self._using_shared_scraper:
-                try:
-                    await self.scraper.close()
-                except Exception:
-                    pass
+            job_manager.add_progress(job_id, f" Error: {str(e)}")
+            # Clean up scraper on error
+            try:
+                await self.scraper.close()
+            except Exception:
+                pass
             raise
 
     # =========================================================================
-    # âœ… NEW: Parallel Verification Helper
+    #  NEW: Parallel Verification Helper
     # =========================================================================
 
     async def _verify_single_fact_parallel(
@@ -570,7 +561,7 @@ class ManipulationOrchestrator:
             # Progress update
             job_manager.add_progress(
                 job_id,
-                f"ðŸ”Ž [{fact_index}/{total_facts}] Verifying: {fact.statement[:40]}..."
+                f" [{fact_index}/{total_facts}] Verifying: {fact.statement[:40]}..."
             )
 
             # Run actual verification
@@ -582,7 +573,7 @@ class ManipulationOrchestrator:
 
             # Log completion with score
             score = verification.get('match_score', 0.5)
-            emoji = "âœ…" if score >= 0.7 else "âš ï¸" if score >= 0.4 else "âŒ"
+            emoji = "[OK]" if score >= 0.7 else "[WARN]" if score >= 0.4 else "[FAIL]"
             job_manager.add_progress(
                 job_id,
                 f"{emoji} [{fact.id}] Verified: {score:.0%} confidence"
@@ -595,7 +586,7 @@ class ManipulationOrchestrator:
 
         except Exception as e:
             fact_logger.logger.error(
-                f"âŒ Parallel verification failed for {fact.id}: {e}",
+                f" Parallel verification failed for {fact.id}: {e}",
                 extra={"fact_id": fact.id, "error": str(e)}
             )
             # Return error result instead of crashing the entire batch
@@ -608,7 +599,7 @@ class ManipulationOrchestrator:
             )
 
     # =========================================================================
-    # âœ… NEW: Parallel Manipulation Analysis Helper
+    #  NEW: Parallel Manipulation Analysis Helper
     # =========================================================================
 
     async def _analyze_manipulation_parallel(
@@ -649,7 +640,7 @@ class ManipulationOrchestrator:
 
         except Exception as e:
             fact_logger.logger.error(
-                f"âŒ Manipulation analysis failed for {fact.id}: {e}",
+                f" Manipulation analysis failed for {fact.id}: {e}",
                 extra={"fact_id": fact.id, "error": str(e)}
             )
             return (None, str(e))
@@ -691,7 +682,7 @@ class ManipulationOrchestrator:
             search_results = await self.brave_searcher.search_multiple(
                 queries=queries.all_queries,
                 search_depth="advanced",
-                max_concurrent=3  # âœ… Can be aggressive with paid Brave account
+                max_concurrent=3  #  Can be aggressive with paid Brave account
             )
 
             # Build query audits
@@ -822,7 +813,7 @@ class ManipulationOrchestrator:
             return result, formatted_excerpts, query_audits
 
         except Exception as e:
-            fact_logger.logger.error(f"âŒ Fact verification failed: {e}")
+            fact_logger.logger.error(f" Fact verification failed: {e}")
             import traceback
             fact_logger.logger.error(f"Traceback: {traceback.format_exc()}")
             return self._empty_verification(f"Error: {str(e)}"), "", query_audits
@@ -859,7 +850,7 @@ class ManipulationOrchestrator:
 
         return "\n".join(lines)
 
-    # âœ… FIX 3: Add credibility parameters to _build_no_facts_result
+    #  FIX 3: Add credibility parameters to _build_no_facts_result
     def _build_no_facts_result(
         self,
         session_id: str,
@@ -873,7 +864,7 @@ class ManipulationOrchestrator:
         return {
             'success': True,
             'session_id': session_id,
-            # âœ… Include credibility fields
+            #  Include credibility fields
             'source_credibility': source_credibility,
             'used_source_credibility': using_credibility,
             'source_flagged_propaganda': is_propaganda,
@@ -899,7 +890,7 @@ class ManipulationOrchestrator:
             'r2_url': None
         }
 
-    # âœ… FIX 4: Add credibility parameters to _build_result
+    #  FIX 4: Add credibility parameters to _build_result
     def _build_result(
         self,
         session_id: str,
@@ -952,7 +943,7 @@ class ManipulationOrchestrator:
         return {
             'success': True,
             'session_id': session_id,
-            # âœ… Include credibility fields at top level
+            #  Include credibility fields at top level
             'source_credibility': source_credibility,
             'used_source_credibility': using_credibility,
             'source_flagged_propaganda': is_propaganda,
