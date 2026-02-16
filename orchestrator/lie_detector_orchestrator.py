@@ -30,7 +30,11 @@ try:
     from utils.credibility_context import build_lie_detection_context
 except ImportError:
     # Fallback if module not yet added
-    def build_lie_detection_context(source_credibility=None, article_source=None, article_date=None):
+    def build_lie_detection_context(  # type: ignore[misc]
+        source_credibility=None,
+        article_source=None,
+        article_date=None
+    ) -> str:
         parts = []
         if article_source:
             parts.append(f"ARTICLE SOURCE: {article_source}")
@@ -41,7 +45,6 @@ except ImportError:
             if tier:
                 parts.append(f"SOURCE CREDIBILITY TIER: {tier}/5")
         return "\n".join(parts) if parts else ""
-
 
 class LieDetectorOrchestrator:
     """
@@ -135,7 +138,7 @@ class LieDetectorOrchestrator:
 
         # Determine if we're using pre-fetched credibility
         using_credibility = source_credibility is not None
-        credibility_tier = source_credibility.get('tier') if source_credibility else None
+        credibility_tier = int(source_credibility.get('tier', 0)) if source_credibility else None
 
         fact_logger.logger.info(
             f"🚀 STARTING LIE DETECTION SESSION: {session_id}",
@@ -218,7 +221,7 @@ class LieDetectorOrchestrator:
                 try:
                     r2_link = self.r2_uploader.upload_file(
                         file_path=analysis_report_path,
-                        key=f"lie-detection/{session_id}/analysis.json"
+                        r2_filename=f"lie-detection/{session_id}/analysis.json"
                     )
 
                     if r2_link:
@@ -282,7 +285,7 @@ class LieDetectorOrchestrator:
         publication_date: Optional[str] = None,
         article_source: Optional[str] = None,
         source_credibility: Optional[Dict[str, Any]] = None,
-        standalone: bool = True  # ADD THIS
+        standalone: bool = True
     ) -> dict:
         """
         Process with real-time progress updates (for web interface)
@@ -293,7 +296,8 @@ class LieDetectorOrchestrator:
             url: Optional article URL
             publication_date: Optional publication date
             article_source: Optional publication name
-            source_credibility: Optional pre-fetched credibility data (NEW)
+            source_credibility: Optional pre-fetched credibility data
+            standalone: If True, calls complete_job on finish
 
         Returns:
             Complete lie detection analysis results
@@ -301,30 +305,31 @@ class LieDetectorOrchestrator:
         from utils.job_manager import job_manager
 
         try:
-            job_manager.add_progress(job_id, "🕵️ Starting deception marker analysis...")
+            job_manager.add_progress(job_id, "Starting deception marker analysis...")
             self._check_cancellation(job_id)
 
             # Show credibility calibration status
             if source_credibility:
                 tier = source_credibility.get('tier', '?')
+                tier_int = int(tier) if str(tier).isdigit() else 0
                 bias = source_credibility.get('bias_rating', 'Unknown')
                 job_manager.add_progress(
                     job_id, 
-                    f"📊 Calibrating for source: Tier {tier} | {bias}"
+                    f"Calibrating for source: Tier {tier} | {bias}"
                 )
 
                 # Warn about low-credibility sources
-                if tier and tier >= 4:
+                if tier_int >= 4:
                     job_manager.add_progress(
                         job_id,
-                        "⚠️ Low credibility source - applying heightened scrutiny"
+                        "Low credibility source - applying heightened scrutiny"
                     )
             elif article_source:
-                job_manager.add_progress(job_id, f"📰 Analyzing: {article_source}")
+                job_manager.add_progress(job_id, f"Analyzing: {article_source}")
 
             self._check_cancellation(job_id)
 
-            job_manager.add_progress(job_id, "🤖 Analyzing with Claude Sonnet 4...")
+            job_manager.add_progress(job_id, "Analyzing with Claude Sonnet 4...")
             self._check_cancellation(job_id)
 
             # Run the main process with all parameters
@@ -333,22 +338,22 @@ class LieDetectorOrchestrator:
                 url=url,
                 publication_date=publication_date,
                 article_source=article_source,
-                source_credibility=source_credibility,  # Pass through
+                source_credibility=source_credibility,
                 save_to_r2=True
             )
 
             # Add progress about calibration
             if result.get("used_credibility_calibration"):
-                job_manager.add_progress(job_id, "✅ Analysis calibrated with source credibility")
+                job_manager.add_progress(job_id, "Analysis calibrated with source credibility")
 
             # Add progress about R2 upload
             if result.get("r2_upload", {}).get("success"):
-                job_manager.add_progress(job_id, "☁️ Report uploaded to R2")
+                job_manager.add_progress(job_id, "Report uploaded to R2")
             else:
                 error_msg = result.get("r2_upload", {}).get("error", "Unknown error")
-                job_manager.add_progress(job_id, f"⚠️ R2 upload failed: {error_msg}")
+                job_manager.add_progress(job_id, f"R2 upload failed: {error_msg}")
 
-            job_manager.add_progress(job_id, "✅ Lie detection analysis complete!")
+            job_manager.add_progress(job_id, "Lie detection analysis complete!")
 
             # Complete the job
             if standalone:
@@ -358,7 +363,7 @@ class LieDetectorOrchestrator:
 
         except Exception as e:
             if "cancelled" in str(e).lower():
-                job_manager.add_progress(job_id, "🛑 Analysis cancelled")
+                job_manager.add_progress(job_id, "Analysis cancelled")
                 if standalone:
                     job_manager.fail_job(job_id, "Cancelled by user")
             else:

@@ -197,7 +197,7 @@ class ManipulationOrchestrator:
 
         # Track credibility usage
         using_credibility = source_credibility is not None
-        credibility_tier = source_credibility.get('tier') if source_credibility else None
+        credibility_tier = int(source_credibility.get('tier', 0)) if source_credibility else None
         is_propaganda = source_credibility.get('is_propaganda', False) if source_credibility else False
 
         fact_logger.logger.info(
@@ -231,12 +231,12 @@ class ManipulationOrchestrator:
                         job_id,
                         "ðŸš¨ SOURCE FLAGGED AS PROPAGANDA - Maximum scrutiny applied"
                     )
-                elif credibility_tier and credibility_tier >= 4:
+                elif credibility_tier and int(credibility_tier) >= 4:
                     job_manager.add_progress(
                         job_id,
                         "âš ï¸ Low credibility source - heightened scrutiny for manipulation"
                     )
-                elif credibility_tier and credibility_tier <= 2:
+                elif credibility_tier and int(credibility_tier) <= 2:
                     job_manager.add_progress(
                         job_id,
                         "âœ… High credibility source - focusing on subtle framing issues"
