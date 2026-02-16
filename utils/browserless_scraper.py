@@ -243,7 +243,7 @@ class BrowserlessScraper:
 
         # Browser pool for persistent sessions
         self.max_concurrent = 10
-        self.playwright = None  # type: async_playwright context, set in _initialize_browser_pool
+        self.playwright = None
         self.browser_pool: List[Browser] = []
         self.context_pool: List[BrowserContext] = []  # NEW: Store contexts for cookie persistence
         self.current_browser_index = 0
@@ -530,6 +530,9 @@ class BrowserlessScraper:
     async def _create_browser(self, browser_index: int) -> Optional[Browser]:
         """Create a single browser with Railway Browserless or local Playwright"""
         try:
+            if not self.playwright:
+                fact_logger.logger.error(f"Playwright not initialized for browser {browser_index}")
+                return None
             if self.browserless_endpoint:
                 # Build WebSocket endpoint with authentication
                 endpoint = self.browserless_endpoint
@@ -890,11 +893,11 @@ class BrowserlessScraper:
         
         Uses the same site-specific selector logic as the Playwright path.
         """
-        if not BS4_AVAILABLE:
+        if not BS4_AVAILABLE or not BeautifulSoup:
             return ""
-        
+
         try:
-            soup = BeautifulSoup(raw_html, 'lxml')
+            soup = BeautifulSoup(raw_html, 'lxml')  # type: ignore[possibly-undefined]
             
             # Remove unwanted elements (same as Playwright JS extraction)
             for tag in soup.find_all(['script', 'style', 'noscript', 'nav', 'footer', 
@@ -908,7 +911,7 @@ class BrowserlessScraper:
                 'related-articles', 'newsletter', 'subscription'
             ]
             for pattern in unwanted_patterns:
-                for el in soup.find_all(class_=lambda c: c and pattern in str(c).lower()):
+                for el in soup.find_all(class_=lambda c: c and pattern in str(c).lower()):  # type: ignore[arg-type]
                     el.decompose()
             for el in soup.find_all(attrs={'role': ['navigation', 'banner', 'contentinfo']}):
                 el.decompose()
@@ -1843,7 +1846,7 @@ class BrowserlessScraper:
 
                             // Score based on content quality
                             const headingCount = (structuredText.match(/^#+\\s/gm) || []).length;
-                            const paragraphCount = (structuredText.match(/\\n[^\\n#\-].+\\n/g) || []).length;
+                            const paragraphCount = (structuredText.match(/\\n[^\\n#\\-].+\\n/g) || []).length;
                             const wordCount = structuredText.split(/\\s+/).filter(w => w.length > 0).length;
 
                             let score = 0;
