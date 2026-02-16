@@ -174,7 +174,7 @@ const Index = () => {
             </div>
           )}
 
-          {/* Input â€” shown when NOT in done state */}
+          {/* Input -- shown when NOT in done state */}
           {state !== "done" && (
             <div className="mb-4">
               <ContentInput
@@ -261,7 +261,7 @@ const Index = () => {
                 )}
               </div>
 
-              {/* Report â€” always rendered with the mode that actually produced results */}
+              {/* Report -- always rendered with the mode that actually produced results */}
               <ReportRenderer mode={analyzedMode} data={result} onReset={fullReset} />
             </>
           )}

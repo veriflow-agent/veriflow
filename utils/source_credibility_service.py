@@ -215,10 +215,15 @@ class SourceCredibilityService:
 
         # Step 4: Fallback - return default tier 3 (unknown)
         result.source = "fallback"
-        result.tier_reasoning = "No credibility data found"
+        result.credibility_rating = "Not on MBFC"
+        result.tier_reasoning = "Not found on MBFC; no credibility data available"
         self.cache[domain] = result
 
-        fact_logger.logger.info(f"No credibility data for {domain}, using default tier 3")
+        # Save "not on MBFC" record to Supabase so we don't re-check every time
+        if self.supabase_enabled and self.supabase:
+            await self._save_not_found_to_supabase(domain)
+
+        fact_logger.logger.info(f"No credibility data for {domain}, recorded as 'Not on MBFC' (tier 3)")
 
         return result
 
@@ -288,6 +293,30 @@ class SourceCredibilityService:
         except Exception as e:
             fact_logger.logger.warning(f"Propaganda check failed: {e}")
             return False
+
+    async def _save_not_found_to_supabase(self, domain: str) -> None:
+        """
+        Save a 'not on MBFC' record to Supabase so we skip re-checking next time.
+
+        Args:
+            domain: Domain that was not found on MBFC
+        """
+        try:
+            data = {
+                'domain': domain.lower(),
+                'assigned_tier': 3,
+                'mbfc_credibility_rating': 'Not on MBFC',
+                'tier_reasoning': 'Not found on MBFC; no credibility data available',
+                'updated_at': datetime.utcnow().isoformat(),
+                'last_verified_at': datetime.utcnow().isoformat(),
+            }
+            result = self.supabase.upsert_credibility(data)
+            if result:
+                fact_logger.logger.info(f"Saved 'Not on MBFC' record for {domain}")
+            else:
+                fact_logger.logger.warning(f"Failed to save 'Not on MBFC' record for {domain}")
+        except Exception as e:
+            fact_logger.logger.warning(f"Error saving 'Not on MBFC' to Supabase for {domain}: {e}")
 
     async def _run_mbfc_lookup(self, domain: str) -> Optional[CredibilityCheckResult]:
         """

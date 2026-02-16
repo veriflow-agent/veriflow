@@ -1,5 +1,5 @@
 // src/components/ContentInput.tsx
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link2 } from "lucide-react";
 
 type Props = {
@@ -14,6 +14,14 @@ type Props = {
 
 const ContentInput = ({ content, onContentChange, url, onUrlChange, onFetchUrl, isFetching, mode }: Props) => {
   const [inputMode, setInputMode] = useState<"text" | "url">("text");
+
+  // After a URL fetch completes and content is populated, switch to text view
+  // so the user can see the fetched article text
+  useEffect(() => {
+    if (!isFetching && inputMode === "url" && content) {
+      setInputMode("text");
+    }
+  }, [isFetching, content]);
 
   const placeholders: Record<string, string> = {
     "comprehensive": "Paste any article, text, or AI-generated content for full analysis...",
