@@ -383,6 +383,7 @@ class PublicationBiasDetector:
     async def lookup_mbfc(self, domain: str) -> Optional[MBFCResult]:
         """
         Look up publication on MBFC with VERIFICATION.
+        Uses precise search with exact domain match to minimize false positives.
         """
         # Check database first before web lookup
         cached_result = await self.check_database_first(domain)
@@ -396,20 +397,23 @@ class PublicationBiasDetector:
         try:
             fact_logger.logger.info(f"Looking for MBFC page: {domain}")
 
-            # Step 1: Search MBFC using site: operator
-            search_query = f"site:mediabiasfactcheck.com {domain}"
+            # Step 1: Search MBFC using precise site: + exact domain match
+            # Format: site:https://mediabiasfactcheck.com/ "the-express.com"
+            # This returns fewer, more precise results than a loose query
+            search_query = f'site:https://mediabiasfactcheck.com/ "{domain}"'
             results = await self.brave_searcher.search(search_query)
 
             if not results.results:
-                fact_logger.logger.info(f"No MBFC results found for {domain}")
+                # Precise query returned nothing -- domain is not on MBFC
+                fact_logger.logger.info(f"No MBFC results for {domain} (exact match) -- not on MBFC")
                 return None
 
-            # Step 2: Try EACH result until we find a VERIFIED match
-            # THIS IS THE KEY FIX - loop through results and verify each one
-            for result in results.results[:5]:
+            # Step 2: With precise search, results are highly targeted.
+            # Check top 3 results (usually the first one is correct).
+            for result in results.results[:3]:
                 url = result.get('url', '')
 
-                # Skip blog posts
+                # Skip blog posts and non-MBFC pages
                 if '/202' in url:
                     continue
                 if 'mediabiasfactcheck.com' not in url:
