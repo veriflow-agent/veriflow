@@ -154,9 +154,13 @@ const Index = () => {
       <main className="flex-1">
         <div className="container max-w-5xl py-10">
           {/* Hero */}
-          <h1 className="text-4xl md:text-5xl font-display text-center mb-10">
+          <h1 className="text-4xl md:text-5xl font-display text-center mb-3">
             AI Content Analyzer
           </h1>
+          <p className="text-center text-muted-foreground text-base md:text-lg max-w-2xl mx-auto mb-10">
+            Verify LLM outputs against original sources and analyze any text for bias,
+            deception signals, manipulation patterns, and agenda-driven framing.
+          </p>
 
           {/* Mode Selector */}
           <div className="mb-6">
@@ -185,6 +189,7 @@ const Index = () => {
                 onFetchUrl={handleFetchUrl}
                 isFetching={state === "fetching"}
                 mode={mode}
+                onSwitchMode={(m) => handleModeSelect(m as AnalysisMode)}
               />
             </div>
           )}

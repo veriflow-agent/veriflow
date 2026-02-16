@@ -1,6 +1,6 @@
 // src/components/ContentInput.tsx
-import { useState, useEffect } from "react";
-import { Link2 } from "lucide-react";
+import { useState, useEffect, useMemo } from "react";
+import { Link2, CheckCircle2, AlertTriangle } from "lucide-react";
 
 type Props = {
   content: string;
@@ -10,9 +10,47 @@ type Props = {
   onFetchUrl: () => void;
   isFetching: boolean;
   mode: string;
+  onSwitchMode?: (mode: string) => void;
 };
 
-const ContentInput = ({ content, onContentChange, url, onUrlChange, onFetchUrl, isFetching, mode }: Props) => {
+// ---------------------------------------------------------------------------
+// Link detection helpers (mirrors the old vanilla-JS utils)
+// ---------------------------------------------------------------------------
+
+function countLinks(text: string): number {
+  if (!text) return 0;
+
+  let count = 0;
+
+  // HTML anchor tags
+  const htmlMatches = text.match(/<\s*a\s+[^>]*href\s*=\s*["'][^"']+["'][^>]*>/gi);
+  if (htmlMatches) count += htmlMatches.length;
+
+  // Markdown reference links  [1]: https://...
+  const refMatches = text.match(/^\s*\[\d+\]\s*:\s*https?:\/\//gm);
+  if (refMatches) count += refMatches.length;
+
+  // Markdown inline links  [text](https://...)
+  const inlineMatches = text.match(/\[[^\]]+\]\(https?:\/\/[^)]+\)/g);
+  if (inlineMatches) count += inlineMatches.length;
+
+  // Fall back to plain URLs only if no structured links found
+  if (count === 0) {
+    const urlMatches = text.match(/https?:\/\/[^\s<>"']+/g);
+    if (urlMatches) count = urlMatches.length;
+  }
+
+  return count;
+}
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
+
+const ContentInput = ({
+  content, onContentChange, url, onUrlChange,
+  onFetchUrl, isFetching, mode, onSwitchMode,
+}: Props) => {
   const [inputMode, setInputMode] = useState<"text" | "url">("text");
 
   // After a URL fetch completes and content is populated, switch to text view
@@ -23,7 +61,7 @@ const ContentInput = ({ content, onContentChange, url, onUrlChange, onFetchUrl, 
     }
   }, [isFetching, content]);
 
-  // LLM Output mode is copy-paste only — force text input and hide URL toggle
+  // LLM Output mode is copy-paste only -- force text input and hide URL toggle
   const isLlmMode = mode === "llm-output";
 
   useEffect(() => {
@@ -32,13 +70,23 @@ const ContentInput = ({ content, onContentChange, url, onUrlChange, onFetchUrl, 
     }
   }, [isLlmMode]);
 
+  // --- Link detection (only evaluated in LLM Output mode) ----------------
+  const linkCount = useMemo(
+    () => (isLlmMode ? countLinks(content) : 0),
+    [content, isLlmMode],
+  );
+
+  // Only show indicator once the user has typed enough (avoids flashing)
+  const showIndicator = isLlmMode && content.length > 50;
+  const hasLinks = linkCount > 0;
+
   const placeholders: Record<string, string> = {
     "comprehensive": "Paste any article, text, or AI-generated content for full analysis...",
     "key-claims": "Paste text for Key Claims analysis...",
     "bias-analysis": "Paste text to analyze for bias...",
     "lie-detection": "Paste article or text to analyze...",
     "manipulation": "Paste article to check for manipulation...",
-    "llm-output": "Paste LLM output with source links...",
+    "llm-output": "Paste LLM output with source links (from ChatGPT, Perplexity, etc.)...",
   };
 
   return (
@@ -81,6 +129,55 @@ const ContentInput = ({ content, onContentChange, url, onUrlChange, onFetchUrl, 
           >
             {isFetching ? "Fetching..." : "Fetch"}
           </button>
+        </div>
+      )}
+
+      {/* --- Link format indicator (LLM Output mode only) --- */}
+      {showIndicator && (
+        <div
+          className={`flex items-start gap-2.5 mt-3 px-3.5 py-2.5 rounded-lg text-sm ${
+            hasLinks
+              ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+              : "bg-amber-500/10 text-amber-700 dark:text-amber-400"
+          }`}
+        >
+          {hasLinks ? (
+            <>
+              <CheckCircle2 size={16} className="mt-0.5 shrink-0" />
+              <span>
+                Detected {linkCount} source link{linkCount !== 1 ? "s" : ""}
+              </span>
+            </>
+          ) : (
+            <>
+              <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+              <span>
+                No source links detected. LLM Output mode verifies AI responses against their
+                cited sources.{" "}
+                {onSwitchMode && (
+                  <>
+                    Try{" "}
+                    <button
+                      type="button"
+                      onClick={() => onSwitchMode("comprehensive")}
+                      className="underline font-medium hover:opacity-80"
+                    >
+                      Comprehensive Analysis
+                    </button>{" "}
+                    or{" "}
+                    <button
+                      type="button"
+                      onClick={() => onSwitchMode("key-claims")}
+                      className="underline font-medium hover:opacity-80"
+                    >
+                      Key Claims
+                    </button>{" "}
+                    for text without links.
+                  </>
+                )}
+              </span>
+            </>
+          )}
         </div>
       )}
     </div>
