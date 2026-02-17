@@ -5,48 +5,60 @@ import Footer from "@/components/Footer";
 
 const modes = [
   {
-    title: "Key Claims Analysis",
-    bestFor: "Quick verification of main arguments",
-    description:
-      "Extracts the 2-3 most important factual claims from any text and verifies each one against trusted web sources. Perfect for headlines, social media posts, or when you just want the bottom line.",
-  },
-  {
-    title: "Full Fact-Check",
-    bestFor: "Comprehensive verification of articles",
-    description:
-      "Extracts all verifiable facts from your text -- dates, statistics, names, events -- and checks each one against multiple credible sources. Ideal for research, journalism, or when accuracy matters.",
-  },
-  {
     title: "LLM Output Verification",
-    bestFor: "Checking if AI tools interpreted sources correctly",
+    bestFor: "Confirming that AI summaries match their sources",
     description:
-      "AI assistants cite sources, but did they read them accurately? This mode scrapes the actual sources an LLM cited and compares what the AI said against what the sources actually state. Catches misinterpretations, cherry-picking, and hallucinations.",
+      "Retrieves the original sources cited by an LLM and compares them with the generated output to confirm the content is accurate and faithful. Detects misinterpretations, missing context, selective quoting, and hallucinated claims.",
+  },
+  {
+    title: "Key Claims Analysis",
+    bestFor: "Fast validation of the main points",
+    description:
+      "Identifies the 2-3 most important factual claims in a text and verifies each one against credible sources. Ideal for quick checks of headlines, short articles, or social media posts.",
   },
   {
     title: "Bias Analysis",
-    bestFor: "Understanding political and ideological slant",
+    bestFor: "Identifying framing and ideological slant",
     description:
-      "Every outlet has a perspective. Bias Analysis reveals it. This mode detects political lean, loaded language, framing choices, and story selection patterns. Enter the publication name for additional context from our credibility database.",
+      "Analyzes political and ideological positioning through language patterns, framing choices, and narrative emphasis -- helping assess how perspective may shape interpretation even when factual claims appear correct.",
   },
   {
     title: "Manipulation Detection",
-    bestFor: "Uncovering deliberate distortion in content",
+    bestFor: "Detecting strategic distortion and misleading techniques",
     description:
-      "Beyond bias lies deliberate manipulation. This mode catches selective omission, context stripping, false equivalence, and other techniques used to mislead readers. Essential for evaluating op-eds, political content, and advocacy pieces.",
+      "Flags manipulation methods such as selective omission, context stripping, false equivalence, emotional framing, and other techniques used to distort perception and influence conclusions.",
   },
   {
     title: "Deception Detection",
-    bestFor: "Analyzing linguistic markers of deception",
+    bestFor: "Identifying linguistic signals associated with deceptive communication",
     description:
-      "Examines text for patterns commonly associated with deceptive communication: hedging language, distancing phrases, excessive qualifiers, and inconsistencies. Useful for evaluating statements, interviews, and official communications.",
+      "Examines text for patterns commonly linked to deceptive messaging, including hedging, distancing language, excessive qualifiers, inconsistencies, and other linguistic markers.",
+  },
+  {
+    title: "Comprehensive Analysis",
+    bestFor: "Full-scope content risk assessment",
+    description:
+      "Runs an integrated review combining source verification, key claim validation, bias detection, manipulation analysis, and deception-signal detection to provide a complete reliability and risk profile of any text.",
   },
 ];
 
 const comparisonRows = [
-  ["Hidden system prompts set by company", "Custom prompts designed for objective analysis"],
-  ["Reflects creator's ideology", "Prompts focused purely on verification tasks"],
-  ["\"Personality\" and opinions baked in", "Strict, clinical instructions with no editorializing"],
-  ["High temperature = creative, unpredictable", "Low temperature = deterministic, fact-focused"],
+  [
+    "Hidden system prompts set by company",
+    "Custom prompts designed for objective analysis",
+  ],
+  [
+    "Reflects creator's ideology",
+    "Prompts focused purely on verification tasks",
+  ],
+  [
+    '"Personality" and opinions baked in',
+    "Strict, clinical instructions with no editorializing",
+  ],
+  [
+    "High temperature = creative, unpredictable",
+    "Low temperature = deterministic, fact-focused",
+  ],
 ];
 
 const tiers = [
@@ -104,13 +116,38 @@ const HowItWorks = () => {
               How It Works
             </h1>
             <p className="text-lg text-muted-foreground leading-relaxed">
-              VeriFlow is an AI-powered verification platform that checks content
-              against real sources. It doesn't generate opinions -- it verifies
-              facts.
+              VeriFlow is a risk reduction and verification tool that checks
+              LLM outputs against original sources and analyzes any text for
+              bias, deception signals, manipulation patterns, and agenda-driven
+              framing.
             </p>
           </div>
 
-          {/* Why AI Fact-Checking */}
+          {/* What It Is */}
+          <Section title="What It Is">
+            <p className="text-muted-foreground leading-relaxed mb-4">
+              VeriFlow is designed for situations where inaccurate text can
+              create legal, financial, regulatory, or reputational consequences.
+              It works by comparing AI-generated or human-written content with
+              the original source materials and checking whether the key
+              statements in the text are actually supported by what the sources
+              say. It flags unsupported claims, incorrect or fabricated
+              citations, missing context, selective quoting, and cases where the
+              conclusion is not justified by the evidence provided.
+            </p>
+            <p className="text-muted-foreground leading-relaxed">
+              In addition to factual and source verification, VeriFlow performs
+              deeper content analysis to detect bias and framing, identify
+              manipulation patterns, and highlight linguistic signals associated
+              with deception or disinformation-style writing. The output is
+              presented as a structured assessment that can be reviewed by
+              analysts, lawyers, compliance teams, researchers, or
+              communications teams -- and used as documentation to support
+              responsible decision-making and governance.
+            </p>
+          </Section>
+
+          {/* Why AI Fact-Checking Needs a Different Approach */}
           <Section title="Why AI Fact-Checking Needs a Different Approach">
             <p className="text-muted-foreground leading-relaxed mb-4">
               When you ask ChatGPT or Claude to fact-check something, you're
@@ -149,12 +186,13 @@ const HowItWorks = () => {
                 </thead>
                 <tbody>
                   {comparisonRows.map(([left, right], i) => (
-                    <tr
-                      key={i}
-                      className="border-t border-border"
-                    >
-                      <td className="px-4 py-3 text-muted-foreground">{left}</td>
-                      <td className="px-4 py-3 text-muted-foreground">{right}</td>
+                    <tr key={i} className="border-t border-border">
+                      <td className="px-4 py-3 text-muted-foreground">
+                        {left}
+                      </td>
+                      <td className="px-4 py-3 text-muted-foreground">
+                        {right}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -175,11 +213,15 @@ const HowItWorks = () => {
             </p>
             <div className="pl-4 border-l-2 border-border space-y-2 mb-5">
               <p className="text-muted-foreground">
-                <span className="font-medium text-foreground">Opinion task:</span>{" "}
+                <span className="font-medium text-foreground">
+                  Opinion task:
+                </span>{" "}
                 "Is this article biased?" -- the AI must form a judgment
               </p>
               <p className="text-muted-foreground">
-                <span className="font-medium text-foreground">Verification task:</span>{" "}
+                <span className="font-medium text-foreground">
+                  Verification task:
+                </span>{" "}
                 "Does Source A support Claim B? Quote the relevant text." -- the
                 AI compares and reports
               </p>
@@ -232,16 +274,17 @@ const HowItWorks = () => {
               claims, the Query Generator creates search queries in multiple
               languages, the Credibility Filter evaluates source reliability, the
               Highlighter extracts relevant excerpts, the Fact Checker compares
-              claims against evidence, the Bias Analyzer detects ideological lean,
-              and the Manipulation Detector identifies distortion techniques.
+              claims against evidence, the Bias Analyzer detects ideological
+              lean, and the Manipulation Detector identifies distortion
+              techniques.
             </p>
 
             <h3 className="text-lg font-semibold mb-3">
               Source Credibility System
             </h3>
             <p className="text-muted-foreground leading-relaxed mb-5">
-              VeriFlow uses a three-tier credibility system. When sources conflict,
-              Tier 1 always takes precedence.
+              VeriFlow uses a three-tier credibility system. When sources
+              conflict, Tier 1 always takes precedence.
             </p>
 
             <div className="space-y-4 mb-8">
@@ -271,7 +314,7 @@ const HowItWorks = () => {
               Parallel Processing
             </h3>
             <p className="text-muted-foreground leading-relaxed">
-              Complex fact-checks can involve dozens of claims and hundreds of
+              Complex analyses can involve dozens of claims and hundreds of
               sources. VeriFlow processes everything in parallel -- facts verified
               simultaneously, searches running concurrently, scraping in batches
               -- resulting in 60-70% faster processing than sequential methods.
@@ -281,10 +324,10 @@ const HowItWorks = () => {
           {/* What You Get */}
           <Section title="What You Get">
             <p className="text-muted-foreground leading-relaxed mb-4">
-              Every analysis includes confidence scores showing how well each claim
-              is supported, source citations with links to the actual sources used,
-              detailed reasoning explaining the assessment, and session reports with
-              downloadable audit trails.
+              Every analysis includes confidence scores showing how well each
+              claim is supported, source citations with links to the actual
+              sources used, detailed reasoning explaining the assessment, and
+              session reports with downloadable audit trails.
             </p>
 
             <h3 className="text-lg font-semibold mt-6 mb-4">
@@ -294,21 +337,27 @@ const HowItWorks = () => {
               <div className="flex items-start gap-3">
                 <span className="inline-block mt-0.5 w-2.5 h-2.5 rounded-full bg-[hsl(var(--score-high))] shrink-0" />
                 <p className="text-muted-foreground">
-                  <span className="font-medium text-foreground">Verified (85-100%)</span>{" "}
+                  <span className="font-medium text-foreground">
+                    Verified (85-100%)
+                  </span>{" "}
                   -- Strongly supported by credible sources
                 </p>
               </div>
               <div className="flex items-start gap-3">
                 <span className="inline-block mt-0.5 w-2.5 h-2.5 rounded-full bg-[hsl(var(--score-moderate))] shrink-0" />
                 <p className="text-muted-foreground">
-                  <span className="font-medium text-foreground">Partially Verified (50-84%)</span>{" "}
+                  <span className="font-medium text-foreground">
+                    Partially Verified (50-84%)
+                  </span>{" "}
                   -- Some support, but with caveats or missing context
                 </p>
               </div>
               <div className="flex items-start gap-3">
                 <span className="inline-block mt-0.5 w-2.5 h-2.5 rounded-full bg-[hsl(var(--score-low))] shrink-0" />
                 <p className="text-muted-foreground">
-                  <span className="font-medium text-foreground">Unverified (0-49%)</span>{" "}
+                  <span className="font-medium text-foreground">
+                    Unverified (0-49%)
+                  </span>{" "}
                   -- Contradicted by evidence or no credible support found
                 </p>
               </div>
@@ -330,7 +379,8 @@ const HowItWorks = () => {
               ))}
             </div>
             <p className="text-muted-foreground">
-              Analysis typically takes 1-3 minutes depending on content complexity.
+              Analysis typically takes 1-3 minutes depending on content
+              complexity.
             </p>
           </Section>
 
@@ -354,7 +404,7 @@ const HowItWorks = () => {
           <div className="text-center pt-6 border-t border-border">
             <h3 className="text-xl font-semibold mb-2">Ready to verify?</h3>
             <p className="text-muted-foreground mb-6">
-              Start fact-checking in seconds.
+              Start analyzing in seconds.
             </p>
             <Link
               to="/"
