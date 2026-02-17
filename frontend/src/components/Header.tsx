@@ -11,8 +11,7 @@ const Header = () => (
         <span className="text-xl font-semibold tracking-tight">VeriFlow</span>
       </Link>
       <nav className="flex items-center gap-6 text-base text-muted-foreground">
-        <Link to="/how-it-works" className="hover:text-foreground transition-colors">How it works</Link>
-        <Link to="/about" className="hover:text-foreground transition-colors">About</Link>
+        <Link to="/how-it-works" className="hover:text-foreground transition-colors">About</Link>
       </nav>
     </div>
   </header>

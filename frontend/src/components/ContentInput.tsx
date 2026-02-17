@@ -81,12 +81,12 @@ const ContentInput = ({
   const hasLinks = linkCount > 0;
 
   const placeholders: Record<string, string> = {
-    "comprehensive": "Paste any article, text, or AI-generated content for full analysis...",
-    "key-claims": "Paste text for Key Claims analysis...",
-    "bias-analysis": "Paste text to analyze for bias...",
-    "lie-detection": "Paste article or text to analyze...",
-    "manipulation": "Paste article to check for manipulation...",
-    "llm-output": "Paste LLM output with source links (from ChatGPT, Perplexity, etc.)...",
+    "comprehensive": "Runs all applicable analyses in one pass – source credibility, claims verification, bias, deception, and manipulation. Paste any article, text, or AI-generated content...",
+    "key-claims": "Identifies the 2-3 strongest factual claims and verifies each against independent sources. Paste the article or text you want to check...",
+    "bias-analysis": "Detects political or ideological lean, framing techniques, and one-sided sourcing patterns. Paste a news article, op-ed, or any content...",
+    "lie-detection": "Scans for linguistic markers of deception, hedging, and unsupported assertions. Paste the article or text to analyze...",
+    "manipulation": "Flags agenda-driven framing, cherry-picked data, false equivalences, and emotional manipulation techniques. Paste an article or text to check...",
+    "llm-output": "Checks whether AI-generated text matches the sources it cites - flags unsupported claims, missing context, and citation errors. Paste output with source links from ChatGPT, Perplexity, etc...",
   };
 
   return (
