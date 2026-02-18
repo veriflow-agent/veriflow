@@ -303,36 +303,31 @@ def start_comprehensive_analysis():
 
         # Start background task
         def run_comprehensive_task():
-            import asyncio
-
-            async def _run():
-                try:
-                    orchestrator = ComprehensiveOrchestrator(config)
-                    result = await orchestrator.process_with_progress(
-                        content=content,
-                        job_id=job_id,
-                        source_url=source_url,
-                        user_preferences=user_preferences
-                    )
-                    return result
-                except Exception as e:
-                    fact_logger.logger.error(f" Comprehensive analysis error: {e}")
-                    import traceback
-                    fact_logger.logger.error(f"Traceback: {traceback.format_exc()}")
-                    job_manager.fail_job(job_id, str(e))
-                    raise
-
-            # Get or create event loop
             try:
-                loop = asyncio.get_event_loop()
-                if loop.is_closed():
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-            except RuntimeError:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
+                async def _run():
+                    try:
+                        orchestrator = ComprehensiveOrchestrator(config)
+                        result = await orchestrator.process_with_progress(
+                            content=content,
+                            job_id=job_id,
+                            source_url=source_url,
+                            user_preferences=user_preferences
+                        )
+                        return result
+                    except Exception as e:
+                        fact_logger.logger.error(f" Comprehensive analysis error: {e}")
+                        import traceback
+                        fact_logger.logger.error(f"Traceback: {traceback.format_exc()}")
+                        job_manager.fail_job(job_id, str(e))
+                        raise
 
-            loop.run_until_complete(_run())
+                run_async_in_thread(_run())
+
+            except Exception as e:
+                fact_logger.logger.error(f" Comprehensive task error: {e}")
+                job_manager.fail_job(job_id, str(e))
+            finally:
+                cleanup_thread_loop()
 
         # Start in thread
         thread = threading.Thread(target=run_comprehensive_task)

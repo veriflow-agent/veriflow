@@ -75,8 +75,8 @@ def sync_to_async(func: Callable[..., T]) -> Callable[..., Coroutine[Any, Any, T
     """
     Convert any callable into an awaitable function.
 
-    - If func is already async def → just await it
-    - If func is sync → run it in ThreadPoolExecutor so event loop never blocks
+    - If func is already async def -> just await it
+    - If func is sync -> run it in ThreadPoolExecutor so event loop never blocks
 
     This is the key utility that allows mixing sync and async code without blocking.
 
@@ -98,7 +98,7 @@ def sync_to_async(func: Callable[..., T]) -> Callable[..., Coroutine[Any, Any, T
 
         result = await sync_to_async(slow_function)(5)  # Runs in executor
 
-        # Async function  
+        # Async function
         async def fast_function(x):
             await asyncio.sleep(1)
             return x * 2
@@ -125,30 +125,49 @@ def get_or_create_event_loop() -> asyncio.AbstractEventLoop:
     Get or create an event loop for the current thread.
 
     This is crucial for daemon threads where each thread needs its own loop.
-    Reuses the same loop for the same thread to avoid creating too many loops.
+    Reuses the same loop for the same thread IF it is not already running.
+
+    IMPORTANT: We never call asyncio.get_running_loop() here. If a loop is
+    already running in this thread, we cannot call run_until_complete() on it
+    — that raises "This event loop is already running". Instead we create a
+    fresh loop for this thread so run_until_complete() always works safely.
+
+    This is what caused the parallel-check bug: a thread whose loop was still
+    marked as running from a previous job would have its loop reused, and then
+    run_until_complete() would crash with "event loop already running".
 
     Returns:
-        Event loop for current thread
+        A non-running event loop for the current thread
     """
     thread_id = threading.get_ident()
 
     with _LOOP_LOCK:
-        # Check if this thread already has a loop
+        # Reuse the existing loop for this thread if it exists and is usable
         if thread_id in _THREAD_LOOPS:
             loop = _THREAD_LOOPS[thread_id]
-            if not loop.is_closed():
+
+            # Loop must be open AND not currently running to be reusable
+            if not loop.is_closed() and not loop.is_running():
                 return loop
 
-        # Create new loop for this thread
-        try:
-            loop = asyncio.get_running_loop()
-            logger.debug(f"Thread {thread_id}: Using existing running loop")
-        except RuntimeError:
-            # No loop running, create one
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            _THREAD_LOOPS[thread_id] = loop
-            logger.debug(f"Thread {thread_id}: Created new event loop")
+            # Loop is either closed or still running — log why and replace it
+            if loop.is_running():
+                logger.warning(
+                    f"Thread {thread_id}: Existing loop is already running. "
+                    f"Creating a fresh loop to avoid 'event loop already running' error."
+                )
+            else:
+                logger.debug(f"Thread {thread_id}: Existing loop is closed. Creating a new one.")
+
+        # Create a brand-new loop for this thread.
+        # We never call asyncio.get_running_loop() because:
+        #   - if it succeeds, the loop is already running and run_until_complete() will crash
+        #   - if it raises RuntimeError, we need a new loop anyway
+        # So we always just create one directly.
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        _THREAD_LOOPS[thread_id] = loop
+        logger.debug(f"Thread {thread_id}: Created new event loop")
 
         return loop
 
@@ -161,7 +180,7 @@ def run_async_in_thread(coro: Coroutine[Any, Any, T]) -> T:
     running in daemon threads).
 
     Key features:
-    - Creates/reuses event loop per thread
+    - Creates/reuses event loop per thread (never reuses a running loop)
     - Handles loop lifecycle properly
     - Works with LangSmith callbacks
     - No need for asyncio.run() which causes the error
@@ -187,7 +206,7 @@ def run_async_in_thread(coro: Coroutine[Any, Any, T]) -> T:
     loop = get_or_create_event_loop()
 
     # Use run_until_complete instead of asyncio.run()
-    # This works because we manage the loop ourselves
+    # This works because get_or_create_event_loop() guarantees a non-running loop
     return loop.run_until_complete(coro)
 
 
@@ -195,8 +214,8 @@ def cleanup_thread_loop():
     """
     Cleanup the event loop for the current thread.
 
-    Call this when a thread is done with async work to free resources.
-    Usually not necessary as loops are reused, but useful for explicit cleanup.
+    Call this in the finally block of every background task to free resources
+    and ensure the next job on this thread gets a clean loop.
     """
     thread_id = threading.get_ident()
 
@@ -231,6 +250,7 @@ def safe_float(value, default=0.0):
         except (ValueError, TypeError):
             return default
     return default
+
 
 # Graceful shutdown support
 def shutdown_all_loops():
