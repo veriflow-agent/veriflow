@@ -81,6 +81,15 @@ try:
 except ImportError:
     fact_logger.logger.info("CloudScraper fallback not available (pip install cloudscraper)")
 
+RESIDENTIAL_PROXY_AVAILABLE = False
+ResidentialProxyScraper = None
+try:
+    from utils.residential_proxy_scraper import ResidentialProxyScraper as _ResProxy
+    ResidentialProxyScraper = _ResProxy
+    RESIDENTIAL_PROXY_AVAILABLE = True
+except ImportError:
+    fact_logger.logger.info("Residential proxy scraper not available")
+
 # Visual paywall detector (GPT-4o-mini vision analysis of screenshots)
 VISUAL_PAYWALL_AVAILABLE = False
 VisualPaywallDetector = None
@@ -262,6 +271,9 @@ class BrowserlessScraper:
         if CLOUDSCRAPER_AVAILABLE and CloudScraperFallback is not None:
             self._cloudscraper = CloudScraperFallback()
 
+        # In BrowserlessScraper.__init__
+        self._residential_proxy = ResidentialProxyScraper() if RESIDENTIAL_PROXY_AVAILABLE else None
+
         # Timeouts
         self.default_timeout = 5000  # 5 seconds
         self.slow_timeout = 10000     # 10 seconds
@@ -330,6 +342,8 @@ class BrowserlessScraper:
             # PDF extraction stats
             "pdf_extractions": 0,
             "pdf_extraction_successes": 0,
+            "residential_proxy_attempts": 0,
+            "residential_proxy_successes": 0,
         }
 
         # Per-URL failure reason tracking (readable by orchestrators)
@@ -661,13 +675,16 @@ class BrowserlessScraper:
     ) -> str:
         """
         Multi-strategy scraping with Supabase domain learning.
-        Tries strategies in order: known -> basic -> advanced -> ScrapingBee -> CloudScraper
+        Tries strategies in order:
+            known -> basic -> advanced -> ScrapingBee -> ResidentialProxy -> CloudScraper
 
         If a 401/403 HTTP block is detected, immediately breaks to ScrapingBee fallback.
         If ScrapingBee succeeds, saves "scrapingbee" as the domain strategy so future
         requests skip Playwright entirely.
-        If ScrapingBee also fails (e.g. Cloudflare JS challenge), tries CloudScraper.
-        If CloudScraper succeeds, saves "cloudscraper" as the domain strategy.
+        If ScrapingBee also fails, tries ResidentialProxy (for IP-reputation-blocked sites
+        like Reuters, Bloomberg, FT, AP that block datacenter IPs with no CAPTCHA).
+        If ResidentialProxy also fails, tries CloudScraper (Cloudflare JS challenges).
+        Each successful fallback saves its strategy to Supabase for future fast-routing.
         """
         domain = urlparse(url).netloc.lower()
         if domain.startswith('www.'):
@@ -687,6 +704,17 @@ class BrowserlessScraper:
                 return content
             # If ScrapingBee also failed this time, fall through to Playwright strategies
 
+        # If domain is known to need ResidentialProxy, skip Playwright and ScrapingBee entirely
+        if known_strategy == "residential_proxy":
+            fact_logger.logger.info(
+                f"[ResProxy] Known residential proxy domain: {domain} -- skipping Playwright",
+                extra={"domain": domain, "source": "supabase"}
+            )
+            content = await self._try_residential_proxy_fallback(url, domain, start_time, browser_index, browser)
+            if content:
+                return content
+            # If residential proxy also failed this time, fall through to Playwright strategies
+
         # If domain is known to need CloudScraper, skip Playwright entirely
         if known_strategy == "cloudscraper":
             fact_logger.logger.info(
@@ -699,7 +727,7 @@ class BrowserlessScraper:
             # If CloudScraper also failed this time, fall through to Playwright strategies
 
         # Try known Playwright strategy first (if it's not a fallback-only strategy)
-        if known_strategy and known_strategy not in ("scrapingbee", "cloudscraper"):
+        if known_strategy and known_strategy not in ("scrapingbee", "residential_proxy", "cloudscraper"):
             fact_logger.logger.info(
                 f"Using known strategy for {domain}: {known_strategy}",
                 extra={"domain": domain, "strategy": known_strategy, "source": "supabase"}
@@ -738,7 +766,7 @@ class BrowserlessScraper:
                     extra={"domain": domain, "failed_strategy": known_strategy}
                 )
 
-        # Try strategies in order: basic -> advanced -> ScrapingBee
+        # Try Playwright strategies in order: basic -> advanced
         strategies = [ScrapingStrategy.BASIC, ScrapingStrategy.ADVANCED]
 
         http_blocked = False
@@ -755,7 +783,6 @@ class BrowserlessScraper:
                 )
 
                 if content:
-                    # Success! Save to Supabase
                     processing_time = time.time() - start_time
                     self.strategy_service.save_strategy(domain, strategy)
                     self.stats["strategy_success"][strategy] += 1
@@ -791,7 +818,13 @@ class BrowserlessScraper:
             self.url_failure_reasons.pop(url, None)  # Clear -- fallback succeeded
             return sb_content
 
-        # ScrapingBee also failed -- try CloudScraper (Cloudflare bypass)
+        # ScrapingBee failed -- try ResidentialProxy (IP-reputation-blocked sites: Reuters, Bloomberg, etc.)
+        rp_content = await self._try_residential_proxy_fallback(url, domain, start_time, browser_index, browser)
+        if rp_content:
+            self.url_failure_reasons.pop(url, None)  # Clear -- fallback succeeded
+            return rp_content
+
+        # ResidentialProxy also failed -- try CloudScraper (Cloudflare JS challenge bypass)
         cs_content = await self._try_cloudscraper_fallback(url, domain, start_time, browser_index, browser)
         if cs_content:
             self.url_failure_reasons.pop(url, None)  # Clear -- fallback succeeded
@@ -803,6 +836,7 @@ class BrowserlessScraper:
                 self.url_failure_reasons[url] = "http_blocked"
             else:
                 self.url_failure_reasons[url] = "all_strategies_failed"
+
         fact_logger.logger.error(
             f"All strategies failed for {url}" + (" (HTTP blocked)" if http_blocked else ""),
             extra={
@@ -1179,6 +1213,109 @@ class BrowserlessScraper:
                     fact_logger.logger.info(
                         f"[ScrapingBee+BS4] Successfully extracted {len(content)} chars from {url}",
                         extra={"url": url, "domain": domain, "strategy": "scrapingbee_bs4"}
+                    )
+                    return content
+
+        finally:
+            if page:
+                try:
+                    await asyncio.wait_for(page.close(), timeout=3.0)
+                except Exception:
+                    pass
+            if context:
+                try:
+                    await asyncio.wait_for(context.close(), timeout=3.0)
+                except Exception:
+                    pass
+
+        return ""
+
+    async def _try_residential_proxy_fallback(
+        self, url: str, domain: str, start_time: float,
+        browser_index: int, browser: Browser
+    ) -> str:
+        """
+        Try residential proxy as a fallback for IP-reputation-blocked sites.
+
+        Sites like Reuters, Bloomberg, FT, and AP News reject requests from
+        datacenter IP ranges at the network edge -- no CAPTCHA, just a silent
+        block or 403. A residential proxy routes the request through a real
+        ISP-assigned IP, making it indistinguishable from a regular user visit.
+
+        Uses the same two-step pattern as ScrapingBee and CloudScraper:
+          1. Fetch raw HTML via residential proxy (bypasses IP reputation block)
+          2. Load HTML into Playwright for standard content extraction + cleaning
+
+        If successful, saves "residential_proxy" to Supabase so future requests
+        for this domain skip all prior steps and go directly here.
+        """
+        if not self._residential_proxy or not self._residential_proxy.enabled:
+            fact_logger.logger.debug(
+                f"[ResProxy] Residential proxy not available for {domain}"
+            )
+            return ""
+
+        self.stats["residential_proxy_attempts"] += 1
+
+        # Step 1: Fetch raw HTML via residential proxy
+        try:
+            raw_html = await self._residential_proxy.fetch_raw_html(url)
+        except Exception as e:
+            fact_logger.logger.error(f"[ResProxy] Exception fetching HTML for {url}: {e}")
+            raw_html = None
+
+        if not raw_html:
+            return ""
+
+        # Step 2: Load HTML into Playwright page for standard extraction
+        page = None
+        context = None
+
+        try:
+            context = await self._create_context(browser, ScrapingStrategy.BASIC)
+            page = await asyncio.wait_for(context.new_page(), timeout=10.0)
+            await page.set_content(raw_html, wait_until='domcontentloaded')
+
+            content = await self._extract_and_clean_content(page, url)
+
+            if content:
+                processing_time = time.time() - start_time
+                self.stats["successful_scrapes"] += 1
+                self.stats["residential_proxy_successes"] += 1
+                self.stats["total_processing_time"] += processing_time
+                self.stats["avg_scrape_time"] = (                                          # missing in your version
+                    self.stats["total_processing_time"] / max(self.stats["total_scraped"], 1)
+                )
+
+                self.strategy_service.save_strategy(domain, "residential_proxy")
+
+                fact_logger.logger.info(
+                    f"[ResProxy] Successfully scraped {url} ({len(content)} chars, {processing_time:.1f}s)",
+                    extra={
+                        "url": url,
+                        "domain": domain,
+                        "strategy": "residential_proxy",
+                        "content_length": len(content)
+                    }
+                )
+                return content
+
+        except Exception as e:
+            fact_logger.logger.warning(f"[ResProxy] Playwright extraction failed for {url}: {e}")
+
+            # BS4 fallback if Playwright can't process the HTML                            # missing in your version
+            if raw_html and BS4_AVAILABLE:
+                fact_logger.logger.info(f"[ResProxy] Trying BeautifulSoup fallback for {url}")
+                content = self._extract_with_beautifulsoup(raw_html, url)
+                if content:
+                    processing_time = time.time() - start_time
+                    self.stats["successful_scrapes"] += 1
+                    self.stats["residential_proxy_successes"] += 1
+                    self.stats["total_processing_time"] += processing_time
+                    self.strategy_service.save_strategy(domain, "residential_proxy")
+                    fact_logger.logger.info(
+                        f"[ResProxy+BS4] Successfully extracted {len(content)} chars from {url}",
+                        extra={"url": url, "domain": domain, "strategy": "residential_proxy_bs4"}
                     )
                     return content
 
