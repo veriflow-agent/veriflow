@@ -73,10 +73,8 @@ class ResidentialProxyScraper:
         }
 
         try:
-            proxies = {"http://": self.proxy_url, "https://": self.proxy_url}
-
             async with httpx.AsyncClient(
-                proxies=proxies,
+                proxy=self.proxy_url,
                 timeout=timeout,
                 follow_redirects=True,
                 verify=False,   # some proxy endpoints use self-signed certs
