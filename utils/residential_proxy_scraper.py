@@ -14,12 +14,30 @@ Cost: billed per GB of bandwidth. Minimize by only using for known hard domains.
 
 import os
 import asyncio
+import random
 import httpx
 from typing import Optional
 from utils.logger import fact_logger
 
-RESIDENTIAL_PROXY_MAX_RETRIES = 3
-RESIDENTIAL_PROXY_RETRY_DELAY = 2.0  # seconds between retries
+RESIDENTIAL_PROXY_MAX_RETRIES = 5
+RESIDENTIAL_PROXY_RETRY_DELAY = 7.0  # seconds between retries -- longer gap helps Bright Data
+                                      # rotate to a clean exit node from a different ISP pool
+
+# Rotate user agents across retries so consecutive attempts look like different browsers.
+# Akamai scores UA + TLS fingerprint together; a different UA on each retry increases the
+# chance of hitting a clean node whose fingerprint hasn't been seen recently by Reuters' WAF.
+USER_AGENTS = [
+    # Chrome 133 on Windows
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
+    # Firefox 147 on Windows
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:147.0) Gecko/20100101 Firefox/147.0",
+    # Safari 18.2 on macOS Sequoia 15.2
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_2) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.2 Safari/605.1.15",
+    # Edge 144 on Windows
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36 Edg/144.0.0.0",
+    # Chrome 133 on macOS
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
+]
 
 
 class ResidentialProxyScraper:
@@ -72,21 +90,20 @@ class ResidentialProxyScraper:
         if not self.enabled or not self.proxy_url:
             return None
 
-        headers = {
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/133.0.0.0 Safari/537.36"
-            ),
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.9",
-            "Accept-Encoding": "gzip, deflate, br",
-            "Connection": "keep-alive",
-            "Upgrade-Insecure-Requests": "1",
-            "Cache-Control": "max-age=0",
-        }
-
         for attempt in range(1, max_retries + 1):
+            # Pick a different UA on each attempt -- Akamai scores UA + TLS fingerprint
+            # together, so rotating increases the chance of a clean exit node pairing.
+            headers = {
+                "User-Agent": random.choice(USER_AGENTS),
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.9",
+                "Accept-Encoding": "gzip, deflate, br",
+                "Connection": "keep-alive",
+                "Upgrade-Insecure-Requests": "1",
+                "Cache-Control": "max-age=0",
+                "Referer": "https://www.google.com/",  # Requests without Referer score as bot-likely
+            }
+
             try:
                 async with httpx.AsyncClient(
                     proxy=self.proxy_url,

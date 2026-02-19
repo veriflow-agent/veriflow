@@ -135,17 +135,17 @@ class ScrapingStrategy(str, Enum):
 # CONFIGURATION: User Agents, Selectors, and Strategies
 # ============================================================================
 
-# Modern user agents (updated Feb 2025)
+# Modern user agents (updated Feb 2026)
 USER_AGENTS = [
-    # Latest Chrome (Jan 2025)
+    # Chrome 133 on Windows (Chromium 133, aligns with Edge 144 cadence)
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
-    # Latest Firefox
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0",
-    # Safari on Mac
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_2) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
-    # Edge
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36 Edg/133.0.0.0",
-    # Chrome on Mac
+    # Firefox 147 on Windows
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:147.0) Gecko/20100101 Firefox/147.0",
+    # Safari 18.2 on macOS Sequoia (15.2) - still the dominant macOS version
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_2) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.2 Safari/605.1.15",
+    # Edge 144 on Windows
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36 Edg/144.0.0.0",
+    # Chrome 133 on macOS
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
 ]
 
@@ -278,7 +278,7 @@ class BrowserlessScraper:
         self.default_timeout = 5000  # 5 seconds
         self.slow_timeout = 10000     # 10 seconds
         self.browser_launch_timeout = 10000
-        self.overall_scrape_timeout = 75.0  # Increased to accommodate ScrapingBee + AI cleaning
+        self.overall_scrape_timeout = 180.0  # Increased to accommodate ScrapingBee + AI cleaning
 
         # Domain-specific timeouts
         self.domain_timeouts = {
