@@ -608,7 +608,7 @@ class BrowserlessScraper:
             try:
                 content = await asyncio.wait_for(
                     self._extract_pdf_content(url),
-                    timeout=30.0
+                    timeout=60.0
                 )
                 if content:
                     processing_time = time.time() - start_time
@@ -622,14 +622,20 @@ class BrowserlessScraper:
                     return content
                 else:
                     fact_logger.logger.warning(
-                        f"PDF extraction returned empty content: {url}"
+                        f"PDF extraction failed (empty content, likely blocked or scanned): {url}"
                     )
-                    # Fall through to Playwright (might render the PDF)
+                    return ""
+            except asyncio.TimeoutError:
+                fact_logger.logger.warning(
+                    f"PDF extraction timed out after 60s: {url}"
+                )
+                return ""
             except Exception as e:
                 fact_logger.logger.warning(
-                    f"PDF extraction failed for {url}: {e}, "
-                    f"falling through to Playwright"
+                    f"PDF extraction failed for {url}: {type(e).__name__}: {e}"
                 )
+                return ""
+            # PDF handling is self-contained -- Playwright cannot render raw PDFs
         # --- END PDF DETECTION ---
 
         # Select browser from pool
@@ -1697,86 +1703,102 @@ class BrowserlessScraper:
         """
         Download PDF file bytes from a URL.
 
-        Tries httpx (async) first, falls back to urllib.
+        Strategy:
+          1. Strip tracking query params (utm_source, etc.) from the URL
+          2. Direct httpx download (fast, no proxy)
+          3. Residential proxy download (bypasses datacenter IP blocks)
 
         Returns raw PDF bytes or None on failure.
         """
-        # Try httpx first (lightweight, async, already in requirements)
+        import httpx
+
+        # Strip tracking query parameters -- ChatGPT/Perplexity append
+        # ?utm_source=chatgpt.com to citations; some servers reject these.
+        parsed = urlparse(url)
+        clean_url = parsed._replace(query="", fragment="").geturl()
+        if clean_url != url:
+            fact_logger.logger.debug(f"PDF URL cleaned: {url} -> {clean_url}")
+            url = clean_url
+
+        headers = {
+            "User-Agent": self._get_random_user_agent(),
+            "Accept": "application/pdf,*/*",
+        }
+
+        def _is_valid_pdf(data: bytes, source: str) -> bool:
+            if data[:5] == b"%PDF-":
+                return True
+            fact_logger.logger.warning(
+                f"[PDF] {source} returned non-PDF data (magic: {data[:8]})"
+            )
+            return False
+
+        # --- Attempt 1: direct httpx (fastest, works for most open servers) ---
         try:
-            import httpx
-
-            headers = {
-                "User-Agent": self._get_random_user_agent(),
-                "Accept": "application/pdf,*/*",
-            }
-
             async with httpx.AsyncClient(
                 follow_redirects=True,
-                timeout=25.0,
+                timeout=20.0,
                 headers=headers,
             ) as client:
                 response = await client.get(url)
 
                 if response.status_code == 200:
-                    content_type = response.headers.get(
-                        "content-type", ""
-                    ).lower()
-
-                    # Verify it's actually a PDF
-                    if ("pdf" in content_type
-                            or response.content[:5] == b"%PDF-"):
+                    content_type = response.headers.get("content-type", "").lower()
+                    if "pdf" in content_type or _is_valid_pdf(response.content, "direct"):
                         fact_logger.logger.info(
-                            f"PDF downloaded via httpx: "
-                            f"{len(response.content) / 1024:.1f} KB"
+                            f"[PDF] Downloaded directly: "
+                            f"{len(response.content) / 1024:.1f} KB from {url}"
                         )
                         return response.content
                     else:
                         fact_logger.logger.warning(
-                            f"URL claimed to be PDF but Content-Type "
-                            f"is '{content_type}'"
+                            f"[PDF] Direct: unexpected Content-Type '{content_type}'"
                         )
                         return None
                 else:
                     fact_logger.logger.warning(
-                        f"PDF download failed: HTTP {response.status_code}"
+                        f"[PDF] Direct download failed: HTTP {response.status_code} for {url}"
                     )
-                    return None
 
-        except ImportError:
-            fact_logger.logger.debug(
-                "httpx not available, trying urllib for PDF download"
-            )
         except Exception as e:
             fact_logger.logger.warning(
-                f"httpx PDF download failed: {e}"
+                f"[PDF] Direct download failed ({type(e).__name__}): {e}"
             )
 
-        # Fallback: urllib (synchronous but always available)
-        try:
-            import urllib.request
+        # --- Attempt 2: residential proxy (bypasses datacenter IP blocks) ---
+        if self._residential_proxy and self._residential_proxy.enabled:
+            try:
+                async with httpx.AsyncClient(
+                    proxy=self._residential_proxy.proxy_url,
+                    follow_redirects=True,
+                    timeout=25.0,
+                    verify=False,
+                    headers=headers,
+                ) as client:
+                    response = await client.get(url)
 
-            req = urllib.request.Request(
-                url,
-                headers={"User-Agent": self._get_random_user_agent()}
-            )
-            loop = asyncio.get_event_loop()
-            pdf_bytes = await loop.run_in_executor(
-                None,
-                lambda: urllib.request.urlopen(req, timeout=25).read()
-            )
-            if pdf_bytes and pdf_bytes[:5] == b"%PDF-":
-                fact_logger.logger.info(
-                    f"PDF downloaded via urllib: "
-                    f"{len(pdf_bytes) / 1024:.1f} KB"
+                    if response.status_code == 200:
+                        content_type = response.headers.get("content-type", "").lower()
+                        if "pdf" in content_type or _is_valid_pdf(response.content, "residential proxy"):
+                            fact_logger.logger.info(
+                                f"[PDF] Downloaded via residential proxy: "
+                                f"{len(response.content) / 1024:.1f} KB from {url}"
+                            )
+                            return response.content
+                    else:
+                        fact_logger.logger.warning(
+                            f"[PDF] Residential proxy: HTTP {response.status_code} for {url}"
+                        )
+
+            except Exception as e:
+                fact_logger.logger.warning(
+                    f"[PDF] Residential proxy download failed ({type(e).__name__}): {e}"
                 )
-                return pdf_bytes
-            return None
+        else:
+            fact_logger.logger.debug("[PDF] Residential proxy not available, skipping")
 
-        except Exception as e:
-            fact_logger.logger.error(
-                f"All PDF download methods failed for {url}: {e}"
-            )
-            return None
+        fact_logger.logger.warning(f"[PDF] All download attempts failed for {url}")
+        return None
 
     def _extract_text_from_pdf_bytes(self, pdf_bytes: bytes) -> str:
         """
