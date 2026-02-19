@@ -86,15 +86,13 @@ class ResidentialProxyScraper:
             "Cache-Control": "max-age=0",
         }
 
-        proxies = {"http://": self.proxy_url, "https://": self.proxy_url}
-
         for attempt in range(1, max_retries + 1):
             try:
                 async with httpx.AsyncClient(
-                    proxies=proxies,
+                    proxy=self.proxy_url,
                     timeout=timeout,
                     follow_redirects=True,
-                    verify=False,  # some proxy endpoints use self-signed certs
+                    verify=False,
                 ) as client:
                     response = await client.get(url, headers=headers)
 
