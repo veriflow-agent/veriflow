@@ -18,6 +18,9 @@ import httpx
 from typing import Optional
 from utils.logger import fact_logger
 
+RESIDENTIAL_PROXY_MAX_RETRIES = 3
+RESIDENTIAL_PROXY_RETRY_DELAY = 2.0  # seconds between retries
+
 
 class ResidentialProxyScraper:
     """
@@ -50,10 +53,21 @@ class ResidentialProxyScraper:
         self.enabled = True
         fact_logger.logger.info(f"Residential proxy initialized: {host}:{port}")
 
-    async def fetch_raw_html(self, url: str, timeout: int = 30) -> Optional[str]:
+    async def fetch_raw_html(
+        self,
+        url: str,
+        timeout: int = 30,
+        max_retries: int = RESIDENTIAL_PROXY_MAX_RETRIES,
+    ) -> Optional[str]:
         """
-        Fetch raw HTML through the residential proxy.
-        Returns HTML string on success, None on failure.
+        Fetch raw HTML through the residential proxy with automatic retries.
+
+        Residential proxies are inherently flaky -- the assigned exit node may
+        be temporarily throttled or route through a slow ISP. Retrying with a
+        short delay resolves the majority of transient failures without needing
+        to fall back to other scrapers that will be blocked by IP reputation checks.
+
+        Returns HTML string on first successful attempt, None if all retries fail.
         """
         if not self.enabled or not self.proxy_url:
             return None
@@ -72,31 +86,50 @@ class ResidentialProxyScraper:
             "Cache-Control": "max-age=0",
         }
 
-        try:
-            async with httpx.AsyncClient(
-                proxy=self.proxy_url,
-                timeout=timeout,
-                follow_redirects=True,
-                verify=False,   # some proxy endpoints use self-signed certs
-            ) as client:
-                response = await client.get(url, headers=headers)
+        proxies = {"http://": self.proxy_url, "https://": self.proxy_url}
 
-                if response.status_code == 200:
-                    content_length = len(response.text)
-                    fact_logger.logger.info(
-                        f"[ResProxy] Fetched {url} via residential proxy "
-                        f"({content_length} chars, status {response.status_code})"
+        for attempt in range(1, max_retries + 1):
+            try:
+                async with httpx.AsyncClient(
+                    proxies=proxies,
+                    timeout=timeout,
+                    follow_redirects=True,
+                    verify=False,  # some proxy endpoints use self-signed certs
+                ) as client:
+                    response = await client.get(url, headers=headers)
+
+                    if response.status_code == 200:
+                        content_length = len(response.text)
+                        fact_logger.logger.info(
+                            f"[ResProxy] Fetched {url} (attempt {attempt}/{max_retries}, "
+                            f"{content_length} chars, status {response.status_code})"
+                        )
+                        return response.text
+
+                    fact_logger.logger.warning(
+                        f"[ResProxy] HTTP {response.status_code} for {url} "
+                        f"(attempt {attempt}/{max_retries})"
                     )
-                    return response.text
+                    # Non-200 but not a network error -- still worth retrying
+                    # (residential node may rotate to a different exit IP)
 
+            except httpx.TimeoutException:
                 fact_logger.logger.warning(
-                    f"[ResProxy] HTTP {response.status_code} for {url}"
+                    f"[ResProxy] Timeout fetching {url} (attempt {attempt}/{max_retries})"
                 )
-                return None
+            except Exception as e:
+                fact_logger.logger.warning(
+                    f"[ResProxy] Error fetching {url} (attempt {attempt}/{max_retries}): {e}"
+                )
 
-        except httpx.TimeoutException:
-            fact_logger.logger.warning(f"[ResProxy] Timeout fetching {url}")
-            return None
-        except Exception as e:
-            fact_logger.logger.warning(f"[ResProxy] Error fetching {url}: {e}")
-            return None
+            if attempt < max_retries:
+                fact_logger.logger.info(
+                    f"[ResProxy] Retrying {url} in {RESIDENTIAL_PROXY_RETRY_DELAY}s "
+                    f"(attempt {attempt + 1}/{max_retries})"
+                )
+                await asyncio.sleep(RESIDENTIAL_PROXY_RETRY_DELAY)
+
+        fact_logger.logger.warning(
+            f"[ResProxy] All {max_retries} attempts failed for {url}"
+        )
+        return None

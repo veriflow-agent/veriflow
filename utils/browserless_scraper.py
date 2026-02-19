@@ -806,29 +806,43 @@ class BrowserlessScraper:
 
             except HTTPBlockedError:
                 fact_logger.logger.info(
-                    f"HTTP block detected for {domain} -- breaking to ScrapingBee fallback"
+                    f"[ResProxy] HTTP 401 block detected for {domain} -- "
+                    f"skipping other fallbacks, going directly to residential proxy"
                 )
                 http_blocked = True
                 self.url_failure_reasons[url] = "http_blocked"
-                break  # Exit strategy loop, fall through to ScrapingBee
+                # Go directly to residential proxy -- ScrapingBee and CloudScraper
+                # will also be blocked by the same IP-reputation check, not worth trying.
+                rp_content = await self._try_residential_proxy_fallback(
+                    url, domain, start_time, browser_index, browser
+                )
+                if rp_content:
+                    self.url_failure_reasons.pop(url, None)
+                    return rp_content
+                # Residential proxy exhausted its own retries -- nothing left to try.
+                fact_logger.logger.warning(
+                    f"[ResProxy] Residential proxy failed after retries for {domain} -- giving up"
+                )
+                break
 
-        # All Playwright strategies failed (or HTTP blocked) -- try ScrapingBee
-        sb_content = await self._try_scrapingbee_fallback(url, domain, start_time, browser_index, browser)
-        if sb_content:
-            self.url_failure_reasons.pop(url, None)  # Clear -- fallback succeeded
-            return sb_content
+        # All Playwright strategies failed (no HTTP block) -- try ScrapingBee
+        if not http_blocked:
+            sb_content = await self._try_scrapingbee_fallback(url, domain, start_time, browser_index, browser)
+            if sb_content:
+                self.url_failure_reasons.pop(url, None)  # Clear -- fallback succeeded
+                return sb_content
 
-        # ScrapingBee failed -- try ResidentialProxy (IP-reputation-blocked sites: Reuters, Bloomberg, etc.)
-        rp_content = await self._try_residential_proxy_fallback(url, domain, start_time, browser_index, browser)
-        if rp_content:
-            self.url_failure_reasons.pop(url, None)  # Clear -- fallback succeeded
-            return rp_content
+            # ScrapingBee failed -- try ResidentialProxy (IP-reputation-blocked sites)
+            rp_content = await self._try_residential_proxy_fallback(url, domain, start_time, browser_index, browser)
+            if rp_content:
+                self.url_failure_reasons.pop(url, None)  # Clear -- fallback succeeded
+                return rp_content
 
-        # ResidentialProxy also failed -- try CloudScraper (Cloudflare JS challenge bypass)
-        cs_content = await self._try_cloudscraper_fallback(url, domain, start_time, browser_index, browser)
-        if cs_content:
-            self.url_failure_reasons.pop(url, None)  # Clear -- fallback succeeded
-            return cs_content
+            # ResidentialProxy also failed -- try CloudScraper (Cloudflare JS challenge bypass)
+            cs_content = await self._try_cloudscraper_fallback(url, domain, start_time, browser_index, browser)
+            if cs_content:
+                self.url_failure_reasons.pop(url, None)  # Clear -- fallback succeeded
+                return cs_content
 
         # Everything failed -- set final reason if not already set (paywall takes priority)
         if url not in self.url_failure_reasons:
