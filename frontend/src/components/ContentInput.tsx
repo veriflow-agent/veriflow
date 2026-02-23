@@ -70,7 +70,7 @@ const modeDescriptions: Record<string, { label: string; hint: string }> = {
   },
   "llm-output": {
     label: "LLM output verification",
-    hint: "Checks if AI-generated text truly matches the sources it cites. Verifies claims line by line against the linked materials and flags hallucinations, unsupported statements, citation mismatches, and misleading framing. Copy and paste the full AI response together with its source links (ChatGPT, Perplexity, etc.)",
+    hint: "Checks if AI-generated text truly matches the sources it cites. Verifies claims line by line against the linked materials and flags hallucinations, unsupported statements, citation mismatches, and misleading framing.",
   },
 };
 
@@ -80,7 +80,7 @@ const simplePlaceholders: Record<string, string> = {
   "bias-analysis": "Paste article or text here...",
   "lie-detection": "Paste article or text here...",
   "manipulation": "Paste article or text here...",
-  "llm-output": "Paste the AI response with its source links here...",
+  "llm-output": "Copy and paste the full AI response together with its source links (ChatGPT, Perplexity, etc.)",
 };
 
 // ---------------------------------------------------------------------------
@@ -224,7 +224,7 @@ const ContentInput = ({
                       onClick={() => onSwitchMode("key-claims")}
                       className="underline font-medium hover:opacity-80"
                     >
-                      Key Claims
+                      Key Claims Verification
                     </button>{" "}
                     for text without links.
                   </>

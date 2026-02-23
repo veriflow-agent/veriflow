@@ -107,11 +107,11 @@ export const MODE_ENDPOINTS: Record<AnalysisMode, string> = {
 
 export const MODE_INFO: Record<AnalysisMode, { label: string; description: string }> = {
   "comprehensive": { label: "Comprehensive Analysis", description: "Full verification -- checks source, author & content quality" },
-  "key-claims": { label: "Key Claims", description: "Verify 2-3 main arguments" },
+  "key-claims": { label: "Key Claims Verification", description: "Verify 2-3 main arguments" },
   "bias-analysis": { label: "Bias Analysis", description: "Detect political or ideological bias" },
   "lie-detection": { label: "Deception Detection", description: "Find linguistic markers of deception and disinformation" },
   "manipulation": { label: "Manipulation Check", description: "Detect agenda & fact distortion" },
-  "llm-output": { label: "LLM Output", description: "Verify AI-generated content" },
+  "llm-output": { label: "LLM Output Verification", description: "Verify AI-generated content" },
 };
 
 export function buildRequestBody(
