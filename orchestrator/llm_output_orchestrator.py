@@ -198,6 +198,13 @@ class LLMInterpretationOrchestrator:
                         if claim_source_issues:
                             verification.source_issues = claim_source_issues
 
+                        # If ALL cited sources failed, mark as cannot_verify
+                        if claim.cited_sources and len(claim_source_issues) == len(claim.cited_sources):
+                            verification.cannot_verify = True
+                            fact_logger.logger.info(
+                                f"Claim {claim.id} cannot be verified - all {len(claim.cited_sources)} source(s) are blocked/inaccessible"
+                            )
+
                         # Update progress with score
                         score_label = self._get_score_label(verification.verification_score)
                         job_manager.add_progress(
@@ -395,17 +402,26 @@ class LLMInterpretationOrchestrator:
 
     def _create_summary(self, results: list, claims: list, sources: list) -> dict:
         """Create summary statistics"""
-        scores = [r.verification_score for r in results]
+        # Separate verifiable from cannot-verify results
+        cannot_verify_results = [r for r in results if getattr(r, 'cannot_verify', False)]
+        verifiable_results = [r for r in results if not getattr(r, 'cannot_verify', False)]
+
+        scores = [r.verification_score for r in verifiable_results]
 
         return {
             'total_claims': len(claims),
             'total_sources': len(sources),
+            'cannot_verify_count': len(cannot_verify_results),
             'average_score': sum(scores) / len(scores) if scores else 0.0,
             'accurate_count': len([s for s in scores if s >= 0.9]),
             'mostly_accurate_count': len([s for s in scores if 0.75 <= s < 0.9]),
             'partially_accurate_count': len([s for s in scores if 0.6 <= s < 0.75]),
             'misleading_count': len([s for s in scores if 0.3 <= s < 0.6]),
             'false_count': len([s for s in scores if s < 0.3]),
+            # Flat counts for the frontend summary grid
+            'verified_count': len([s for s in scores if s >= 0.9]),
+            'partial_count': len([s for s in scores if 0.6 <= s < 0.9]),
+            'unverified_count': len([s for s in scores if s < 0.6]),
             'score_distribution': {
                 'min': min(scores) if scores else 0.0,
                 'max': max(scores) if scores else 0.0,

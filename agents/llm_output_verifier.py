@@ -37,6 +37,7 @@ class LLMVerificationResult(BaseModel):
     excerpts: List[Dict] = Field(default_factory=list)
     cited_source_urls: List[str] = Field(default_factory=list)
     source_issues: List[Dict] = Field(default_factory=list)  # [{url, reason, domain}]
+    cannot_verify: bool = False  # True when ALL cited sources are blocked/inaccessible
 
 
 class LLMOutputVerifier:

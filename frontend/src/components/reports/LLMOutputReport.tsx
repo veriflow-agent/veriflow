@@ -7,19 +7,21 @@ import { useState } from "react";
 // Backend LLMVerificationResult fields:
 //   claim_id, claim_text, verification_score (0-1),
 //   assessment, interpretation_issues, wording_comparison,
-//   confidence, reasoning, excerpts, cited_source_urls
+//   confidence, reasoning, excerpts, cited_source_urls,
+//   source_issues, cannot_verify
 type VerResult = {
   claim_id: string;
-  claim_text: string;           // was fact_text
+  claim_text: string;
   verification_score: number;
-  assessment: string;           // was explanation
+  assessment: string;
   interpretation_issues?: string[];
   wording_comparison?: Record<string, any>;
   confidence?: number;
   reasoning?: string;
   excerpts?: Record<string, any>[];
-  cited_source_urls?: string[];  // was source_url / source_domain
+  cited_source_urls?: string[];
   source_issues?: { url: string; domain: string; reason: string }[];
+  cannot_verify?: boolean;  // true when ALL cited sources are blocked/inaccessible
 };
 
 type Props = {
@@ -32,10 +34,11 @@ type Props = {
       verified_count?: number;
       partial_count?: number;
       unverified_count?: number;
+      cannot_verify_count?: number;
     };
     session_id?: string;
     processing_time?: number;
-    duration?: number;          // backend uses duration, not processing_time
+    duration?: number;
     audit_url?: string;
   };
 };
@@ -51,9 +54,9 @@ const statusStyles: Record<string, string> = {
   verified: "bg-score-high/15 text-score-high",
   partially_verified: "bg-score-moderate/15 text-score-moderate",
   unverified: "bg-score-low/15 text-score-low",
+  cannot_verify: "bg-muted text-muted-foreground",
 };
 
-// Extract domain from URL for display
 const getDomain = (url: string): string => {
   try {
     return new URL(url).hostname.replace("www.", "");
@@ -67,11 +70,16 @@ const LLMOutputReport = ({ data }: Props) => {
   const results = data.results || data.factCheck?.results || [];
   const processingTime = data.processing_time ?? data.duration;
 
-  const verified = results.filter(r => deriveStatus(r.verification_score) === "verified").length;
-  const issues = results.filter(r => deriveStatus(r.verification_score) === "partially_verified").length;
-  const unverified = results.filter(r => deriveStatus(r.verification_score) === "unverified").length;
+  // Separate cannot_verify claims from scorable claims
+  const cannotVerifyResults = results.filter(r => r.cannot_verify === true);
+  const scorableResults = results.filter(r => !r.cannot_verify);
 
-  // Collect unique source issues across all claims
+  const verified = scorableResults.filter(r => deriveStatus(r.verification_score) === "verified").length;
+  const issues = scorableResults.filter(r => deriveStatus(r.verification_score) === "partially_verified").length;
+  const unverified = scorableResults.filter(r => deriveStatus(r.verification_score) === "unverified").length;
+  const cannotVerify = cannotVerifyResults.length;
+
+  // Collect unique source issues across all claims (for the top banner)
   const allSourceIssues = new Map<string, { domain: string; reason: string }>();
   results.forEach(r => {
     r.source_issues?.forEach(si => {
@@ -88,7 +96,7 @@ const LLMOutputReport = ({ data }: Props) => {
       <div className="rounded-xl border border-border bg-card p-5">
         <h3 className="text-xl font-display font-semibold mb-1">Verification Results</h3>
 
-        <div className="flex gap-6 mb-4 p-3 rounded-lg bg-secondary">
+        <div className="flex gap-6 mb-4 p-3 rounded-lg bg-secondary flex-wrap">
           <div className="text-center">
             <span className="block text-xl font-bold text-score-high">{verified}</span>
             <span className="text-sm text-muted-foreground">Verified</span>
@@ -101,6 +109,12 @@ const LLMOutputReport = ({ data }: Props) => {
             <span className="block text-xl font-bold text-score-low">{unverified}</span>
             <span className="text-sm text-muted-foreground">Unverified</span>
           </div>
+          {cannotVerify > 0 && (
+            <div className="text-center">
+              <span className="block text-xl font-bold text-muted-foreground">{cannotVerify}</span>
+              <span className="text-sm text-muted-foreground">Cannot Verify</span>
+            </div>
+          )}
         </div>
 
         {/* Source access issues banner */}
@@ -124,8 +138,9 @@ const LLMOutputReport = ({ data }: Props) => {
 
         <div className="space-y-3">
           {results.map((r, i) => {
+            const isCannotVerify = r.cannot_verify === true;
             const score = Math.round(r.verification_score * 100);
-            const status = deriveStatus(r.verification_score);
+            const status = isCannotVerify ? "cannot_verify" : deriveStatus(r.verification_score);
             const isExpanded = expandedClaims[r.claim_id || String(i)];
 
             return (
@@ -136,22 +151,41 @@ const LLMOutputReport = ({ data }: Props) => {
                     "rounded px-2 py-0.5 text-xs font-semibold uppercase",
                     statusStyles[status] || "bg-muted text-muted-foreground"
                   )}>
-                    {status.replace("_", " ")}
+                    {isCannotVerify ? "Cannot Be Verified" : status.replace("_", " ")}
                   </span>
-                  <span className="text-sm text-muted-foreground ml-auto">{score}%</span>
+                  {!isCannotVerify && (
+                    <span className="text-sm text-muted-foreground ml-auto">{score}%</span>
+                  )}
                 </div>
-                <p className="text-base font-medium mb-1">{r.claim_text}</p>
-                <p className="text-sm text-muted-foreground leading-relaxed">{r.assessment}</p>
 
-                {/* Interpretation issues */}
-                {r.interpretation_issues && r.interpretation_issues.length > 0 && (
-                  <div className="mt-2 space-y-1">
-                    {r.interpretation_issues.map((issue, j) => (
-                      <p key={j} className="text-sm text-score-low pl-3 border-l-2 border-score-low">
-                        {issue}
-                      </p>
-                    ))}
+                <p className="text-base font-medium mb-1">{r.claim_text}</p>
+
+                {/* Cannot verify: show manual check note instead of AI assessment */}
+                {isCannotVerify ? (
+                  <div className="mt-2 rounded-lg border border-border bg-secondary/50 px-3 py-2.5">
+                    <p className="text-sm text-muted-foreground leading-relaxed">
+                      All cited sources for this claim are inaccessible (paywall or blocked). 
+                      Automatic verification was not possible.
+                    </p>
+                    <p className="text-sm font-medium mt-1">
+                      Please verify this claim manually by opening the source link(s) below in your browser.
+                    </p>
                   </div>
+                ) : (
+                  <>
+                    <p className="text-sm text-muted-foreground leading-relaxed">{r.assessment}</p>
+
+                    {/* Interpretation issues */}
+                    {r.interpretation_issues && r.interpretation_issues.length > 0 && (
+                      <div className="mt-2 space-y-1">
+                        {r.interpretation_issues.map((issue, j) => (
+                          <p key={j} className="text-sm text-score-low pl-3 border-l-2 border-score-low">
+                            {issue}
+                          </p>
+                        ))}
+                      </div>
+                    )}
+                  </>
                 )}
 
                 {/* Cited sources with failure status */}
@@ -205,8 +239,8 @@ const LLMOutputReport = ({ data }: Props) => {
                   </div>
                 )}
 
-                {/* Expandable reasoning */}
-                {r.reasoning && (
+                {/* Expandable reasoning - only for scorable claims */}
+                {!isCannotVerify && r.reasoning && (
                   <>
                     <button
                       onClick={() => setExpandedClaims(prev => ({
