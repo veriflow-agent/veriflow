@@ -123,12 +123,19 @@ class SourceCredibilityService:
 
     def _extract_domain(self, url: str) -> str:
         """Extract clean root domain from URL (strips subdomains like 'edition.' or 'www.')"""
+        # Try tldextract first - use offline snapshot to avoid network calls on Railway
         try:
             import tldextract
-            extracted = tldextract.extract(url)
+            # suffix_list_urls=() disables downloading the PSL list - uses bundled snapshot
+            no_fetch = tldextract.TLDExtract(suffix_list_urls=())
+            extracted = no_fetch(url)
             if extracted.domain and extracted.suffix:
                 return f"{extracted.domain}.{extracted.suffix}".lower()
-            # Fallback: parse manually
+        except Exception as e:
+            fact_logger.logger.debug(f"tldextract failed for {url}: {e}")
+
+        # Fallback: urlparse with manual www stripping
+        try:
             parsed = urlparse(url)
             domain = parsed.netloc.lower()
             if domain.startswith('www.'):
