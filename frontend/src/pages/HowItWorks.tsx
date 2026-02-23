@@ -8,37 +8,37 @@ const modes = [
     title: "LLM Output Verification",
     bestFor: "Confirming that AI summaries match their sources",
     description:
-      "Retrieves the original sources cited by an LLM and compares them with the generated output to confirm the content is accurate and faithful. Detects misinterpretations, missing context, selective quoting, and hallucinated claims.",
-  },
-  {
-    title: "Key Claims Analysis",
-    bestFor: "Fast validation of the main points",
-    description:
-      "Identifies the 2-3 most important factual claims in a text and verifies each one against credible sources. Ideal for quick checks of headlines, short articles, or social media posts.",
-  },
-  {
-    title: "Bias Analysis",
-    bestFor: "Identifying framing and ideological slant",
-    description:
-      "Analyzes political and ideological positioning through language patterns, framing choices, and narrative emphasis -- helping assess how perspective may shape interpretation even when factual claims appear correct.",
-  },
-  {
-    title: "Manipulation Detection",
-    bestFor: "Detecting strategic distortion and misleading techniques",
-    description:
-      "Flags manipulation methods such as selective omission, context stripping, false equivalence, emotional framing, and other techniques used to distort perception and influence conclusions.",
-  },
-  {
-    title: "Deception Detection",
-    bestFor: "Identifying linguistic signals associated with deceptive communication",
-    description:
-      "Examines text for patterns commonly linked to deceptive messaging, including hedging, distancing language, excessive qualifiers, inconsistencies, and other linguistic markers.",
+      "Cross-checks AI-generated answers against their cited sources to confirm that each claim is actually supported, flagging unsupported statements, exaggerations, citation mismatches, and missing context. Research shows that retrieval-augmented, source-grounded workflows can reduce hallucination rates by over 40% in some settings. In internal benchmarking, VeriFlow detects approximately 80-90% of incorrect or unsupported statements when claims are directly checkable against cited material.",
   },
   {
     title: "Comprehensive Analysis",
     bestFor: "Full-scope content risk assessment",
     description:
-      "Runs an integrated review combining source verification, key claim validation, bias detection, manipulation analysis, and deception-signal detection to provide a complete reliability and risk profile of any text.",
+      "Performs full-spectrum verification, evaluating source credibility, author reliability, and content quality. Runs an integrated review combining source verification, key claim validation, bias detection, manipulation analysis, and deception-signal detection to provide a complete reliability and risk profile of any text.",
+  },
+  {
+    title: "Key Claims Analysis",
+    bestFor: "Fast validation of the main points",
+    description:
+      "Isolates and rigorously verifies the most important arguments and factual assertions in a text. Identifies the 2-3 most important factual claims and verifies each one against credible sources. Ideal for quick checks of headlines, short articles, or social media posts.",
+  },
+  {
+    title: "Bias Analysis",
+    bestFor: "Identifying framing and ideological slant",
+    description:
+      "Detects political or ideological slant through language patterns, framing choices, and narrative emphasis -- helping assess how perspective may shape interpretation even when factual claims appear correct.",
+  },
+  {
+    title: "Deception Detection",
+    bestFor: "Identifying linguistic signals associated with deceptive communication",
+    description:
+      "Identifies linguistic markers of misinformation and coordinated narratives. Examines text for patterns commonly linked to deceptive messaging, including hedging, distancing language, excessive qualifiers, inconsistencies, and other linguistic markers.",
+  },
+  {
+    title: "Manipulation Check",
+    bestFor: "Detecting strategic distortion and misleading techniques",
+    description:
+      "Surfaces agenda-driven framing, fact distortion, cherry-picking, and causal exaggeration. Flags manipulation methods such as selective omission, context stripping, false equivalence, emotional framing, and other techniques used to distort perception and influence conclusions.",
   },
 ];
 
@@ -64,18 +64,38 @@ const comparisonRows = [
 const tiers = [
   {
     name: "Tier 1 -- Primary Authority",
+    score: "Score 0.90+",
     description:
-      "Official websites of entities mentioned, government sources, major news organizations (Reuters, AP, BBC, NYT), academic institutions, Wikipedia, verified social media accounts.",
+      "Official or highest-authority source for the specific claim being verified: official websites of entities mentioned, government sources (.gov), major wire services (AP, Reuters, AFP), established fact-checkers (Snopes, PolitiFact, FactCheck.org), academic institutions, and verified social media accounts.",
+    filtered: false,
   },
   {
-    name: "Tier 2 -- Credible Secondary",
+    name: "Tier 2 -- Highly Credible",
+    score: "Score 0.80+",
     description:
-      "Established publications with editorial standards, industry publications, trade journals, professional review sites, reputable blogs with author credentials.",
+      "Major established news organizations with strong editorial standards and high factual reporting: NYT, BBC, WSJ, The Guardian, Washington Post, NPR, CBC, and Wikipedia for factual reference.",
+    filtered: false,
   },
   {
-    name: "Tier 3 -- Filtered Out",
+    name: "Tier 3 -- Credible",
+    score: "Score 0.65+",
     description:
-      "Personal blogs without credentials, user-generated content, clickbait sites, sources with poor factual track records.",
+      "Established platforms with editorial standards, useful for corroboration: regional or specialized news outlets, industry publications, trade journals, and professional review sites with editorial oversight.",
+    filtered: false,
+  },
+  {
+    name: "Tier 4 -- Low Credibility",
+    score: "Score 0.40+",
+    description:
+      "Sources with questionable reliability: personal blogs without credentials, user-generated content (Reddit threads, forum posts), tabloids, clickbait sites, anonymous authorship, and known highly biased sources with a mixed factual track record. Filtered out and not used as evidence.",
+    filtered: true,
+  },
+  {
+    name: "Tier 5 -- Unreliable",
+    score: "Score 0.15+",
+    description:
+      "Do not use for fact verification: known propaganda outlets, conspiracy theory sites, satire sites, content farms, SEO spam, and sites flagged for disinformation. Always discarded.",
+    filtered: true,
   },
 ];
 
@@ -116,24 +136,32 @@ const HowItWorks = () => {
               How It Works
             </h1>
             <p className="text-lg text-muted-foreground leading-relaxed">
-              VeriFlow is a risk reduction and verification tool that checks
-              LLM outputs against original sources and analyzes any text for
-              bias, deception signals, manipulation patterns, and agenda-driven
-              framing.
+              VeriFlow is a comprehensive risk-reduction and verification platform
+              that detects hallucinations, unsupported or overstated claims,
+              citation mismatches, missing context, fabricated narratives, logical
+              inconsistencies, bias, deception signals, and manipulative framing
+              in large language model outputs -- and in any written text -- through
+              a multi-layered analysis system.
             </p>
           </div>
 
           {/* What It Is */}
           <Section title="What It Is">
             <p className="text-muted-foreground leading-relaxed mb-4">
-              VeriFlow is designed for situations where inaccurate text can
-              create legal, financial, regulatory, or reputational consequences.
-              It works by comparing AI-generated or human-written content with
-              the original source materials and checking whether the key
-              statements in the text are actually supported by what the sources
-              say. It flags unsupported claims, incorrect or fabricated
-              citations, missing context, selective quoting, and cases where the
-              conclusion is not justified by the evidence provided.
+              VeriFlow eliminates the need to manually check every claim. Instead
+              of reviewing each statement yourself, it automatically verifies
+              claims against sources, analyzes narrative structure, and flags risks
+              in seconds. It detects fake news patterns, identifies manipulation
+              and deceptive language, and highlights where framing may distort
+              meaning or intent.
+            </p>
+            <p className="text-muted-foreground leading-relaxed mb-4">
+              Together, these layers create a complete verification workflow --
+              source validation, factual reliability assessment, fake detection,
+              bias and deception analysis, manipulation detection, and reasoning
+              control -- transforming AI outputs, articles, and texts into
+              auditable, risk-assessed documents suitable for professional and
+              high-stakes environments.
             </p>
             <p className="text-muted-foreground leading-relaxed">
               In addition to factual and source verification, VeriFlow performs
@@ -141,9 +169,9 @@ const HowItWorks = () => {
               manipulation patterns, and highlight linguistic signals associated
               with deception or disinformation-style writing. The output is
               presented as a structured assessment that can be reviewed by
-              analysts, lawyers, compliance teams, researchers, or
-              communications teams -- and used as documentation to support
-              responsible decision-making and governance.
+              analysts, lawyers, compliance teams, researchers, or communications
+              teams -- and used as documentation to support responsible
+              decision-making and governance.
             </p>
           </Section>
 
@@ -246,8 +274,8 @@ const HowItWorks = () => {
             </p>
           </Section>
 
-          {/* Six Analysis Modes */}
-          <Section title="Six Analysis Modes">
+          {/* Analysis Modules */}
+          <Section title="Analysis Modules">
             <div className="space-y-8">
               {modes.map((mode) => (
                 <div key={mode.title}>
@@ -260,6 +288,23 @@ const HowItWorks = () => {
                   </p>
                 </div>
               ))}
+              <div>
+                <h3 className="text-lg font-semibold mb-1">
+                  Full Fact-Check{" "}
+                  <span className="ml-2 text-xs font-medium text-muted-foreground border border-border rounded px-1.5 py-0.5 align-middle">
+                    Coming Soon
+                  </span>
+                </h3>
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-2">
+                  Best for: Independent corroboration beyond cited sources
+                </p>
+                <p className="text-muted-foreground leading-relaxed">
+                  Extends verification beyond cited links to broader independent
+                  corroboration via live web search, checking claims against the
+                  wider information landscape rather than only the sources an AI
+                  chose to cite.
+                </p>
+              </div>
             </div>
           </Section>
 
@@ -283,17 +328,33 @@ const HowItWorks = () => {
               Source Credibility System
             </h3>
             <p className="text-muted-foreground leading-relaxed mb-5">
-              VeriFlow uses a three-tier credibility system. When sources
-              conflict, Tier 1 always takes precedence.
+              VeriFlow uses a five-tier credibility system to evaluate every
+              source used in verification. When sources conflict, higher tiers
+              always take precedence. Tiers 4 and 5 are filtered out and never
+              used as evidence.
             </p>
 
-            <div className="space-y-4 mb-8">
+            <div className="space-y-3 mb-8">
               {tiers.map((tier) => (
                 <div
                   key={tier.name}
-                  className="rounded-lg border border-border bg-card p-4"
+                  className={`rounded-lg border bg-card p-4 ${
+                    tier.filtered ? "opacity-60" : ""
+                  } border-border`}
                 >
-                  <h4 className="font-semibold text-sm mb-1">{tier.name}</h4>
+                  <div className="flex items-center justify-between mb-1">
+                    <h4 className="font-semibold text-sm">{tier.name}</h4>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground">
+                        {tier.score}
+                      </span>
+                      {tier.filtered && (
+                        <span className="text-xs font-medium border border-border rounded px-1.5 py-0.5 text-muted-foreground">
+                          Filtered Out
+                        </span>
+                      )}
+                    </div>
+                  </div>
                   <p className="text-muted-foreground text-sm leading-relaxed">
                     {tier.description}
                   </p>
@@ -387,7 +448,7 @@ const HowItWorks = () => {
           {/* Powered By */}
           <Section title="Powered By">
             <div className="flex flex-wrap gap-3">
-              {["GPT-4o", "LangChain", "Brave Search", "Browserless"].map(
+              {["GPT-4o", "Claude", "LangChain", "Brave Search", "Browserless"].map(
                 (tech) => (
                   <span
                     key={tech}

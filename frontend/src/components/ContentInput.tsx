@@ -86,7 +86,7 @@ const ContentInput = ({
     "bias-analysis": "Detects political or ideological lean, framing techniques, and one-sided sourcing patterns. Paste a news article, op-ed, or any content...",
     "lie-detection": "Scans for linguistic markers of deception, hedging, and unsupported assertions. Paste the article or text to analyze...",
     "manipulation": "Flags agenda-driven framing, cherry-picked data, false equivalences, and emotional manipulation techniques. Paste an article or text to check...",
-    "llm-output": "Checks whether AI-generated text matches the sources it cites - flags unsupported claims, missing context, and citation errors. Paste output with source links from ChatGPT, Perplexity, etc...",
+    "llm-output": "Checks if AI-generated text truly matches the sources it cites. Verifies claims line by line against the linked materials and flags hallucinations, unsupported or overstated statements, missing context, quote/citation mismatches, and misleading framing. Just copy and paste the AI output together with its source links (ChatGPT, Perplexity, etc.)",
   };
 
   return (
