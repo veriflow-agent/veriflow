@@ -397,15 +397,21 @@ class PublicationBiasDetector:
         try:
             fact_logger.logger.info(f"Looking for MBFC page: {domain}")
 
-            # Step 1: Search MBFC using precise site: + exact domain match
-            # Format: site:https://mediabiasfactcheck.com/ "the-express.com"
-            # This returns fewer, more precise results than a loose query
-            search_query = f'site:https://mediabiasfactcheck.com/ "{domain}"'
+            # Step 1: Search MBFC using correct Brave site: syntax (bare domain, no quotes)
+            # Format: site:mediabiasfactcheck.com cnn.com
+            search_query = f"site:mediabiasfactcheck.com {domain}"
+            fact_logger.logger.info(f"MBFC search query: {search_query}")
             results = await self.brave_searcher.search(search_query)
 
             if not results.results:
-                # Precise query returned nothing -- domain is not on MBFC
-                fact_logger.logger.info(f"No MBFC results for {domain} (exact match) -- not on MBFC")
+                # Fallback: search by publication name only (e.g. "cnn" from "cnn.com")
+                name_part = domain.split('.')[0]
+                fallback_query = f"site:mediabiasfactcheck.com {name_part}"
+                fact_logger.logger.info(f"No results - trying fallback: {fallback_query}")
+                results = await self.brave_searcher.search(fallback_query)
+
+            if not results.results:
+                fact_logger.logger.info(f"No MBFC results found for {domain}")
                 return None
 
             # Step 2: With precise search, results are highly targeted.
