@@ -146,7 +146,7 @@ const Index = () => {
 
       <div className="flex flex-1 overflow-hidden">
         {/* ── Fixed left sidebar ── */}
-        <aside className="hidden md:flex w-60 shrink-0 flex-col border-r border-border bg-card px-3 py-6 overflow-y-auto fixed top-0 left-0 h-screen z-10">
+        <aside className="hidden md:flex w-60 shrink-0 flex-col border-r border-border bg-card px-3 py-6 overflow-y-auto fixed top-[57px] left-0 bottom-0 z-10">
           <ModeSelector
             selected={mode}
             onSelect={handleModeSelect}
