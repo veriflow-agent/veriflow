@@ -20,48 +20,40 @@ type Props = {
 };
 
 const ModeSelector = ({ selected, onSelect, analyzedMode }: Props) => (
-  <div>
-    <p className="text-sm font-medium uppercase tracking-widest text-muted-foreground mb-3">
-      Choose Analysis Mode
+  <nav className="flex flex-col gap-1">
+    <p className="px-3 pb-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+      Analysis Mode
     </p>
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-      {ALL_MODES.map((m) => {
-        const isDisabled = m.disabled;
-        const isSelected = selected === m.id;
-        const isAnalyzed = analyzedMode === m.id;
-        const info = (MODE_INFO as any)[m.id];
+    {ALL_MODES.map((m) => {
+      const isDisabled = m.disabled;
+      const isSelected = selected === m.id;
+      const isAnalyzed = analyzedMode === m.id;
+      const info = (MODE_INFO as any)[m.id];
 
-        return (
-          <button
-            key={m.id}
-            disabled={isDisabled}
-            onClick={() => !isDisabled && onSelect(m.id as AnalysisMode)}
-            className={cn(
-              "rounded-lg border px-5 py-4 text-left transition-all duration-200 relative",
-              isSelected
-                ? "bg-primary text-primary-foreground border-primary"
-                : "bg-card text-card-foreground border-border hover:border-foreground/30",
-              isDisabled && "opacity-50 cursor-not-allowed",
-              // Subtle ring on the analyzed mode when it's not selected
-              !isSelected && isAnalyzed && "ring-1 ring-primary/40"
-            )}
-          >
-            <span className="block text-base font-semibold font-display">
-              {info?.label || "Full Fact-Check"}
-            </span>
-            <span
-              className={cn(
-                "block text-sm mt-0.5",
-                isSelected ? "text-primary-foreground/70" : "text-muted-foreground"
-              )}
-            >
-              {isDisabled ? "Coming soon" : info?.description}
-            </span>
-          </button>
-        );
-      })}
-    </div>
-  </div>
+      return (
+        <button
+          key={m.id}
+          disabled={isDisabled}
+          onClick={() => !isDisabled && onSelect(m.id as AnalysisMode)}
+          className={cn(
+            "w-full rounded-md px-3 py-2.5 text-left text-sm transition-colors",
+            isSelected
+              ? "bg-primary text-primary-foreground"
+              : "text-foreground/80 hover:bg-accent",
+            isDisabled && "opacity-40 cursor-not-allowed",
+            !isSelected && isAnalyzed && "ring-1 ring-primary/30"
+          )}
+        >
+          <span className="block font-medium leading-tight">
+            {info?.label || "Full Fact-Check"}
+          </span>
+          {isDisabled && (
+            <span className="block text-xs opacity-60 mt-0.5">Coming soon</span>
+          )}
+        </button>
+      );
+    })}
+  </nav>
 );
 
 export default ModeSelector;
