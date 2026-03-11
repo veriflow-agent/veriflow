@@ -2,7 +2,6 @@
 import { useState, useCallback, useRef } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import Header from "@/components/Header";
-import Footer from "@/components/Footer";
 import ModeSelector from "@/components/ModeSelector";
 import ContentInput from "@/components/ContentInput";
 import SourceCard from "@/components/SourceCard";
@@ -141,12 +140,22 @@ const Index = () => {
   const isProcessing = state === "analyzing" || state === "fetching";
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="h-screen flex flex-col overflow-hidden">
       <Header />
 
+      {/* ── Extended header strip with tagline ── */}
+      <div className="flex border-b border-border shrink-0 bg-background">
+        <div className="hidden md:block w-60 shrink-0 border-r border-border" />
+        <div className="flex-1 px-6 py-4">
+          <p className="text-muted-foreground text-base">
+            AI error filter &amp; text verification
+          </p>
+        </div>
+      </div>
+
       <div className="flex flex-1 overflow-hidden">
-        {/* ── Fixed left sidebar ── */}
-        <aside className="hidden md:flex w-60 shrink-0 flex-col border-r border-border bg-card px-3 py-6 overflow-y-auto fixed top-[57px] left-0 bottom-0 z-10">
+        {/* ── Left sidebar ── starts flush below the strip ── */}
+        <aside className="hidden md:flex w-60 shrink-0 flex-col border-r border-border bg-card px-3 py-4 overflow-y-auto">
           <ModeSelector
             selected={mode}
             onSelect={handleModeSelect}
@@ -155,9 +164,9 @@ const Index = () => {
         </aside>
 
         {/* ── Main content area ── */}
-        <main className="flex-1 overflow-y-auto md:ml-60">
+        <main className="flex-1 overflow-y-auto">
           <div className="mx-auto max-w-3xl px-6 py-10">
-            {/* Hero */}
+            {/* Mode heading */}
             <h1 className="text-3xl md:text-4xl font-display mb-1">
               {MODE_INFO[mode].label}
             </h1>
@@ -275,7 +284,6 @@ const Index = () => {
         </main>
       </div>
 
-      <Footer />
     </div>
   );
 };
