@@ -147,7 +147,7 @@ const Index = () => {
       <div className="flex border-b border-border shrink-0 bg-background">
         <div className="hidden md:block w-60 shrink-0 border-r border-border" />
         <div className="flex-1 px-6 py-4">
-          <p className="text-muted-foreground text-base">
+          <p className="text-2xl font-bold" style={{ fontFamily: "'Onest', sans-serif" }}>
             AI error filter &amp; text verification
           </p>
         </div>
