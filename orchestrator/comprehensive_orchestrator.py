@@ -406,7 +406,8 @@ class ComprehensiveOrchestrator:
         content: str,
         job_id: str,
         stage1_results: Dict[str, Any],
-        shared_scraper=None
+        shared_scraper=None,
+        source_url: Optional[str] = None
     ) -> Tuple[str, Optional[Dict[str, Any]], Optional[str]]:
         """
         Run a single analysis mode
@@ -415,6 +416,8 @@ class ComprehensiveOrchestrator:
             shared_scraper: Optional ScrapeCache for deduplicating URL scrapes
                            across parallel modes. Passed to scraping-heavy modes
                            (key_claims, manipulation). Non-scraping modes ignore it.
+            source_url: Optional URL of the article being fact-checked.
+                       Passed to search-based modes to exclude from results.
 
         Returns: (mode_id, result_dict, error_message)
         """
@@ -433,7 +436,8 @@ class ComprehensiveOrchestrator:
                     source_context=source_context,
                     source_credibility=source_credibility,
                     standalone=False,  # Prevent overwriting comprehensive result
-                    shared_scraper=shared_scraper  # Phase 3: shared URL cache
+                    shared_scraper=shared_scraper,  # Phase 3: shared URL cache
+                    source_url=source_url  # Exclude original article from search results
                 )
                 return (mode_id, result, None)
 
@@ -500,7 +504,8 @@ class ComprehensiveOrchestrator:
         self,
         content: str,
         job_id: str,
-        stage1_results: Dict[str, Any]
+        stage1_results: Dict[str, Any],
+        source_url: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Stage 2: Mode Execution (PARALLEL with Shared Scrape Cache)
@@ -553,7 +558,8 @@ class ComprehensiveOrchestrator:
             tasks = [
                 self._run_single_mode(
                     mode_id, content, job_id, stage1_results,
-                    shared_scraper=shared_scraper
+                    shared_scraper=shared_scraper,
+                    source_url=source_url
                 )
                 for mode_id in selected_modes
             ]
@@ -943,7 +949,7 @@ class ComprehensiveOrchestrator:
             # STAGE 2: Parallel Mode Execution
             # ================================================================
             job_manager.add_progress(job_id, "Stage 2: Parallel mode execution starting...")
-            stage2_results = await self._run_stage2(content, job_id, stage1_results)
+            stage2_results = await self._run_stage2(content, job_id, stage1_results, source_url=source_url)
 
             self._check_cancellation(job_id)
             job_manager.add_progress(job_id, "Stage 2 complete")

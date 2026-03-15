@@ -24,6 +24,7 @@ Pipeline:
 from langsmith import traceable
 import time
 import asyncio
+from urllib.parse import urlparse
 from typing import List, Dict, Any, Optional, Tuple
 
 from utils.logger import fact_logger
@@ -125,6 +126,24 @@ class WebSearchOrchestrator:
             "unverified_count": len([r for r in results if r.match_score < 0.7])
         }
 
+    @staticmethod
+    def _normalize_url(url: str) -> str:
+        """Normalize a URL for comparison (strip trailing slash, fragment, lowercase)."""
+        parsed = urlparse(url.lower().strip())
+        path = parsed.path.rstrip('/')
+        return f"{parsed.scheme}://{parsed.netloc}{path}"
+
+    @staticmethod
+    def _filter_source_url_from_results(results: list, source_url: str) -> list:
+        """Remove search results that match the source URL being fact-checked."""
+        normalized_source = WebSearchOrchestrator._normalize_url(source_url)
+        filtered = []
+        for r in results:
+            result_url = r.get('url', '') if isinstance(r, dict) else getattr(r, 'url', '')
+            if WebSearchOrchestrator._normalize_url(result_url) != normalized_source:
+                filtered.append(r)
+        return filtered
+
     @traceable(
         name="web_search_fact_verification",
         run_type="chain",
@@ -134,7 +153,8 @@ class WebSearchOrchestrator:
         self,
         text_content: str,
         job_id: str,
-        shared_scraper=None
+        shared_scraper=None,
+        source_url: Optional[str] = None
     ) -> dict:
         """
         Process with full parallel processing and search audit
@@ -147,6 +167,9 @@ class WebSearchOrchestrator:
             shared_scraper: Optional shared ScrapeCache from comprehensive mode.
                            If provided, uses it instead of creating a new scraper.
                            The caller is responsible for closing it.
+            source_url: Optional URL of the article being fact-checked.
+                       Results from this URL will be excluded from Brave search
+                       to avoid verifying facts against the original source.
         """
         session_id = self.file_manager.create_session()
         start_time = time.time()
@@ -293,8 +316,26 @@ class WebSearchOrchestrator:
                     total_results += len(brave_results.results)
 
             search_duration = time.time() - search_start
+
+            # Filter out the source URL from search results to avoid
+            # verifying facts against the article being fact-checked
+            if source_url:
+                filtered_out = 0
+                for fact_id, search_results in search_results_by_fact.items():
+                    for query, brave_results in search_results.items():
+                        original_count = len(brave_results.results)
+                        brave_results.results = self._filter_source_url_from_results(
+                            brave_results.results, source_url
+                        )
+                        filtered_out += original_count - len(brave_results.results)
+                if filtered_out > 0:
+                    total_results -= filtered_out
+                    fact_logger.logger.info(
+                        f"Excluded {filtered_out} results matching source URL: {source_url}"
+                    )
+
             job_manager.add_progress(
-                job_id, 
+                job_id,
                 f"Found {total_results} potential sources in {search_duration:.1f}s"
             )
 
