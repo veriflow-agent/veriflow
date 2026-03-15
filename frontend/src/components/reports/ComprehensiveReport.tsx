@@ -1,13 +1,13 @@
 // src/components/reports/ComprehensiveReport.tsx
 import { cn } from "@/lib/utils";
-import { ScoreBadge, SessionInfo, getScoreColor, getScoreLabel } from "./shared";
+import { ScoreBadge, SessionInfo, getScoreColor, getScoreBg, getScoreLabel } from "./shared";
 import KeyClaimsReport from "./KeyClaimsReport";
 import BiasReport from "./BiasReport";
 import DeceptionReport from "./DeceptionReport";
 import ManipulationReport from "./ManipulationReport";
 import LLMOutputReport from "./LLMOutputReport";
 import { useState, useMemo } from "react";
-import { ChevronDown, ChevronUp, Copy, Check } from "lucide-react";
+import { ChevronDown, ChevronUp, Copy, Check, Shield, Search, Scale, AlertTriangle, Info } from "lucide-react";
 
 type Props = {
   data: {
@@ -49,6 +49,52 @@ const modeLabels: Record<string, string> = {
   lie_detection: "Deception Detection",
   llm_output_verification: "LLM Output Verification",
 };
+
+// Section styling for the parsed summary
+const summarySections: Record<string, { icon: typeof Shield; color: string; borderColor: string }> = {
+  VERDICT: { icon: Shield, color: "text-primary", borderColor: "border-primary" },
+  "FACT-CHECKING": { icon: Search, color: "text-score-moderate", borderColor: "border-score-moderate" },
+  "BIAS AND FRAMING": { icon: Scale, color: "text-score-elevated", borderColor: "border-score-elevated" },
+  "MANIPULATION AND DECEPTION": { icon: AlertTriangle, color: "text-score-low", borderColor: "border-score-low" },
+  CAVEATS: { icon: Info, color: "text-muted-foreground", borderColor: "border-muted-foreground" },
+};
+
+/** Parse the raw summary string into labeled sections */
+function parseSummary(summary: string): { label: string; text: string }[] {
+  const sectionLabels = Object.keys(summarySections);
+  const pattern = new RegExp(
+    `(${sectionLabels.map(l => l.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})\\s*[—–-]\\s*`,
+    "g"
+  );
+
+  const parts: { label: string; text: string }[] = [];
+  let lastIndex = 0;
+  let lastLabel = "";
+  let match: RegExpExecArray | null;
+
+  while ((match = pattern.exec(summary)) !== null) {
+    // Capture any text before this label as part of the previous section
+    if (lastLabel && match.index > lastIndex) {
+      parts.push({ label: lastLabel, text: summary.slice(lastIndex, match.index).trim() });
+    } else if (!lastLabel && match.index > 0) {
+      // Text before the first label — treat as unlabeled intro
+      const intro = summary.slice(0, match.index).trim();
+      if (intro) parts.push({ label: "", text: intro });
+    }
+    lastLabel = match[1];
+    lastIndex = match.index + match[0].length;
+  }
+
+  // Capture the final section
+  if (lastLabel) {
+    parts.push({ label: lastLabel, text: summary.slice(lastIndex).trim() });
+  } else if (summary.trim()) {
+    // No recognized sections — return as a single block
+    parts.push({ label: "", text: summary.trim() });
+  }
+
+  return parts;
+}
 
 const ComprehensiveReport = ({ data }: Props) => {
   // Auto-expand all mode sections by default
@@ -125,6 +171,11 @@ const ComprehensiveReport = ({ data }: Props) => {
     }
   };
 
+  const parsedSections = useMemo(
+    () => (synth?.summary ? parseSummary(synth.summary) : []),
+    [synth?.summary]
+  );
+
   return (
     <div className="space-y-4">
       {/* Metadata Panel */}
@@ -166,6 +217,107 @@ const ComprehensiveReport = ({ data }: Props) => {
         )}
       </div>
 
+      {/* ===== Overall Assessment — moved to top ===== */}
+      {synth && (
+        <div className="rounded-xl border border-border bg-card overflow-hidden">
+          {/* Header bar with score, rating, confidence, and copy button */}
+          <div className="flex items-center gap-5 p-5 border-b border-border bg-secondary/30">
+            <ScoreBadge score={score} label={rating || getScoreLabel(score)} />
+
+            <div className="flex-1 min-w-0">
+              <h3 className="text-xl font-display font-semibold">Overall Assessment</h3>
+              {synth.confidence != null && (
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="text-sm text-muted-foreground">Confidence:</span>
+                  <div className="flex-1 max-w-[120px] h-1.5 rounded-full bg-secondary overflow-hidden">
+                    <div
+                      className={cn("h-full rounded-full", getScoreBg(synth.confidence))}
+                      style={{ width: `${synth.confidence}%` }}
+                    />
+                  </div>
+                  <span className="text-sm font-medium">{Math.round(synth.confidence)}%</span>
+                </div>
+              )}
+            </div>
+
+            <button
+              onClick={copyAssessment}
+              className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors shrink-0"
+              title="Copy overall assessment"
+            >
+              {copied ? <Check size={13} /> : <Copy size={13} />}
+              {copied ? "Copied" : "Copy"}
+            </button>
+          </div>
+
+          {/* Structured summary sections */}
+          {parsedSections.length > 0 && (
+            <div className="p-5 space-y-4">
+              {parsedSections.map((section, idx) => {
+                const config = section.label ? summarySections[section.label] : null;
+                const SectionIcon = config?.icon;
+
+                return (
+                  <div
+                    key={idx}
+                    className={cn(
+                      "rounded-lg p-4",
+                      config ? `border-l-4 ${config.borderColor} bg-secondary/20` : "bg-secondary/10"
+                    )}
+                  >
+                    {section.label && (
+                      <div className={cn("flex items-center gap-2 mb-2", config?.color)}>
+                        {SectionIcon && <SectionIcon size={15} />}
+                        <h4 className="text-sm font-semibold uppercase tracking-wide">{section.label}</h4>
+                      </div>
+                    )}
+                    <p className="text-sm leading-relaxed text-foreground/90">{section.text}</p>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Key Concerns / Positive Indicators / Recommendations */}
+          {(synth.key_concerns?.length || synth.positive_indicators?.length || synth.recommendations?.length) ? (
+            <div className="px-5 pb-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {synth.key_concerns?.length ? (
+                <div className="rounded-lg border border-score-low/20 bg-score-low/5 p-4">
+                  <h4 className="text-sm font-semibold uppercase tracking-wide text-score-low mb-2">Key Concerns</h4>
+                  <ul className="space-y-1.5">
+                    {synth.key_concerns.map((c, i) => (
+                      <li key={i} className="text-sm text-muted-foreground pl-3 border-l-2 border-score-low/40">{c}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+
+              {synth.positive_indicators?.length ? (
+                <div className="rounded-lg border border-score-high/20 bg-score-high/5 p-4">
+                  <h4 className="text-sm font-semibold uppercase tracking-wide text-score-high mb-2">Positive Indicators</h4>
+                  <ul className="space-y-1.5">
+                    {synth.positive_indicators.map((p, i) => (
+                      <li key={i} className="text-sm text-muted-foreground pl-3 border-l-2 border-score-high/40">{p}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+
+              {synth.recommendations?.length ? (
+                <div className="rounded-lg border border-primary/20 bg-primary/5 p-4">
+                  <h4 className="text-sm font-semibold uppercase tracking-wide text-primary mb-2">Recommendations</h4>
+                  <ol className="space-y-1.5">
+                    {synth.recommendations.map((r, i) => (
+                      <li key={i} className="text-sm text-muted-foreground pl-3 border-l-2 border-primary/40">{r}</li>
+                    ))}
+                  </ol>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      )}
+
       {/* Mode Reports -- auto-expanded */}
       {data.mode_reports && Object.entries(data.mode_reports).map(([key, value]) => (
         <div key={key} className="rounded-xl border border-border bg-card overflow-hidden">
@@ -195,65 +347,6 @@ const ComprehensiveReport = ({ data }: Props) => {
               {modeLabels[key] || key}: {err}
             </p>
           ))}
-        </div>
-      )}
-
-      {/* Synthesis / Overall Assessment */}
-      {synth && (
-        <div className="rounded-xl border border-border bg-card p-5">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-xl font-display font-semibold">Overall Assessment</h3>
-            <button
-              onClick={copyAssessment}
-              className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
-              title="Copy overall assessment"
-            >
-              {copied ? <Check size={13} /> : <Copy size={13} />}
-              {copied ? "Copied" : "Copy"}
-            </button>
-          </div>
-
-          <div className="flex items-center gap-4 mb-4">
-            <ScoreBadge score={score} label={rating || getScoreLabel(score)} />
-            {synth.confidence != null && (
-              <span className="text-sm text-muted-foreground">Confidence: {Math.round(synth.confidence)}%</span>
-            )}
-          </div>
-
-          {synth.summary && <p className="text-base leading-relaxed mb-4">{synth.summary}</p>}
-
-          {synth.key_concerns?.length ? (
-            <div className="mb-3">
-              <h4 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground mb-1">Key Concerns</h4>
-              <ul className="space-y-1">
-                {synth.key_concerns.map((c, i) => (
-                  <li key={i} className="text-sm text-muted-foreground pl-3 border-l-2 border-score-low">{c}</li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-
-          {synth.positive_indicators?.length ? (
-            <div className="mb-3">
-              <h4 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground mb-1">Positive Indicators</h4>
-              <ul className="space-y-1">
-                {synth.positive_indicators.map((p, i) => (
-                  <li key={i} className="text-sm text-muted-foreground pl-3 border-l-2 border-score-high">{p}</li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-
-          {synth.recommendations?.length ? (
-            <div>
-              <h4 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground mb-1">Recommendations</h4>
-              <ul className="space-y-1">
-                {synth.recommendations.map((r, i) => (
-                  <li key={i} className="text-sm text-muted-foreground pl-3 border-l-2 border-border">{r}</li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
         </div>
       )}
 
