@@ -399,10 +399,13 @@ def check_key_claims():
         job_id = job_manager.create_job(content)
         fact_logger.logger.info(f" Created key claims job: {job_id}")
 
+        # Extract source_url from source_context if available
+        source_url = source_context.get('url') if source_context else None
+
         # Start background processing with new parameters
         threading.Thread(
             target=run_key_claims_task,
-            args=(job_id, content, source_context, source_credibility),  # UPDATED
+            args=(job_id, content, source_context, source_credibility, source_url),  # UPDATED
             daemon=True
         ).start()
 
@@ -417,10 +420,11 @@ def check_key_claims():
         return jsonify({"error": str(e)}), 500
 
 def run_key_claims_task(
-    job_id: str, 
+    job_id: str,
     content: str,
     source_context: Optional[Dict] = None,      # NEW PARAMETER
-    source_credibility: Optional[Dict] = None   # NEW PARAMETER
+    source_credibility: Optional[Dict] = None,  # NEW PARAMETER
+    source_url: Optional[str] = None            # Exclude from search results
 ):
     """
     Background task runner for key claims verification.
@@ -430,6 +434,7 @@ def run_key_claims_task(
         content: Text to analyze
         source_context: Optional dict with url, publication_name, publication_date
         source_credibility: Optional pre-fetched credibility data
+        source_url: Optional URL of the article being fact-checked (excluded from search results)
     """
     try:
         if key_claims_orchestrator is None:
@@ -439,7 +444,8 @@ def run_key_claims_task(
             f" Job {job_id}: Starting key claims analysis",
             extra={
                 "has_source_context": source_context is not None,
-                "has_credibility": source_credibility is not None
+                "has_credibility": source_credibility is not None,
+                "has_source_url": source_url is not None
             }
         )
 
@@ -448,7 +454,8 @@ def run_key_claims_task(
                 text_content=content,
                 job_id=job_id,
                 source_context=source_context,
-                source_credibility=source_credibility
+                source_credibility=source_credibility,
+                source_url=source_url
             )
         )
 
